@@ -1,0 +1,64 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- In-proc VSIX only. devenv is .NET Framework, and VisualStudioWorkspace is unreachable
+         from the out-of-proc VisualStudio.Extensibility model, so net472 is not negotiable here. -->
+    <TargetFramework>net472</TargetFramework>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>RoslynQuery</RootNamespace>
+    <AssemblyName>RoslynQuery</AssemblyName>
+
+    <!-- Single source of truth for the extension version: the VSIX manifest is stamped from this
+         via |%CurrentProject%;GetVsixVersion| and release.yml derives the release tag from it. -->
+    <Version>0.1.0</Version>
+
+    <VSSDKBuildToolsAutoSetup>true</VSSDKBuildToolsAutoSetup>
+    <GeneratePkgDefFile>true</GeneratePkgDefFile>
+    <DeployExtension Condition="'$(Configuration)' == 'Release'">false</DeployExtension>
+
+    <!-- NU1608: Microsoft.VisualStudio.LanguageServices only publishes up to 4.14.0, pinning
+         Microsoft.CodeAnalysis.* to 4.14.0. We compile against 5.6.0 on purpose; devenv redirects
+         every one of these to its own 5.7.0.0 at runtime, so the constraint is moot. -->
+    <NoWarn>$(NoWarn);NU1608</NoWarn>
+  </PropertyGroup>
+
+  <Target Name="GetVsixVersion" Returns="$(Version)" />
+
+  <ItemGroup>
+    <ProjectCapability Include="CreateVsixContainer" />
+
+    <VSCTCompile Include="RoslynQueryPackage.vsct">
+      <ResourceName>Menus.ctmenu</ResourceName>
+    </VSCTCompile>
+
+    <!-- Update, not Include: the SDK already globs .resx. MergeWithCTO folds the compiled .vsct
+         into this resource so [ProvideMenuResource("Menus.ctmenu", 1)] can find it. -->
+    <EmbeddedResource Update="VSPackage.resx">
+      <MergeWithCTO>true</MergeWithCTO>
+      <ManifestResourceName>VSPackage</ManifestResourceName>
+      <Generator></Generator>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- MEF v1 attributes: the editor's composition container is System.ComponentModel.Composition. -->
+    <Reference Include="System.ComponentModel.Composition" />
+    <!-- OleMenuCommandService derives from MenuCommandService, which lives in System.Design. -->
+    <Reference Include="System.Design" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.14.40265" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="18.5.40034" />
+
+    <!-- Compile-only. VS loads its own Roslyn (5.7.0.0) and devenv.exe.config redirects
+         0.0.0.0-5.7.0.0 to it; shipping our copies would duplicate assembly identities and
+         break MEF composition. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.6.0" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" Version="5.6.0" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.VisualStudio.LanguageServices" Version="4.14.0" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+</Project>

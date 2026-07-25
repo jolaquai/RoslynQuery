@@ -1,0 +1,127 @@
+name: Build & Release
+
+# Both unfiltered on purpose: push gives every branch CI at push time instead of only at PR time,
+# and pull_request is the only trigger that fires for forks and the only one that builds the branch
+# already merged into its base. A PR branch therefore builds twice, which is accepted.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  # Never cancel an in-flight release on main - it could be mid-tag/publish.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # VSIX projects (Microsoft.VSSDK.BuildTools) need full MSBuild from
+      # Visual Studio, not the `dotnet` CLI.
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Restore
+        run: msbuild RoslynQuery/RoslynQuery.csproj -t:Restore -p:Configuration=Release
+
+      - name: Build
+        run: msbuild RoslynQuery/RoslynQuery.csproj -t:Rebuild -p:Configuration=Release -p:DeployExtension=false
+
+      - name: Stage VSIX
+        id: vsix
+        shell: pwsh
+        run: |
+          $vsix = Get-ChildItem -Path RoslynQuery/bin/Release -Recurse -Filter *.vsix | Select-Object -First 1
+          if (-not $vsix) { throw "No .vsix produced by the build." }
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          Copy-Item $vsix.FullName artifacts/
+          "path=artifacts/$($vsix.Name)" >> $env:GITHUB_OUTPUT
+          Write-Host "Staged VSIX: $($vsix.Name)"
+
+      # A bundled Microsoft.CodeAnalysis.* would be a duplicate assembly identity in devenv and
+      # would break MEF composition, so a payload beyond our own dll is a hard failure.
+      - name: Verify VSIX payload
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path "${{ steps.vsix.outputs.path }}").Path)
+          $unexpected = $zip.Entries.Name | Where-Object { $_ -like '*.dll' -and $_ -ne 'RoslynQuery.dll' }
+          $zip.Dispose()
+          if ($unexpected) { throw "VSIX carries assemblies it must not ship: $($unexpected -join ', ')" }
+          Write-Host "VSIX payload is clean."
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: artifacts/*.vsix
+          if-no-files-found: error
+
+  # Releases the artifact the build job produced - it never rebuilds, so what ships is exactly
+  # what was verified. Only pushes to main get here; other branches, PRs and manual
+  # workflow_dispatch runs stop after build with just the artifact.
+  release:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # required to create releases / upload assets
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: vsix
+          path: artifacts
+
+      # The .csproj <Version> is the single source of truth: it's what the VSIX manifest is
+      # stamped with, and it's what the release tag tracks.
+      - name: Read version
+        id: ver
+        shell: pwsh
+        run: |
+          [xml]$p = Get-Content RoslynQuery/RoslynQuery.csproj
+          $v = ($p.Project.PropertyGroup.Version | Where-Object { $_ }) | Select-Object -First 1
+          if (-not $v) { throw "No <Version> found in the .csproj." }
+          $v = "$v".Trim()
+          "version=$v" >> $env:GITHUB_OUTPUT
+          "tag=v$v" >> $env:GITHUB_OUTPUT
+          Write-Host "Version: $v -> tag v$v"
+
+      # A release is cut only when <Version> is bumped to something not yet tagged. Pushes that
+      # don't change the version still build + upload the artifact but skip the release, since
+      # re-tagging an existing version would clobber it.
+      - name: Check whether tag already exists
+        id: tagcheck
+        shell: pwsh
+        run: |
+          git fetch --tags --quiet
+          $exists = (git tag --list "${{ steps.ver.outputs.tag }}")
+          if ($exists) {
+            Write-Host "Tag ${{ steps.ver.outputs.tag }} already exists - skipping release."
+            "exists=true" >> $env:GITHUB_OUTPUT
+          } else {
+            "exists=false" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Create Release
+        if: steps.tagcheck.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
+          generate_release_notes: true
+          files: artifacts/*.vsix
