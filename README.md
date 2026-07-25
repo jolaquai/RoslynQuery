@@ -67,9 +67,9 @@ routing, so its keyboard map is implemented by the extension. Caret movement, se
 and delete (with the Ctrl word-wise variants), Ctrl+A/C/X/V and Ctrl+Z/Y all work; anything beyond
 that is not bound.
 
-**Live** re-runs as you type, debounced. It is only available for member, type and document scope;
-running a whole project or solution on every keystroke would churn Roslyn's caches for the entire
-IDE. Use the Run button for those.
+Every run is explicit: Enter or the Run button. There is no run-as-you-type mode, on purpose. Each
+distinct expression leaks a small assembly for the session (see below), and a debounced re-run turns
+that into one leak per pause in your typing.
 
 **Cap** stops the run once that many matches are found and marks the results as capped.
 
@@ -88,7 +88,7 @@ Source-generated matches have no file on disk, so double-click reports that inst
   matches it found; the count and the first message appear under the box.
 - **Each distinct predicate leaks a small assembly** for the session. .NET Framework has no
   collectible load context. Identical expressions are cached, so this is bounded by how many
-  different predicates you type, at a few KB each.
+  different predicates you run, at a few KB each. This is the reason there is no live mode.
 - **Results survive edits.** Spans are replayed through the changes made since the run before
   navigating, so a match still opens in the right place after you have edited above it.
 

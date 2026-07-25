@@ -4,7 +4,7 @@ Tool window that runs a user-written C# predicate over every `SyntaxNode`, `Synt
 `IOperation` in a selectable scope, with IntelliSense in the predicate box, and navigates to a
 double-clicked match. Roughly "Syntax Visualizer, but you write the `Where`".
 
-Status: v1 implemented and building clean (Debug + Release, zero warnings). Sections marked
+Status: implemented and building clean (Debug + Release, zero warnings). Sections marked
 DEFERRED are designed but not built.
 
 ## 1. Hosting decision
@@ -66,7 +66,36 @@ RoslynQuery/
   ToolWindow/
     QueryToolWindow.cs
     QueryToolWindowControl.xaml(.cs)
+    TargetMonikerConverter.cs    result glyph per target kind
 ```
+
+## 2a. Look
+
+Modelled on VS's own Code Search window: predicate box on top, a row of muted lowercase captions
+with flat combos under it, then one metadata line, then borderless two-line result rows.
+
+Everything themeable goes through `VsBrushes` / `VsColors` / `VsResourceKeys` from
+`Microsoft.VisualStudio.Shell.15.0`, so light, dark and blue all follow. Notes that cost time to
+rediscover:
+
+- `VsResourceKeys.ThemedDialog*StyleKey` must be applied as `Style="{DynamicResource ...}"` on the
+  element. `BasedOn` needs a `StaticResource` and the shell merges its theme dictionary at runtime,
+  so a `BasedOn` chain throws at load. Local property values on the element override style setters
+  anyway, which is why margins are set inline.
+- The box uses `SearchBoxBackgroundKey` / `SearchBoxBorderKey`, and `ConfigureView` sets
+  `view.Background = Brushes.Transparent`, otherwise the editor paints the C# editor's own
+  background over that fill. `ZoomControlId` and `VerticalScrollBarId` are turned off as well; the
+  zoom combo in the corner is what made the box look like a leftover.
+- Rows are a `ListBox`, not a `ListView`/`GridView`. Hover and selection are a rounded
+  `AccentMediumKey` fill, selection adding an `AccentBorderKey` hairline, so the blue location text
+  stays readable. `HighlightKey` was rejected for exactly that: the platform selection blue swallows
+  it.
+- `CrispImage` needs `ImageThemingUtilities.ImageBackgroundColor` (namespace
+  `Microsoft.VisualStudio.PlatformUI`, assembly `Microsoft.VisualStudio.Imaging`) set on an ancestor
+  or the glyphs are themed against the wrong background.
+- `TargetMonikerConverter` is `public` because compiled XAML cannot instantiate an internal type
+  without the generated internal type helper. `QueryHit` stays internal; binding reflects over a
+  public property, which is fine in full trust.
 
 ## 3. Predicate compilation
 
@@ -88,6 +117,31 @@ expression leaks one ~6 KB assembly for the session. The compile cache is keyed 
 
 Compile errors are surfaced with the column remapped back into the user's expression
 (`start - expressionOffset`), not the generated file's coordinates.
+
+### The reference set, and the netstandard trap
+
+Every predicate failed CS0012 until this was fixed, including `n.IsKind(SyntaxKind.X)`: *"The type
+'Enum' is defined in an assembly that is not referenced. You must add a reference to assembly
+'netstandard, Version=2.0.0.0'."* Roslyn is compiled against netstandard2.0, so its public surface
+reaches `System.Object` and `System.Enum` through the facade, and the facade has to be in the
+reference set.
+
+v1 tried `Assembly.Load("netstandard")` and swallowed the failure. **That call can never succeed on
+.NET Framework**: the fusion binder does not probe the GAC for partial names, and netstandard.dll
+lives only in the GAC. Verified under Windows PowerShell (same runtime as devenv):
+`Assembly.Load("netstandard")` throws `FileNotFoundException`, while the full display name
+`netstandard, Version=2.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51` resolves.
+
+The fix does not hardcode that name. `Microsoft.CodeAnalysis.dll` lists its own dependencies in
+full, netstandard among them, so `BuildReferences` walks `GetReferencedAssemblies()` over the three
+Roslyn seeds and loads each. That also picks up `System.Memory`, `System.Buffers` and friends, and
+stays correct if Roslyn's facade set changes.
+
+Deduplication is keyed on the **simple assembly name**, not the file path. Two files with the same
+identity in one reference set is CS1703, and the closure makes that easy to hit.
+
+Verified end to end with a net472 harness driving `PredicateCompiler.Compile` by reflection against
+the built DLL: all five sample predicates across the three targets compile, 22 references resolved.
 
 Predicate exceptions are caught per item, counted, and the first message is shown. One
 `NullReferenceException` on an unbound symbol must not abort a solution-wide run.
@@ -123,16 +177,19 @@ target is `IOperation`. Binding every document is the dominant cost of a wide ru
 syntax-only predicates never need it. Consequence, documented in the README: reaching the model
 indirectly (through a helper that does not literally name `model`) yields `null`.
 
-## 5. Live vs button
+## 5. Runs are explicit
 
-Live is only offered for member/type/document scope; the checkbox is disabled for project and
-solution. Re-binding a whole solution on every keystroke would churn Roslyn's caches for the
-entire IDE, not just this window.
+**There is no live mode and there must not be one.** v1 shipped a debounced re-run-as-you-type
+checkbox, restricted to narrow scopes. It was removed outright. The compile cache is keyed on the
+expression text and every distinct expression leaks an assembly for the session (section 3), so a
+400 ms debounce turns one leak per query into one leak per pause in typing: the feature spends the
+budget of a known, accepted leak on nothing. Offering it also reads as an endorsement of a design
+the rest of the document treats as a wart. Do not reintroduce it, in any scope.
 
-Debounce is 400 ms with a `CancellationTokenSource` swapped per run. Scanning is parallel over
-documents, bounded by `Environment.ProcessorCount`. Results stream to the UI in batches of 200 via
-`Dispatcher.BeginInvoke` at `Background` priority, so batches coalesce behind user input. Result
-cap is user-selectable (default 5 000); tripping it cancels the run and flags the result as capped.
+A run swaps a `CancellationTokenSource`. Scanning is parallel over documents, bounded by
+`Environment.ProcessorCount`. Results stream to the UI in batches of 200 via `Dispatcher.BeginInvoke`
+at `Background` priority, so batches coalesce behind user input. Result cap is user-selectable
+(default 5 000); tripping it cancels the run and flags the result as capped.
 
 ## 6. Result identity and span drift
 

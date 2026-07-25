@@ -37,7 +37,6 @@ public partial class QueryToolWindowControl : UserControl
     }
 
     private readonly ObservableCollection<QueryHit> _hits = new ObservableCollection<QueryHit>();
-    private readonly DispatcherTimer _debounce;
 
     private IComponentModel _componentModel;
     private VisualStudioWorkspace _workspace;
@@ -55,8 +54,6 @@ public partial class QueryToolWindowControl : UserControl
         InitializeComponent();
 
         Results.ItemsSource = _hits;
-        _debounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
-        _debounce.Tick += OnDebounceTick;
         Loaded += OnLoaded;
     }
 
@@ -107,16 +104,14 @@ public partial class QueryToolWindowControl : UserControl
         PredicateHost.Content = _input.Element;
         _input.Target = CurrentTarget;
         _input.Text = "n.IsKind(SyntaxKind.IfStatement)";
-        _input.TextChanged += OnPredicateChanged;
         _input.SubmitRequested += (s, args) => Run();
 
         UpdateSignature();
-        UpdateLiveAvailability();
 
         if (_workspace is null) SetError("No Roslyn workspace is available. Open a solution and reopen this window.");
         else if (diagnostic != null) SetError(diagnostic);
 
-        StatusText.Text = "Ready. Enter runs the query; Shift+Enter inserts a newline.";
+        StatusText.Text = "Enter runs, Shift+Enter is a newline";
 
         // Nothing in the window is focusable-by-default in a useful place, so without this the
         // first keystroke goes to whatever the shell last focused. Input priority: the host has to
@@ -133,26 +128,6 @@ public partial class QueryToolWindowControl : UserControl
 
         _input.Target = CurrentTarget;
         UpdateSignature();
-        ScheduleLiveRun();
-    }
-
-    private void OnScopeChanged(object sender, SelectionChangedEventArgs e)
-    {
-        // Populating the combos in OnLoaded raises SelectionChanged before the input exists.
-        if (_input is null) return;
-
-        UpdateLiveAvailability();
-        ScheduleLiveRun();
-    }
-
-    private void OnPredicateChanged(object sender, EventArgs e) => ScheduleLiveRun();
-
-    private void OnDebounceTick(object sender, EventArgs e)
-    {
-        ThreadHelper.ThrowIfNotOnUIThread();
-
-        _debounce.Stop();
-        if (LiveCheckBox.IsChecked == true && LiveCheckBox.IsEnabled) Run();
     }
 
     private void OnRunClick(object sender, RoutedEventArgs e)
@@ -187,25 +162,7 @@ public partial class QueryToolWindowControl : UserControl
 #pragma warning restore VSSDK007
     }
 
-    private void ScheduleLiveRun()
-    {
-        if (_input is null || LiveCheckBox.IsChecked != true || !LiveCheckBox.IsEnabled) return;
-
-        _debounce.Stop();
-        _debounce.Start();
-    }
-
     private void UpdateSignature() => SignatureText.Text = PredicateTemplate.Signature(CurrentTarget);
-
-    private void UpdateLiveAvailability()
-    {
-        // A wide scope re-bound on every keystroke would churn Roslyn's caches for the whole IDE.
-        var scope = CurrentScope;
-        var allowed = scope != ScopeKind.Project && scope != ScopeKind.Solution;
-
-        LiveCheckBox.IsEnabled = allowed;
-        if (!allowed) LiveCheckBox.IsChecked = false;
-    }
 
     private void SetError(string message)
     {

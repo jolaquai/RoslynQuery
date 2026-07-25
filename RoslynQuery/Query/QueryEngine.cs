@@ -179,7 +179,7 @@ internal static class QueryEngine
             try { hit = match(node, model, document); }
             catch (Exception ex) { fail(ex); continue; }
 
-            if (hit) emit(QueryHit.Create(document, text, node.Span, node.Kind().ToString()));
+            if (hit) emit(QueryHit.Create(document, text, node.Span, node.Kind().ToString(), TargetKind.SyntaxNode));
         }
 
         examined += count;
@@ -199,7 +199,7 @@ internal static class QueryEngine
             try { hit = match(token, model, document); }
             catch (Exception ex) { fail(ex); continue; }
 
-            if (hit) emit(QueryHit.Create(document, text, token.Span, token.Kind().ToString()));
+            if (hit) emit(QueryHit.Create(document, text, token.Span, token.Kind().ToString(), TargetKind.SyntaxToken));
         }
 
         examined += count;
@@ -235,7 +235,7 @@ internal static class QueryEngine
                 try { hit = match(operation, model, document); }
                 catch (Exception ex) { fail(ex); continue; }
 
-                if (hit) emit(QueryHit.Create(document, text, operation.Syntax.Span, operation.Kind.ToString()));
+                if (hit) emit(QueryHit.Create(document, text, operation.Syntax.Span, operation.Kind.ToString(), TargetKind.Operation));
             }
         }
 

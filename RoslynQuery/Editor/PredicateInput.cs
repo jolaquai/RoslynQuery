@@ -3,6 +3,7 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 
 using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.Language.Intellisense.AsyncCompletion;
@@ -23,7 +24,6 @@ internal interface IPredicateInput
     string Text { get; set; }
     TargetKind Target { get; set; }
 
-    event EventHandler TextChanged;
     event EventHandler SubmitRequested;
 
     void FocusInput();
@@ -128,7 +128,6 @@ internal sealed class PredicateEditorInput : IPredicateInput
         }
     }
 
-    public event EventHandler TextChanged;
     public event EventHandler SubmitRequested;
 
     public void FocusInput() => _view.VisualElement.Focus();
@@ -141,14 +140,17 @@ internal sealed class PredicateEditorInput : IPredicateInput
         view.Options.SetOptionValue(DefaultTextViewHostOptions.OutliningMarginId, false);
         view.Options.SetOptionValue(DefaultTextViewHostOptions.ChangeTrackingId, false);
         view.Options.SetOptionValue(DefaultTextViewHostOptions.HorizontalScrollBarId, false);
+        view.Options.SetOptionValue(DefaultTextViewHostOptions.VerticalScrollBarId, false);
+        view.Options.SetOptionValue(DefaultTextViewHostOptions.ZoomControlId, false);
         view.Options.SetOptionValue(DefaultTextViewOptions.WordWrapStyleId, WordWrapStyles.WordWrap);
         view.Options.SetOptionValue(DefaultOptions.ConvertTabsToSpacesOptionId, true);
+
+        // Otherwise the view paints the C# editor's own background over the box's border fill.
+        view.Background = Brushes.Transparent;
     }
 
     private void OnBufferChanged(object sender, TextContentChangedEventArgs e)
     {
-        TextChanged?.Invoke(this, EventArgs.Empty);
-
         if (e.Changes.Count != 1) return;
         var change = e.Changes[0];
         var point = new SnapshotPoint(e.After, Math.Min(change.NewEnd, e.After.Length));
@@ -346,10 +348,11 @@ internal sealed class PredicateTextBoxInput : IPredicateInput
             AcceptsReturn = true,
             TextWrapping = TextWrapping.Wrap,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            FontFamily = new System.Windows.Media.FontFamily("Consolas")
+            FontFamily = new FontFamily("Consolas"),
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0)
         };
 
-        _textBox.TextChanged += (_, __) => TextChanged?.Invoke(this, EventArgs.Empty);
         _textBox.PreviewKeyDown += (_, e) =>
         {
             if (e.Key != Key.Enter || Keyboard.Modifiers != ModifierKeys.None) return;
@@ -368,7 +371,6 @@ internal sealed class PredicateTextBoxInput : IPredicateInput
 
     public TargetKind Target { get; set; }
 
-    public event EventHandler TextChanged;
     public event EventHandler SubmitRequested;
 
     public void FocusInput() => _textBox.Focus();

@@ -42,13 +42,15 @@ internal static class PredicateCompiler
 
     private static ImmutableArray<MetadataReference> BuildReferences()
     {
+        // Keyed on simple name, not path: two files with the same identity in one reference set is
+        // CS1703, and the closure below can easily surface a second copy of one of these.
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var builder = ImmutableArray.CreateBuilder<MetadataReference>();
 
         void Add(Assembly assembly)
         {
             if (assembly is null || assembly.IsDynamic || string.IsNullOrEmpty(assembly.Location)) return;
-            if (seen.Add(assembly.Location)) builder.Add(MetadataReference.CreateFromFile(assembly.Location));
+            if (seen.Add(assembly.GetName().Name)) builder.Add(MetadataReference.CreateFromFile(assembly.Location));
         }
 
         Add(typeof(object).Assembly);
@@ -56,15 +58,18 @@ internal static class PredicateCompiler
         Add(typeof(Enumerable).Assembly);
         Add(typeof(ImmutableArray).Assembly);
         Add(typeof(Regex).Assembly);
-        Add(typeof(SyntaxNode).Assembly);
-        Add(typeof(CSharpSyntaxNode).Assembly);
-        Add(typeof(Document).Assembly);
 
-        // Roslyn is compiled against netstandard2.0; without the facades the user's expression
-        // cannot see types forwarded through them.
-        foreach (var facade in new[] { "netstandard", "System.Runtime" })
+        var roslyn = new[] { typeof(SyntaxNode).Assembly, typeof(CSharpSyntaxNode).Assembly, typeof(Document).Assembly };
+        foreach (var assembly in roslyn) Add(assembly);
+
+        // Roslyn is compiled against netstandard2.0, so its public surface reaches System.Object and
+        // System.Enum through the facade: without it even `n.IsKind(SyntaxKind.X)` fails CS0012.
+        // Assembly.Load("netstandard") cannot get it, because .NET Framework never probes the GAC
+        // for a partial name. Roslyn's own reference list carries the full display names, which do
+        // bind, and it stays correct if Roslyn's facade set ever changes.
+        foreach (var name in roslyn.SelectMany(assembly => assembly.GetReferencedAssemblies()))
         {
-            try { Add(Assembly.Load(facade)); }
+            try { Add(Assembly.Load(name)); }
             catch (Exception) { }
         }
 

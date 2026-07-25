@@ -26,10 +26,11 @@ internal sealed class QueryHit
     public int EndColumn { get; private set; }
     public string Kind { get; private set; }
     public string Preview { get; private set; }
+    public TargetKind Target { get; private set; }
 
     public string Location => $"{FileName} ({Line + 1},{Column + 1})";
 
-    public static QueryHit Create(Document document, SourceText text, TextSpan span, string kind)
+    public static QueryHit Create(Document document, SourceText text, TextSpan span, string kind, TargetKind target)
     {
         var lines = text.Lines.GetLinePositionSpan(span);
 
@@ -44,7 +45,8 @@ internal sealed class QueryHit
             EndLine = lines.End.Line,
             EndColumn = lines.End.Character,
             Kind = kind,
-            Preview = BuildPreview(text, span)
+            Preview = BuildPreview(text, span),
+            Target = target
         };
     }
 
