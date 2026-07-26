@@ -17,16 +17,10 @@ using TextSpan = Microsoft.CodeAnalysis.Text.TextSpan;
 namespace RoslynQuery.Query;
 
 /// <summary>A document to scan, optionally narrowed to one declaration's span.</summary>
-internal readonly struct ScopeUnit
+internal readonly struct ScopeUnit(Document document, TextSpan? restriction)
 {
-    public ScopeUnit(Document document, TextSpan? restriction)
-    {
-        Document = document;
-        Restriction = restriction;
-    }
-
-    public Document Document { get; }
-    public TextSpan? Restriction { get; }
+    public readonly Document Document = document;
+    public readonly TextSpan? Restriction = restriction;
 }
 
 internal sealed class ActiveContext
@@ -43,13 +37,13 @@ internal static class ScopeResolver
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        var manager = serviceProvider.GetService(typeof(SVsTextManager)) as IVsTextManager;
-        if (manager is null) return null;
+        if (serviceProvider.GetService(typeof(SVsTextManager)) is not IVsTextManager manager)
+            return null;
         if (ErrorHandler.Failed(manager.GetActiveView(0, null, out var view)) || view is null) return null;
         if (ErrorHandler.Failed(view.GetCaretPos(out var line, out var column))) return null;
         if (ErrorHandler.Failed(view.GetBuffer(out var buffer)) || buffer is null) return null;
 
-        if (!(buffer is IPersistFileFormat persist)) return null;
+        if (buffer is not IPersistFileFormat persist) return null;
         if (ErrorHandler.Failed(persist.GetCurFile(out var path, out _)) || string.IsNullOrEmpty(path)) return null;
 
         return new ActiveContext { FilePath = path, Line = line, Column = column };
@@ -71,17 +65,17 @@ internal static class ScopeResolver
 
             case ScopeKind.Project:
                 if (document is null) return Array.Empty<ScopeUnit>();
-                return await CollectAsync(new[] { document.Project }, includeGenerated, cancellationToken).ConfigureAwait(false);
+                return await CollectAsync([document.Project], includeGenerated, cancellationToken).ConfigureAwait(false);
 
             case ScopeKind.Document:
                 if (document is null) return Array.Empty<ScopeUnit>();
-                return new[] { new ScopeUnit(document, null) };
+                return [new ScopeUnit(document, null)];
 
             case ScopeKind.ContainingMember:
             case ScopeKind.ContainingType:
                 if (document is null) return Array.Empty<ScopeUnit>();
                 var unit = await ResolveDeclarationAsync(document, scope, active, cancellationToken).ConfigureAwait(false);
-                return unit.HasValue ? new[] { unit.Value } : Array.Empty<ScopeUnit>();
+                return unit.HasValue ? [unit.Value] : Array.Empty<ScopeUnit>();
 
             default:
                 throw new ArgumentOutOfRangeException(nameof(scope));
