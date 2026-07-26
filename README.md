@@ -11,11 +11,11 @@ Pick a **Target**, pick a **Scope**, type a boolean expression, press Enter (or 
 
 The signature line above the box tells you what is in scope:
 
-| Target | Predicate signature |
-| --- | --- |
-| SyntaxNode | `bool (SyntaxNode n, SemanticModel model, Document doc)` |
+| Target      | Predicate signature                                       |
+| ----------- | --------------------------------------------------------- |
+| SyntaxNode  | `bool (SyntaxNode n, SemanticModel model, Document doc)`  |
 | SyntaxToken | `bool (SyntaxToken t, SemanticModel model, Document doc)` |
-| IOperation | `bool (IOperation op, SemanticModel model, Document doc)` |
+| IOperation  | `bool (IOperation op, SemanticModel model, Document doc)` |
 
 `System`, `System.Linq`, `System.Text.RegularExpressions`, `Microsoft.CodeAnalysis`,
 `.CSharp`, `.CSharp.Syntax`, `.Operations` and `.Text` are already imported.
@@ -52,15 +52,15 @@ n is IdentifierNameSyntax id && model.GetSymbolInfo(id).Symbol is IMethodSymbol 
 
 ### Keys
 
-| Key | Effect |
-| --- | --- |
-| Enter | run the query (or commit the completion item, if the list is open) |
-| Shift+Enter | newline in the predicate |
-| Ctrl+Space | invoke completion |
-| Up / Down | move through the completion list, otherwise move the caret |
-| Tab | commit the completion item, otherwise leave the box |
-| Esc | dismiss the completion list |
-| Double-click a result | open the file and select the match |
+| Key                   | Effect                                                             |
+| --------------------- | ------------------------------------------------------------------ |
+| Enter                 | run the query (or commit the completion item, if the list is open) |
+| Shift+Enter           | newline in the predicate                                           |
+| Ctrl+Space            | invoke completion                                                  |
+| Up / Down             | move through the completion list, otherwise move the caret         |
+| Tab                   | commit the completion item, otherwise leave the box                |
+| Esc                   | dismiss the completion list                                        |
+| Double-click a result | open the file and select the match                                 |
 
 The predicate box is a real editor view, not a `TextBox`, and it is not wired into VS's command
 routing, so its keyboard map is implemented by the extension. Caret movement, selection, backspace
@@ -75,22 +75,6 @@ that into one leak per pause in your typing.
 
 **Generated** includes `.g.cs` / `.designer.cs` / `.generated.cs` and source-generated documents.
 Source-generated matches have no file on disk, so double-click reports that instead of navigating.
-
-## Things worth knowing
-
-- **The semantic model is lazy.** It is only built when your expression literally contains the word
-  `model`, or when the target is `IOperation`. Binding every document is the expensive part of a
-  wide run. If you reach the model indirectly, through a helper that never names it, you will get
-  `null` and an error count instead of results.
-- **C# only.** VB documents are skipped; the predicate is compiled against the C# `SyntaxKind`.
-- **Your predicate runs in devenv, in full trust.** It is real compiled code, not a sandbox.
-- **Exceptions are counted, not fatal.** A predicate that throws on some nodes still returns the
-  matches it found; the count and the first message appear under the box.
-- **Each distinct predicate leaks a small assembly** for the session. .NET Framework has no
-  collectible load context. Identical expressions are cached, so this is bounded by how many
-  different predicates you run, at a few KB each. This is the reason there is no live mode.
-- **Results survive edits.** Spans are replayed through the changes made since the run before
-  navigating, so a match still opens in the right place after you have edited above it.
 
 ## Building
 
