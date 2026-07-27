@@ -33,7 +33,24 @@ internal sealed class PredicateCompilationException : Exception
 /// </summary>
 internal static class PredicateCompiler
 {
+    // net472 has no collectible load context (AssemblyLoadContext.RunAndCollect and
+    // AssemblyBuilderAccess.RunAndCollect are both .NET Core+) and the only Framework-era unload
+    // primitive, AppDomain.Unload, cannot host this: SyntaxNode/SemanticModel/Document are not
+    // MarshalByRefObject or serializable, so a predicate delegate cannot cross an AppDomain boundary
+    // without per-member proxying, which would cost far more than the several KB per expression this
+    // is trying to save. Every unique expression therefore leaks its emitted assembly for the process
+    // lifetime; the cap below only bounds *this* dictionary against pathological input (e.g.
+    // programmatically generated expressions with embedded GUIDs), not the underlying leak.
+    private const int MaxCachedExpressions = 512;
     private static readonly ConcurrentDictionary<(TargetKind, string), Delegate> Cache = new ConcurrentDictionary<(TargetKind, string), Delegate>();
+    private static readonly ConcurrentQueue<(TargetKind, string)> CacheOrder = new ConcurrentQueue<(TargetKind, string)>();
+    private static long _totalEmittedBytes;
+
+    /// <summary>Sum of raw PE image bytes handed to <see cref="Assembly.Load(byte[])"/> so far, including
+    /// evicted entries: on net472 that memory is never actually reclaimed, so this only grows.</summary>
+    public static long TotalEmittedBytes => Interlocked.Read(ref _totalEmittedBytes);
+
+    public static int CachedExpressionCount => Cache.Count;
 
     private static readonly Lazy<ImmutableArray<MetadataReference>> LazyReferences =
         new Lazy<ImmutableArray<MetadataReference>>(BuildReferences, LazyThreadSafetyMode.ExecutionAndPublication);
@@ -76,6 +93,55 @@ internal static class PredicateCompiler
         return builder.ToImmutable();
     }
 
+    /// <summary>
+    /// Re-lexes the expression and rejoins its tokens with the minimum whitespace that still
+    /// tokenizes the same way, dropping comments and all original trivia in the process. Two
+    /// expressions that differ only in formatting collapse to the same cache key instead of each
+    /// leaking their own compiled assembly. Falls back to the raw text if lexing itself throws.
+    /// </summary>
+    private static string Normalize(string expression)
+    {
+        if (string.IsNullOrWhiteSpace(expression)) return string.Empty;
+
+        try
+        {
+            var sb = new StringBuilder(expression.Length);
+            string previous = null;
+
+            foreach (var token in SyntaxFactory.ParseTokens(expression, options: PredicateTemplate.ParseOptions))
+            {
+                if (token.IsKind(SyntaxKind.EndOfFileToken)) continue;
+                var text = token.Text;
+                if (text.Length == 0) continue;
+
+                if (previous != null && NeedsSpaceBetween(previous, text)) sb.Append(' ');
+                sb.Append(text);
+                previous = text;
+            }
+
+            return sb.ToString();
+        }
+        catch (Exception)
+        {
+            return expression;
+        }
+    }
+
+    // Conservative: a space is inserted whenever omitting it could re-tokenize the boundary into
+    // something else (identifier/keyword/number runs merging, or operator runs like "- -" -> "--",
+    // "= =" -> "==" merging). Never omits a space that safety requires; may keep one that isn't
+    // strictly necessary (e.g. around punctuation), which only costs a byte, never correctness.
+    private static bool NeedsSpaceBetween(string previous, string next)
+    {
+        var a = previous[previous.Length - 1];
+        var b = next[0];
+
+        bool IsIdentChar(char c) => char.IsLetterOrDigit(c) || c == '_';
+        bool IsOpChar(char c) => "+-*/%=!<>&|^?:~".IndexOf(c) >= 0;
+
+        return (IsIdentChar(a) && IsIdentChar(b)) || (IsOpChar(a) && IsOpChar(b));
+    }
+
     public static Type DelegateType(TargetKind kind) => kind switch
     {
         TargetKind.SyntaxNode => typeof(NodeMatch),
@@ -86,10 +152,11 @@ internal static class PredicateCompiler
 
     public static Delegate Compile(TargetKind kind, string expression)
     {
-        var key = (kind, expression ?? string.Empty);
+        var normalized = Normalize(expression);
+        var key = (kind, normalized);
         if (Cache.TryGetValue(key, out var cached)) return cached;
 
-        var source = PredicateTemplate.Build(kind, expression, out var offset);
+        var source = PredicateTemplate.Build(kind, normalized, out var offset);
         var compilation = CSharpCompilation.Create(
             "RoslynQuery_Predicate_" + Guid.NewGuid().ToString("N"),
             new[] { CSharpSyntaxTree.ParseText(SourceText.From(source), PredicateTemplate.ParseOptions) },
@@ -101,11 +168,16 @@ internal static class PredicateCompiler
             var result = compilation.Emit(stream);
             if (!result.Success) throw new PredicateCompilationException(Describe(result.Diagnostics, source, offset), result.Diagnostics);
 
-            // net472 has no collectible load context, so every distinct expression leaks one small
-            // assembly for the session. The cache holds that to one per unique expression.
-            var type = Assembly.Load(stream.ToArray()).GetType(PredicateTemplate.ClassName, throwOnError: true);
+            var bytes = stream.ToArray();
+            Interlocked.Add(ref _totalEmittedBytes, bytes.Length);
+            var type = Assembly.Load(bytes).GetType(PredicateTemplate.ClassName, throwOnError: true);
             var method = type.GetMethod(PredicateTemplate.MethodName, BindingFlags.Public | BindingFlags.Static);
-            return Cache.GetOrAdd(key, method.CreateDelegate(DelegateType(kind)));
+            var @delegate = Cache.GetOrAdd(key, method.CreateDelegate(DelegateType(kind)));
+            CacheOrder.Enqueue(key);
+
+            while (Cache.Count > MaxCachedExpressions && CacheOrder.TryDequeue(out var oldest)) Cache.TryRemove(oldest, out _);
+
+            return @delegate;
         }
     }
 
