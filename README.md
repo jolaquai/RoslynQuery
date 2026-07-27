@@ -60,12 +60,17 @@ n is IdentifierNameSyntax id && model.GetSymbolInfo(id).Symbol is IMethodSymbol 
 | Up / Down             | move through the completion list, otherwise move the caret         |
 | Tab                   | commit the completion item, otherwise leave the box                |
 | Esc                   | dismiss the completion list, never leaves the box                  |
+| `.` `(` `,` operators | commit the completion item, then type the character                |
 | Double-click a result | open the file and select the match                                 |
 
 The predicate box is a real editor view, not a `TextBox`, and it is not wired into VS's command
 routing, so its keyboard map is implemented by the extension. Caret movement, selection, backspace
 and delete (with the Ctrl word-wise variants), Ctrl+A/C/X/V and Ctrl+Z/Y all work; anything beyond
 that is not bound.
+
+The commit characters are Roslyn's C# set without the space, so `n.IsK` + `(` commits `IsKind` and
+gives you `n.IsKind(`, but a space just types a space. Nothing commits while the selection is soft,
+which is what the list shows right after a bare Ctrl+Space.
 
 Every run is explicit: Enter or the Run button. There is no run-as-you-type mode, on purpose. Each
 distinct expression leaks a small assembly for the session (see below), and a debounced re-run turns

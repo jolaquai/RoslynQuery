@@ -207,10 +207,36 @@ internal sealed class PredicateEditorInput : IPredicateInput
         }
     }
 
-    private static void Commit(IAsyncCompletionSession session, char typed)
+    private static VsData.CommitBehavior Commit(IAsyncCompletionSession session, char typed)
     {
-        session.Commit(typed, CancellationToken.None);
+        var behavior = session.Commit(typed, CancellationToken.None);
         session.Dismiss();
+        return behavior;
+    }
+
+    /// <summary>
+    /// Commits the selected item when the typed character ends it, the way the editor's own command
+    /// handler would. Returns true when the commit also consumed the character.
+    /// </summary>
+    private bool TryCommitOnTypedChar(char typed)
+    {
+        try
+        {
+            var session = _broker.GetSession(_view);
+            if (session is null || session.IsDismissed) return false;
+
+            // Soft selection means nothing is really picked - after a bare Ctrl+Space, say - and
+            // committing on the next keystroke would insert whatever happened to sort first.
+            if (session.GetComputedItems(CancellationToken.None).UsesSoftSelection) return false;
+            if (!session.ShouldCommit(typed, _view.Caret.Position.BufferPosition, CancellationToken.None)) return false;
+
+            return (Commit(session, typed) & VsData.CommitBehavior.SuppressFurtherTypeCharCommandHandlers) != 0;
+        }
+        catch (Exception)
+        {
+            // A failing completion session must never swallow the keystroke.
+            return false;
+        }
     }
 
     private void DismissSession()
@@ -235,7 +261,7 @@ internal sealed class PredicateEditorInput : IPredicateInput
         if (chord != ModifierKeys.None && chord != (ModifierKeys.Control | ModifierKeys.Alt)) return;
         if (e.Text.Length == 1 && char.IsControl(e.Text[0])) return;
 
-        _operations.InsertText(e.Text);
+        if (e.Text.Length != 1 || !TryCommitOnTypedChar(e.Text[0])) _operations.InsertText(e.Text);
         e.Handled = true;
     }
 
