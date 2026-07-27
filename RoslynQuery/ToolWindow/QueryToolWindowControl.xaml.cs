@@ -273,14 +273,16 @@ public partial class QueryToolWindowControl : UserControl
         await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
         StatusText.Text = string.Format(
-            "{0:N0} match{1} from {2:N0} examined across {3:N0} document{4} in {5:N0} ms{6}",
+            "{0:N0} match{1} from {2:N0} examined across {3:N0} document{4} in {5:N0} ms{6} | predicate cache: {7:N0} ({8:N1} KB)",
             outcome.Matched,
             outcome.Matched == 1 ? string.Empty : "es",
             outcome.Examined,
             outcome.Documents,
             outcome.Documents == 1 ? string.Empty : "s",
             outcome.Elapsed.TotalMilliseconds,
-            outcome.Truncated ? " (capped)" : string.Empty);
+            outcome.Truncated ? " (capped)" : string.Empty,
+            PredicateCompiler.CachedExpressionCount,
+            PredicateCompiler.TotalEmittedBytes / 1024.0);
 
         if (outcome.Errors > 0) SetError(string.Format("{0:N0} predicate error{1}. First: {2}", outcome.Errors, outcome.Errors == 1 ? string.Empty : "s", outcome.FirstError));
     }

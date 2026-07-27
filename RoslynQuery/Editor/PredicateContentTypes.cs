@@ -20,6 +20,23 @@ internal static class PredicateContentTypes
 #pragma warning restore 649
 }
 
+/// <summary>
+/// The completion applicable-to span, in exactly one place. The source computes it when a session
+/// starts and the input has to keep it in sync for as long as that session lives; the two drifting
+/// apart is what made a commit eat the text in front of the word.
+/// </summary>
+internal static class PredicateWord
+{
+    public static bool IsIdentifierChar(char c) => char.IsLetterOrDigit(c) || c == '_';
+
+    public static Span At(ITextSnapshot snapshot, int position)
+    {
+        var start = position;
+        while (start > 0 && IsIdentifierChar(snapshot[start - 1])) start--;
+        return Span.FromBounds(start, position);
+    }
+}
+
 /// <summary>Per-buffer state the MEF parts need but cannot be handed through a constructor.</summary>
 internal sealed class PredicateBufferContext
 {

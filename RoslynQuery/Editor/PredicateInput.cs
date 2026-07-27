@@ -174,6 +174,24 @@ internal sealed class PredicateEditorInput : IPredicateInput
             var trigger = new VsData.CompletionTrigger(reason, point.Snapshot, typed);
             var session = _broker.GetSession(_view);
 
+            // Anything that is not another identifier character ends the word the session was
+            // opened on, and the item list for `n.` has nothing to do with the one for `n`.
+            if (session != null && !session.IsDismissed && typed != '\0' && !PredicateWord.IsIdentifierChar(typed))
+            {
+                session.Dismiss();
+                session = null;
+            }
+
+            if (session != null && !session.IsDismissed &&
+                !PredicateWord.At(point.Snapshot, point.Position).Equals(session.ApplicableToSpan.GetSpan(point.Snapshot).Span))
+            {
+                // ApplicableToSpan is fixed for the life of a session - IAsyncCompletionSessionOperations
+                // exposes a setter, but VS throws NotSupportedException on the second assignment. A
+                // session opened on `n` that must now cover `n.` has to be re-opened, not re-pointed.
+                session.Dismiss();
+                session = null;
+            }
+
             if (session is null || session.IsDismissed)
             {
                 // Only a fresh insertion or an explicit invoke should open a new list; backspacing
@@ -190,10 +208,36 @@ internal sealed class PredicateEditorInput : IPredicateInput
         }
     }
 
-    private static void Commit(IAsyncCompletionSession session, char typed)
+    private static VsData.CommitBehavior Commit(IAsyncCompletionSession session, char typed)
     {
-        session.Commit(typed, CancellationToken.None);
+        var behavior = session.Commit(typed, CancellationToken.None);
         session.Dismiss();
+        return behavior;
+    }
+
+    /// <summary>
+    /// Commits the selected item when the typed character ends it, the way the editor's own command
+    /// handler would. Returns true when the commit also consumed the character.
+    /// </summary>
+    private bool TryCommitOnTypedChar(char typed)
+    {
+        try
+        {
+            var session = _broker.GetSession(_view);
+            if (session is null || session.IsDismissed) return false;
+
+            // Soft selection means nothing is really picked - after a bare Ctrl+Space, say - and
+            // committing on the next keystroke would insert whatever happened to sort first.
+            if (session.GetComputedItems(CancellationToken.None).UsesSoftSelection) return false;
+            if (!session.ShouldCommit(typed, _view.Caret.Position.BufferPosition, CancellationToken.None)) return false;
+
+            return (Commit(session, typed) & VsData.CommitBehavior.SuppressFurtherTypeCharCommandHandlers) != 0;
+        }
+        catch (Exception)
+        {
+            // A failing completion session must never swallow the keystroke.
+            return false;
+        }
     }
 
     private void DismissSession()
@@ -218,7 +262,7 @@ internal sealed class PredicateEditorInput : IPredicateInput
         if (chord != ModifierKeys.None && chord != (ModifierKeys.Control | ModifierKeys.Alt)) return;
         if (e.Text.Length == 1 && char.IsControl(e.Text[0])) return;
 
-        _operations.InsertText(e.Text);
+        if (e.Text.Length != 1 || !TryCommitOnTypedChar(e.Text[0])) _operations.InsertText(e.Text);
         e.Handled = true;
     }
 
@@ -238,8 +282,11 @@ internal sealed class PredicateEditorInput : IPredicateInput
 
         switch (e.Key)
         {
+            // Always handled. Left alone, Esc is the shell's "give focus back to the document"
+            // gesture, so dismissing a completion list threw the user out of the tool window.
             case Key.Escape:
-                if (active) { session.Dismiss(); e.Handled = true; }
+                if (active) session.Dismiss();
+                e.Handled = true;
                 break;
 
             // Every caret key must be marked handled even when it does nothing useful: an

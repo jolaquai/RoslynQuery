@@ -40,7 +40,7 @@ internal static class QueryEngine
         Action<IReadOnlyList<QueryHit>> onBatch,
         CancellationToken cancellationToken)
     {
-        var outcome = new QueryOutcome { Documents = units.Count };
+        var outcome = new QueryOutcome();
         var watch = Stopwatch.StartNew();
         var needsModel = target == TargetKind.Operation || MentionsModel.IsMatch(expression ?? string.Empty);
 
@@ -49,6 +49,7 @@ internal static class QueryEngine
         var examined = 0;
         var matched = 0;
         var errors = 0;
+        var skipped = 0;
         string firstError = null;
 
         using (var cap = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
@@ -83,6 +84,8 @@ internal static class QueryEngine
                 Flush(false);
             }
 
+            void Skip() => Interlocked.Increment(ref skipped);
+
             void Fail(Exception ex)
             {
                 Interlocked.Increment(ref errors);
@@ -96,7 +99,7 @@ internal static class QueryEngine
                     await gate.WaitAsync(token).ConfigureAwait(false);
                     try
                     {
-                        Interlocked.Add(ref examined, await ScanAsync(unit, target, predicate, needsModel, Emit, Fail, token).ConfigureAwait(false));
+                        Interlocked.Add(ref examined, await ScanAsync(unit, target, predicate, needsModel, Emit, Fail, Skip, token).ConfigureAwait(false));
                     }
                     finally
                     {
@@ -118,6 +121,7 @@ internal static class QueryEngine
         }
 
         watch.Stop();
+        outcome.Documents = units.Count - skipped;
         outcome.Examined = examined;
         outcome.Matched = Math.Min(matched, maxResults);
         outcome.Errors = errors;
@@ -133,6 +137,7 @@ internal static class QueryEngine
         bool needsModel,
         Action<QueryHit> emit,
         Action<Exception> fail,
+        Action skip,
         CancellationToken cancellationToken)
     {
         var document = unit.Document;
@@ -140,6 +145,14 @@ internal static class QueryEngine
 
         var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
         if (root is null) return 0;
+
+        // The name and path test already ran in ScopeResolver. This is the half that needs the
+        // tree, and it costs nothing here because the root had to be parsed anyway.
+        if (unit.FilterGenerated && GeneratedCode.IsGeneratedTree(root))
+        {
+            skip();
+            return 0;
+        }
 
         var text = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);
         var scopeRoot = unit.Restriction is TextSpan span ? root.FindNode(span, getInnermostNodeForTie: false) : root;
