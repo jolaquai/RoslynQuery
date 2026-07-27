@@ -238,8 +238,11 @@ internal sealed class PredicateEditorInput : IPredicateInput
 
         switch (e.Key)
         {
+            // Always handled. Left alone, Esc is the shell's "give focus back to the document"
+            // gesture, so dismissing a completion list threw the user out of the tool window.
             case Key.Escape:
-                if (active) { session.Dismiss(); e.Handled = true; }
+                if (active) session.Dismiss();
+                e.Handled = true;
                 break;
 
             // Every caret key must be marked handled even when it does nothing useful: an
