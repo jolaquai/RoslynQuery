@@ -19,14 +19,21 @@ namespace RoslynQuery.Query;
 /// <summary>A document to scan, optionally narrowed to one declaration's span.</summary>
 internal readonly struct ScopeUnit
 {
-    public ScopeUnit(Document document, TextSpan? restriction)
+    public ScopeUnit(Document document, TextSpan? restriction, bool filterGenerated)
     {
         Document = document;
         Restriction = restriction;
+        FilterGenerated = filterGenerated;
     }
 
     public Document Document { get; }
     public TextSpan? Restriction { get; }
+
+    /// <summary>
+    /// Whether the scan should still drop this document if the tree says it is generated. Only the
+    /// wide scopes set it: a document the user pointed the caret at gets scanned whatever it is.
+    /// </summary>
+    public bool FilterGenerated { get; }
 }
 
 internal sealed class ActiveContext
@@ -75,7 +82,7 @@ internal static class ScopeResolver
 
             case ScopeKind.Document:
                 if (document is null) return Array.Empty<ScopeUnit>();
-                return new[] { new ScopeUnit(document, null) };
+                return new[] { new ScopeUnit(document, null, filterGenerated: false) };
 
             case ScopeKind.ContainingMember:
             case ScopeKind.ContainingType:
@@ -104,14 +111,18 @@ internal static class ScopeResolver
             foreach (var document in project.Documents)
             {
                 if (!document.SupportsSyntaxTree) continue;
-                if (!includeGenerated && IsGenerated(document)) continue;
-                units.Add(new ScopeUnit(document, null));
+                if (!includeGenerated && GeneratedCode.IsGeneratedPath(document)) continue;
+
+                // The name and path are not enough on their own - an SDK AssemblyInfo carries only
+                // an auto-generated header - so the rest is left to the scan, where the tree is
+                // already parsed and the test is free.
+                units.Add(new ScopeUnit(document, null, filterGenerated: !includeGenerated));
             }
 
             if (!includeGenerated) continue;
 
             foreach (var generated in await project.GetSourceGeneratedDocumentsAsync(cancellationToken).ConfigureAwait(false))
-                units.Add(new ScopeUnit(generated, null));
+                units.Add(new ScopeUnit(generated, null, filterGenerated: false));
         }
 
         return units;
@@ -137,7 +148,7 @@ internal static class ScopeResolver
         if (reference is null) return null;
 
         var owner = document.Project.Solution.GetDocument(reference.SyntaxTree) ?? document;
-        return new ScopeUnit(owner, reference.Span);
+        return new ScopeUnit(owner, reference.Span, filterGenerated: false);
     }
 
     private static bool IsDeclarationSymbol(ISymbol symbol)
@@ -171,14 +182,5 @@ internal static class ScopeResolver
 
         var line = text.Lines[active.Line];
         return Math.Min(line.Start + Math.Max(0, active.Column), line.End);
-    }
-
-    private static bool IsGenerated(Document document)
-    {
-        var name = document.Name ?? string.Empty;
-        return name.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase)
-            || name.EndsWith(".g.i.cs", StringComparison.OrdinalIgnoreCase)
-            || name.EndsWith(".designer.cs", StringComparison.OrdinalIgnoreCase)
-            || name.EndsWith(".generated.cs", StringComparison.OrdinalIgnoreCase);
     }
 }
