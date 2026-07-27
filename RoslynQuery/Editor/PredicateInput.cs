@@ -182,21 +182,22 @@ internal sealed class PredicateEditorInput : IPredicateInput
                 session = null;
             }
 
+            if (session != null && !session.IsDismissed &&
+                !PredicateWord.At(point.Snapshot, point.Position).Equals(session.ApplicableToSpan.GetSpan(point.Snapshot).Span))
+            {
+                // ApplicableToSpan is fixed for the life of a session - IAsyncCompletionSessionOperations
+                // exposes a setter, but VS throws NotSupportedException on the second assignment. A
+                // session opened on `n` that must now cover `n.` has to be re-opened, not re-pointed.
+                session.Dismiss();
+                session = null;
+            }
+
             if (session is null || session.IsDismissed)
             {
                 // Only a fresh insertion or an explicit invoke should open a new list; backspacing
                 // past the trigger point must let the session stay closed.
                 if (reason != VsData.CompletionTriggerReason.Insertion && reason != VsData.CompletionTriggerReason.Invoke) return;
                 session = _broker.TriggerCompletion(_view, trigger, point, CancellationToken.None);
-            }
-            else if (session is IAsyncCompletionSessionOperations operations)
-            {
-                // The span a session commits over is fixed when it opens, and the editor's own
-                // command handler is what normally re-points it as the word grows or shrinks.
-                // Nothing does that here, so a session opened on `n` still commits over `n.`
-                // three keystrokes later and swallows everything in front of the item.
-                operations.ApplicableToSpan = point.Snapshot.CreateTrackingSpan(
-                    PredicateWord.At(point.Snapshot, point.Position), SpanTrackingMode.EdgeInclusive);
             }
 
             session?.OpenOrUpdate(trigger, point, CancellationToken.None);
