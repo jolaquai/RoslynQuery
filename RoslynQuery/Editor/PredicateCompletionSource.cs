@@ -51,12 +51,10 @@ internal sealed class PredicateCompletionSource : IAsyncCompletionSource
     public VsData.CompletionStartData InitializeCompletion(VsData.CompletionTrigger trigger, SnapshotPoint triggerLocation, CancellationToken token)
     {
         var snapshot = triggerLocation.Snapshot;
-        var start = triggerLocation.Position;
-        while (start > 0 && IsIdentifierChar(snapshot[start - 1])) start--;
 
         return new VsData.CompletionStartData(
             VsData.CompletionParticipation.ProvidesItems,
-            new SnapshotSpan(snapshot, Span.FromBounds(start, triggerLocation.Position)));
+            new SnapshotSpan(snapshot, PredicateWord.At(snapshot, triggerLocation.Position)));
     }
 
     public async Task<VsData.CompletionContext> GetCompletionContextAsync(
@@ -111,6 +109,4 @@ internal sealed class PredicateCompletionSource : IAsyncCompletionSource
                 return RoslynCompletion.CompletionTrigger.Invoke;
         }
     }
-
-    private static bool IsIdentifierChar(char c) => char.IsLetterOrDigit(c) || c == '_';
 }

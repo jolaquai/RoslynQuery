@@ -59,7 +59,7 @@ n is IdentifierNameSyntax id && model.GetSymbolInfo(id).Symbol is IMethodSymbol 
 | Ctrl+Space            | invoke completion                                                  |
 | Up / Down             | move through the completion list, otherwise move the caret         |
 | Tab                   | commit the completion item, otherwise leave the box                |
-| Esc                   | dismiss the completion list                                        |
+| Esc                   | dismiss the completion list, never leaves the box                  |
 | Double-click a result | open the file and select the match                                 |
 
 The predicate box is a real editor view, not a `TextBox`, and it is not wired into VS's command

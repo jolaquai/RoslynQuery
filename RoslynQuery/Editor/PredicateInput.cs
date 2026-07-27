@@ -174,12 +174,29 @@ internal sealed class PredicateEditorInput : IPredicateInput
             var trigger = new VsData.CompletionTrigger(reason, point.Snapshot, typed);
             var session = _broker.GetSession(_view);
 
+            // Anything that is not another identifier character ends the word the session was
+            // opened on, and the item list for `n.` has nothing to do with the one for `n`.
+            if (session != null && !session.IsDismissed && typed != '\0' && !PredicateWord.IsIdentifierChar(typed))
+            {
+                session.Dismiss();
+                session = null;
+            }
+
             if (session is null || session.IsDismissed)
             {
                 // Only a fresh insertion or an explicit invoke should open a new list; backspacing
                 // past the trigger point must let the session stay closed.
                 if (reason != VsData.CompletionTriggerReason.Insertion && reason != VsData.CompletionTriggerReason.Invoke) return;
                 session = _broker.TriggerCompletion(_view, trigger, point, CancellationToken.None);
+            }
+            else if (session is IAsyncCompletionSessionOperations operations)
+            {
+                // The span a session commits over is fixed when it opens, and the editor's own
+                // command handler is what normally re-points it as the word grows or shrinks.
+                // Nothing does that here, so a session opened on `n` still commits over `n.`
+                // three keystrokes later and swallows everything in front of the item.
+                operations.ApplicableToSpan = point.Snapshot.CreateTrackingSpan(
+                    PredicateWord.At(point.Snapshot, point.Position), SpanTrackingMode.EdgeInclusive);
             }
 
             session?.OpenOrUpdate(trigger, point, CancellationToken.None);
