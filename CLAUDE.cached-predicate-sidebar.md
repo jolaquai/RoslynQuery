@@ -23,11 +23,11 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 
 ## Status
 
-- **State:** not-started
-- **Current step:** 1 - Expose a cache snapshot from PredicateCompiler
+- **State:** in-progress
+- **Current step:** 2 - Add the sidebar's data model and refresh wiring
 - **Branch:** v0.2.0
 - **Base commit:** 9cda336701ac463742b3f737385aeeb6450f1bee
-- **Last synced commit:** (none yet - plan file not committed)
+- **Last synced commit:** (this commit)
 - **Last updated:** 2026-08-19
 
 ## Goal
@@ -73,7 +73,7 @@ The sidebar can collapse to zero width via a toggle button and can be resized by
 
 ## Steps
 
-### 1. Expose a cache snapshot from PredicateCompiler `[ ]`
+### 1. Expose a cache snapshot from PredicateCompiler `[x]`
 
 - **Files:** `RoslynQuery/Query/PredicateCompiler.cs`
 - **Do:** Add a public static method, placed near `CachedExpressionCount` (line 53):
@@ -259,7 +259,7 @@ The sidebar can collapse to zero width via a toggle button and can be resized by
 
 ## Deviations
 
-(none yet)
+- 2026-08-19 - HEAD had moved to `531ac19` by the time Step 1 executed (two commits landed after this plan's base: `27da1c4` "Key the predicate cache on normalized text, compile it as typed", `531ac19` "Rewrite directive error message"). Checked the diff: only `NormalizeBody` changed (now collapses all gaps, line breaks included, to a single space instead of preserving line breaks) and the directive error message text changed. Neither touches `Cache`/`CacheOrder`'s key shape or `Compile`'s call sites, so Step 1's `Snapshot()` addition was unaffected and applied as originally planned. Folded this reconciliation into Step 1's commit rather than a separate no-op commit.
 
 ## Open questions
 

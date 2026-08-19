@@ -52,6 +52,19 @@ internal static class PredicateCompiler
 
     public static int CachedExpressionCount => Cache.Count;
 
+    /// <summary>Cached predicates, most-recently-compiled first. Skips keys evicted since being enqueued.</summary>
+    public static IReadOnlyList<(TargetKind Kind, PredicateMode Mode, string Text)> Snapshot()
+    {
+        var order = CacheOrder.ToArray();
+        var result = new List<(TargetKind, PredicateMode, string)>(order.Length);
+        for (var i = order.Length - 1; i >= 0; i--)
+        {
+            var key = order[i];
+            if (Cache.ContainsKey(key)) result.Add(key);
+        }
+        return result;
+    }
+
     private static readonly Lazy<ImmutableArray<MetadataReference>> LazyReferences =
         new Lazy<ImmutableArray<MetadataReference>>(BuildReferences, LazyThreadSafetyMode.ExecutionAndPublication);
 
