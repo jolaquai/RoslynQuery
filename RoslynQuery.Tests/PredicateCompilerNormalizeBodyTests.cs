@@ -93,13 +93,24 @@ public class PredicateCompilerNormalizeBodyTests
     }
 
     [Fact]
-    public void NormalizeBody_KeepsLineBreaksAsLineBreaks()
+    public void NormalizeBody_CollapsesLineBreaks()
     {
+        // A line break is just another gap: reformatting a body must not leak a second assembly.
         var normalized = PredicateCompiler.NormalizeBody("var x = 1;\r\nreturn x > 0;");
 
-        Assert.Contains("\n", normalized);
+        Assert.DoesNotContain("\n", normalized);
         Assert.DoesNotContain("\r", normalized);
-        Assert.Equal(2, normalized.Split('\n').Length);
+    }
+
+    [Fact]
+    public void NormalizeBody_LineBreakOrSpace_ProducesOneKey()
+    {
+        var multiLine = PredicateCompiler.NormalizeBody(
+            "var node = n as MemberAccessExpressionSyntax;\r\nreturn node is not null;");
+        var singleLine = PredicateCompiler.NormalizeBody(
+            "var node = n as MemberAccessExpressionSyntax; return node is not null;");
+
+        Assert.Equal(multiLine, singleLine);
     }
 
     [Fact]

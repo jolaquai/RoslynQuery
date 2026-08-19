@@ -226,4 +226,30 @@ return count > 0;";
         Assert.Contains("col ", ex.Message);
         Assert.DoesNotContain("line ", ex.Message);
     }
+
+    [Fact]
+    public void Compile_ReformattedBody_SharesOneCacheEntry()
+    {
+        // Same tokens, different layout: one emitted assembly, not two. On net472 the second one
+        // would never be reclaimed.
+        var multiLine = PredicateCompiler.Compile(
+            TargetKind.SyntaxNode,
+            "var node = n as MemberAccessExpressionSyntax;\r\nreturn node is not null;");
+        var singleLine = PredicateCompiler.Compile(
+            TargetKind.SyntaxNode,
+            "var node = n as MemberAccessExpressionSyntax; return node is not null;");
+
+        Assert.Same(multiLine, singleLine);
+    }
+
+    [Fact]
+    public void Compile_BrokenBody_ReportsTheColumnAsTyped()
+    {
+        // The normalized key for this collapses to "return nope ;" (col 8). Reporting col 11 is
+        // what proves the diagnostic was mapped against the text the user actually typed.
+        var ex = Assert.Throws<PredicateCompilationException>(
+            () => PredicateCompiler.Compile(TargetKind.SyntaxNode, "var x   =   1;\r\nreturn    nope;"));
+
+        Assert.Contains("line 2, col 11", ex.Message);
+    }
 }

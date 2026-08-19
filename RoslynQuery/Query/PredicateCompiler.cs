@@ -154,10 +154,10 @@ internal static class PredicateCompiler
     /// heuristic being correct for whatever a body happens to contain.
     /// </summary>
     /// <remarks>
-    /// Still canonical, so dedup survives: a gap of any width collapses to one separator, meaning
-    /// "a+b" and "a  +  b" both land on "a + b". Comments are dropped; a gap that spanned a line
-    /// break stays a line break so emitted bodies remain readable and compiler diagnostics keep
-    /// pointing at the line the user wrote.
+    /// Every gap collapses to a single space, line breaks included, so reformatting a body cannot
+    /// leak a second assembly: "var x = 1;\nreturn x;" and "var x = 1; return x;" are one entry.
+    /// Comments are dropped for the same reason. This is a cache key and nothing else - what gets
+    /// compiled is the text as typed, so diagnostics still point at the real line and column.
     /// </remarks>
     public static string NormalizeBody(string body)
     {
@@ -168,19 +168,16 @@ internal static class PredicateCompiler
         try
         {
             var sb = new StringBuilder(body.Length);
-            var previousEnd = -1;
+            var first = true;
 
             foreach (var token in SyntaxFactory.ParseTokens(body, options: PredicateTemplate.ParseOptions))
             {
                 if (token.IsKind(SyntaxKind.EndOfFileToken)) continue;
                 if (token.Text.Length == 0) continue;
 
-                // The raw source between two tokens is exactly their trivia, so this decides
-                // newline-vs-space without depending on how Roslyn attaches that trivia.
-                if (previousEnd >= 0) sb.Append(body.IndexOf('\n', previousEnd, token.SpanStart - previousEnd) >= 0 ? '\n' : ' ');
-
+                if (!first) sb.Append(' ');
                 sb.Append(token.Text);
-                previousEnd = token.Span.End;
+                first = false;
             }
 
             return sb.ToString();
@@ -283,7 +280,10 @@ internal static class PredicateCompiler
         var key = (kind, mode, normalized);
         if (Cache.TryGetValue(key, out var cached)) return cached;
 
-        var source = PredicateTemplate.Build(kind, mode, normalized, out var offset);
+        // Built from the text as typed, not from the cache key: normalization exists to collapse
+        // formatting differences onto one entry, and compiling its output instead would report
+        // every diagnostic against a line and column the user never wrote.
+        var source = PredicateTemplate.Build(kind, mode, text, out var offset);
         var compilation = CSharpCompilation.Create(
             "RoslynQuery_Predicate_" + Guid.NewGuid().ToString("N"),
             [CSharpSyntaxTree.ParseText(SourceText.From(source), PredicateTemplate.ParseOptions)],
