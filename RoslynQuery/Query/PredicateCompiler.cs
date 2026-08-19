@@ -60,7 +60,8 @@ internal static class PredicateCompiler
         for (var i = order.Length - 1; i >= 0; i--)
         {
             var key = order[i];
-            if (Cache.ContainsKey(key)) result.Add(key);
+            if (Cache.ContainsKey(key))
+                result.Add(key);
         }
         return result;
     }
@@ -79,8 +80,10 @@ internal static class PredicateCompiler
 
         void Add(Assembly assembly)
         {
-            if (assembly is null || assembly.IsDynamic || string.IsNullOrEmpty(assembly.Location)) return;
-            if (seen.Add(assembly.GetName().Name)) builder.Add(MetadataReference.CreateFromFile(assembly.Location));
+            if (assembly is null || assembly.IsDynamic || string.IsNullOrEmpty(assembly.Location))
+                return;
+            if (seen.Add(assembly.GetName().Name))
+                builder.Add(MetadataReference.CreateFromFile(assembly.Location));
         }
 
         Add(typeof(object).Assembly);
@@ -90,7 +93,8 @@ internal static class PredicateCompiler
         Add(typeof(Regex).Assembly);
 
         var roslyn = new[] { typeof(SyntaxNode).Assembly, typeof(CSharpSyntaxNode).Assembly, typeof(Document).Assembly };
-        foreach (var assembly in roslyn) Add(assembly);
+        foreach (var assembly in roslyn)
+            Add(assembly);
 
         // Roslyn is compiled against netstandard2.0, so its public surface reaches System.Object and
         // System.Enum through the facade: without it even `n.IsKind(SyntaxKind.X)` fails CS0012.
@@ -99,7 +103,8 @@ internal static class PredicateCompiler
         // bind, and it stays correct if Roslyn's facade set ever changes.
         foreach (var name in roslyn.SelectMany(assembly => assembly.GetReferencedAssemblies()))
         {
-            try { Add(Assembly.Load(name)); }
+            try
+            { Add(Assembly.Load(name)); }
             catch (Exception) { }
         }
 
@@ -114,10 +119,12 @@ internal static class PredicateCompiler
     /// </summary>
     private static string Normalize(string expression)
     {
-        if (string.IsNullOrWhiteSpace(expression)) return string.Empty;
+        if (string.IsNullOrWhiteSpace(expression))
+            return string.Empty;
         // Defence in depth: Compile rejects directives before ever getting here, but this stays
         // correct if it is ever called on its own.
-        if (FindDirective(expression) != null) return expression;
+        if (FindDirective(expression) != null)
+            return expression;
 
         try
         {
@@ -126,11 +133,14 @@ internal static class PredicateCompiler
 
             foreach (var token in SyntaxFactory.ParseTokens(expression, options: PredicateTemplate.ParseOptions))
             {
-                if (token.IsKind(SyntaxKind.EndOfFileToken)) continue;
+                if (token.IsKind(SyntaxKind.EndOfFileToken))
+                    continue;
                 var text = token.Text;
-                if (text.Length == 0) continue;
+                if (text.Length == 0)
+                    continue;
 
-                if (previous != null && NeedsSpaceBetween(previous, text)) sb.Append(' ');
+                if (previous != null && NeedsSpaceBetween(previous, text))
+                    sb.Append(' ');
                 sb.Append(text);
                 previous = text;
             }
@@ -174,9 +184,11 @@ internal static class PredicateCompiler
     /// </remarks>
     public static string NormalizeBody(string body)
     {
-        if (string.IsNullOrWhiteSpace(body)) return string.Empty;
+        if (string.IsNullOrWhiteSpace(body))
+            return string.Empty;
         // Defence in depth, as in Normalize: Compile rejects directives before getting here.
-        if (FindDirective(body) != null) return body.Trim();
+        if (FindDirective(body) != null)
+            return body.Trim();
 
         try
         {
@@ -185,10 +197,13 @@ internal static class PredicateCompiler
 
             foreach (var token in SyntaxFactory.ParseTokens(body, options: PredicateTemplate.ParseOptions))
             {
-                if (token.IsKind(SyntaxKind.EndOfFileToken)) continue;
-                if (token.Text.Length == 0) continue;
+                if (token.IsKind(SyntaxKind.EndOfFileToken))
+                    continue;
+                if (token.Text.Length == 0)
+                    continue;
 
-                if (!first) sb.Append(' ');
+                if (!first)
+                    sb.Append(' ');
                 sb.Append(token.Text);
                 first = false;
             }
@@ -211,7 +226,8 @@ internal static class PredicateCompiler
     /// </remarks>
     private static string FindDirective(string text)
     {
-        if (string.IsNullOrEmpty(text) || text.IndexOf('#') < 0) return null;
+        if (string.IsNullOrEmpty(text) || text.IndexOf('#') < 0)
+            return null;
 
         try
         {
@@ -219,12 +235,14 @@ internal static class PredicateCompiler
             {
                 foreach (var trivia in token.LeadingTrivia)
                 {
-                    if (trivia.IsDirective) return FirstLine(trivia.ToString());
+                    if (trivia.IsDirective)
+                        return FirstLine(trivia.ToString());
                 }
 
                 foreach (var trivia in token.TrailingTrivia)
                 {
-                    if (trivia.IsDirective) return FirstLine(trivia.ToString());
+                    if (trivia.IsDirective)
+                        return FirstLine(trivia.ToString());
                 }
             }
 
@@ -264,7 +282,8 @@ internal static class PredicateCompiler
     /// </remarks>
     public static PredicateMode DetectMode(string text)
     {
-        if (string.IsNullOrWhiteSpace(text)) return PredicateMode.Expression;
+        if (string.IsNullOrWhiteSpace(text))
+            return PredicateMode.Expression;
 
         var expression = SyntaxFactory.ParseExpression(text, options: PredicateTemplate.ParseOptions);
         var complete = !expression.ContainsDiagnostics && text.Substring(expression.FullSpan.End).Trim().Length == 0;
@@ -284,18 +303,20 @@ internal static class PredicateCompiler
     /// </remarks>
     public static PredicateMode CompletionMode(string text)
     {
-        if (DetectMode(text) == PredicateMode.Expression) return PredicateMode.Expression;
+        if (DetectMode(text) == PredicateMode.Expression)
+            return PredicateMode.Expression;
         return ParsesAsStatements(text) ? PredicateMode.Body : PredicateMode.Expression;
     }
 
     private static bool ParsesAsStatements(string text)
     {
-        if (string.IsNullOrWhiteSpace(text)) return false;
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
 
         try
         {
             // Wrapped in a block so a bare statement list is a legal parse unit on its own.
-            var block = SyntaxFactory.ParseStatement("{" + text + "}", options: PredicateTemplate.ParseOptions);
+            var block = SyntaxFactory.ParseStatement(string.Concat("{", text, "}"), options: PredicateTemplate.ParseOptions);
             return !block.ContainsDiagnostics;
         }
         catch (Exception)
@@ -323,7 +344,8 @@ internal static class PredicateCompiler
 
         var normalized = mode == PredicateMode.Body ? NormalizeBody(text) : Normalize(text);
         var key = (kind, mode, normalized);
-        if (Cache.TryGetValue(key, out var cached)) return cached;
+        if (Cache.TryGetValue(key, out var cached))
+            return cached;
 
         // Built from the text as typed, not from the cache key: normalization exists to collapse
         // formatting differences onto one entry, and compiling its output instead would report
@@ -338,7 +360,8 @@ internal static class PredicateCompiler
         using (var stream = new MemoryStream())
         {
             var result = compilation.Emit(stream);
-            if (!result.Success) throw new PredicateCompilationException(Describe(result.Diagnostics, source, offset), result.Diagnostics);
+            if (!result.Success)
+                throw new PredicateCompilationException(Describe(result.Diagnostics, source, offset), result.Diagnostics);
 
             var bytes = stream.ToArray();
             Interlocked.Add(ref _totalEmittedBytes, bytes.Length);
@@ -347,7 +370,8 @@ internal static class PredicateCompiler
             var @delegate = Cache.GetOrAdd(key, method.CreateDelegate(DelegateType(kind)));
             CacheOrder.Enqueue(key);
 
-            while (Cache.Count > MaxCachedExpressions && CacheOrder.TryDequeue(out var oldest)) Cache.TryRemove(oldest, out _);
+            while (Cache.Count > MaxCachedExpressions && CacheOrder.TryDequeue(out var oldest))
+                Cache.TryRemove(oldest, out _);
 
             return @delegate;
         }
@@ -361,7 +385,8 @@ internal static class PredicateCompiler
 
         foreach (var diagnostic in diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Take(3))
         {
-            if (sb.Length > 0) sb.Append("  |  ");
+            if (sb.Length > 0)
+                sb.Append("  |  ");
 
             var start = diagnostic.Location.SourceSpan.Start;
             if (start >= offset && start <= text.Length)
@@ -371,7 +396,8 @@ internal static class PredicateCompiler
                 var position = text.Lines.GetLinePosition(start);
                 var line = position.Line - origin.Line;
 
-                if (line > 0) sb.Append("line ").Append(line + 1).Append(", ");
+                if (line > 0)
+                    sb.Append("line ").Append(line + 1).Append(", ");
                 sb.Append("col ").Append((line == 0 ? position.Character - origin.Character : position.Character) + 1).Append(": ");
             }
 

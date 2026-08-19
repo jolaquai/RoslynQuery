@@ -47,6 +47,54 @@ public class PredicateModeDetectionTests
         Assert.Equal(PredicateMode.Expression, PredicateCompiler.DetectMode(text));
 }
 
+// CompletionMode exists because DetectMode answers "not a complete expression" with Body, and text
+// being typed is never a complete expression - so scaffolding completions off DetectMode put every
+// keystroke of an expression predicate in a statement body, and committing an item then ate the
+// character in front of the word.
+public class PredicateCompletionModeTests
+{
+    [Theory]
+    // The regression case: each of these is a prefix of "n.IsKind(SyntaxKind.IfStatement)" as it is
+    // typed, and DetectMode calls every one of them a body.
+    [InlineData("n.IsKind(SyntaxKind")]
+    [InlineData("n.IsKind(SyntaxKind.")]
+    [InlineData("n.IsKind(SyntaxKind.If")]
+    [InlineData("n.")]
+    [InlineData("n.Parent.")]
+    [InlineData("n is object &&")]
+    public void CompletionMode_PartiallyTypedExpression_IsExpression(string text) =>
+        Assert.Equal(PredicateMode.Expression, PredicateCompiler.CompletionMode(text));
+
+    [Theory]
+    [InlineData("n != null")]
+    [InlineData("n.IsKind(SyntaxKind.IfStatement)")]
+    [InlineData("n.ChildNodes().Any(c => { return c != null; })")]
+    public void CompletionMode_CompleteExpression_IsExpression(string text) =>
+        Assert.Equal(PredicateMode.Expression, PredicateCompiler.CompletionMode(text));
+
+    [Theory]
+    [InlineData("return true;")]
+    [InlineData("var x = 1; return x > 0;")]
+    [InlineData("if (n == null) return false; return true;")]
+    [InlineData("throw new Exception();")]
+    public void CompletionMode_RealBody_IsBody(string text) =>
+        Assert.Equal(PredicateMode.Body, PredicateCompiler.CompletionMode(text));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void CompletionMode_Empty_IsExpression(string text) =>
+        Assert.Equal(PredicateMode.Expression, PredicateCompiler.CompletionMode(text));
+
+    [Theory]
+    [InlineData("n != null")]
+    [InlineData("return true;")]
+    [InlineData("var x = 1; return x > 0;")]
+    public void CompletionMode_AgreesWithDetectMode_OnceTextIsComplete(string text) =>
+        Assert.Equal(PredicateCompiler.DetectMode(text), PredicateCompiler.CompletionMode(text));
+}
+
 public class PredicateTemplateBodyModeTests
 {
     public static TheoryData<int> AllKinds => new TheoryData<int>
