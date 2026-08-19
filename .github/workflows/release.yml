@@ -33,6 +33,12 @@ jobs:
       - name: Restore
         run: msbuild RoslynQuery/RoslynQuery.csproj -t:Restore -p:Configuration=Release
 
+      # Runs before the VSIX build so a broken predicate emitter/normalizer fails fast instead of
+      # spending time packaging a VSIX. dotnet test restores and builds RoslynQuery.Tests (and its
+      # ProjectReference to RoslynQuery) on its own; separate from the msbuild restore above.
+      - name: Test
+        run: dotnet test RoslynQuery.Tests/RoslynQuery.Tests.csproj -c Release
+
       - name: Build
         run: msbuild RoslynQuery/RoslynQuery.csproj -t:Rebuild -p:Configuration=Release -p:DeployExtension=false
 
