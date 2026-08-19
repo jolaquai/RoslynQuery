@@ -231,7 +231,7 @@ internal static class PredicateCompiler
     private static string FirstLine(string text)
     {
         var trimmed = text.Trim();
-        var newline = trimmed.IndexOfAny(new[] { '\r', '\n' });
+        var newline = trimmed.IndexOfAny(['\r', '\n']);
         return newline < 0 ? trimmed : trimmed.Substring(0, newline);
     }
 
@@ -265,7 +265,7 @@ internal static class PredicateCompiler
         var source = PredicateTemplate.Build(kind, normalized, out var offset);
         var compilation = CSharpCompilation.Create(
             "RoslynQuery_Predicate_" + Guid.NewGuid().ToString("N"),
-            new[] { CSharpSyntaxTree.ParseText(SourceText.From(source), PredicateTemplate.ParseOptions) },
+            [CSharpSyntaxTree.ParseText(SourceText.From(source), PredicateTemplate.ParseOptions)],
             References,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optimizationLevel: OptimizationLevel.Release, allowUnsafe: true));
 
