@@ -42,8 +42,8 @@ internal static class PredicateCompiler
     // lifetime; the cap below only bounds *this* dictionary against pathological input (e.g.
     // programmatically generated expressions with embedded GUIDs), not the underlying leak.
     private const int MaxCachedExpressions = 512;
-    private static readonly ConcurrentDictionary<(TargetKind, string), Delegate> Cache = new ConcurrentDictionary<(TargetKind, string), Delegate>();
-    private static readonly ConcurrentQueue<(TargetKind, string)> CacheOrder = new ConcurrentQueue<(TargetKind, string)>();
+    private static readonly ConcurrentDictionary<(TargetKind, PredicateMode, string), Delegate> Cache = new ConcurrentDictionary<(TargetKind, PredicateMode, string), Delegate>();
+    private static readonly ConcurrentQueue<(TargetKind, PredicateMode, string)> CacheOrder = new ConcurrentQueue<(TargetKind, PredicateMode, string)>();
     private static long _totalEmittedBytes;
 
     /// <summary>Sum of raw PE image bytes handed to <see cref="Assembly.Load(byte[])"/> so far, including
@@ -243,14 +243,35 @@ internal static class PredicateCompiler
         _ => throw new ArgumentOutOfRangeException(nameof(kind))
     };
 
-    public static Delegate Compile(TargetKind kind, string expression)
+    /// <summary>
+    /// Whether <paramref name="text"/> is a single complete expression or a statement body.
+    /// </summary>
+    /// <remarks>
+    /// Asks the parser rather than scanning for a "return" token, which gets both directions wrong:
+    /// a lambda block body puts a return inside what is still one expression
+    /// ("xs.Any(c => { return c != null; })"), and a body that throws has no return at all. The
+    /// answer is unambiguous by construction, since expression is tested first.
+    /// </remarks>
+    public static PredicateMode DetectMode(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return PredicateMode.Expression;
+
+        var expression = SyntaxFactory.ParseExpression(text, options: PredicateTemplate.ParseOptions);
+        var complete = !expression.ContainsDiagnostics && text.Substring(expression.FullSpan.End).Trim().Length == 0;
+
+        return complete ? PredicateMode.Expression : PredicateMode.Body;
+    }
+
+    public static Delegate Compile(TargetKind kind, string text) => Compile(kind, DetectMode(text), text);
+
+    public static Delegate Compile(TargetKind kind, PredicateMode mode, string text)
     {
         // Rejected outright rather than normalized or passed through. ParseTokens evaluates
         // directives against ParseOptions, which defines no preprocessor symbols, so
         // "#if DEBUG a #else b #endif" collapses to "b" with the other branch gone before anything
         // downstream can see it. Compiling half of what was written, silently, is worse than
         // saying the construct is unsupported.
-        var directive = FindDirective(expression);
+        var directive = FindDirective(text);
         if (directive != null)
         {
             throw new PredicateCompilationException(
@@ -258,11 +279,11 @@ internal static class PredicateCompiler
                 []);
         }
 
-        var normalized = Normalize(expression);
-        var key = (kind, normalized);
+        var normalized = mode == PredicateMode.Body ? NormalizeBody(text) : Normalize(text);
+        var key = (kind, mode, normalized);
         if (Cache.TryGetValue(key, out var cached)) return cached;
 
-        var source = PredicateTemplate.Build(kind, normalized, out var offset);
+        var source = PredicateTemplate.Build(kind, mode, normalized, out var offset);
         var compilation = CSharpCompilation.Create(
             "RoslynQuery_Predicate_" + Guid.NewGuid().ToString("N"),
             [CSharpSyntaxTree.ParseText(SourceText.From(source), PredicateTemplate.ParseOptions)],
@@ -290,6 +311,7 @@ internal static class PredicateCompiler
     private static string Describe(ImmutableArray<Diagnostic> diagnostics, string source, int offset)
     {
         var text = SourceText.From(source);
+        var origin = text.Lines.GetLinePosition(offset);
         var sb = new StringBuilder();
 
         foreach (var diagnostic in diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Take(3))
@@ -297,7 +319,17 @@ internal static class PredicateCompiler
             if (sb.Length > 0) sb.Append("  |  ");
 
             var start = diagnostic.Location.SourceSpan.Start;
-            if (start >= offset && start <= text.Length) sb.Append("col ").Append(start - offset + 1).Append(": ");
+            if (start >= offset && start <= text.Length)
+            {
+                // Only the first emitted line carries the template's prefix, so every later line
+                // maps straight across. A one-line predicate keeps reporting a bare column.
+                var position = text.Lines.GetLinePosition(start);
+                var line = position.Line - origin.Line;
+
+                if (line > 0) sb.Append("line ").Append(line + 1).Append(", ");
+                sb.Append("col ").Append((line == 0 ? position.Character - origin.Character : position.Character) + 1).Append(": ");
+            }
+
             sb.Append(diagnostic.Id).Append(": ").Append(diagnostic.GetMessage());
         }
 
