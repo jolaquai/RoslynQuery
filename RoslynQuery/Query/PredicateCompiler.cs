@@ -102,6 +102,9 @@ internal static class PredicateCompiler
     private static string Normalize(string expression)
     {
         if (string.IsNullOrWhiteSpace(expression)) return string.Empty;
+        // Defence in depth: Compile rejects directives before ever getting here, but this stays
+        // correct if it is ever called on its own.
+        if (FindDirective(expression) != null) return expression;
 
         try
         {
@@ -142,6 +145,50 @@ internal static class PredicateCompiler
         return (IsIdentChar(a) && IsIdentChar(b)) || (IsOpChar(a) && IsOpChar(b));
     }
 
+    /// <summary>The text of the first real preprocessor directive in <paramref name="text"/>, or null if it has none.</summary>
+    /// <remarks>
+    /// Lexer-based rather than textual, because the answer decides whether input is rejected: a
+    /// "#if" inside a string literal is part of a token, and one inside a comment is comment
+    /// trivia. Neither is a directive and neither is reported here - only trivia the lexer itself
+    /// classified as a directive counts. The '#' pre-check keeps the ordinary case to one scan
+    /// with no lexing at all.
+    /// </remarks>
+    private static string FindDirective(string text)
+    {
+        if (string.IsNullOrEmpty(text) || text.IndexOf('#') < 0) return null;
+
+        try
+        {
+            foreach (var token in SyntaxFactory.ParseTokens(text, options: PredicateTemplate.ParseOptions))
+            {
+                foreach (var trivia in token.LeadingTrivia)
+                {
+                    if (trivia.IsDirective) return FirstLine(trivia.ToString());
+                }
+
+                foreach (var trivia in token.TrailingTrivia)
+                {
+                    if (trivia.IsDirective) return FirstLine(trivia.ToString());
+                }
+            }
+
+            return null;
+        }
+        catch (Exception)
+        {
+            // Carries a '#' but will not even tokenize: refuse rather than normalize a directive
+            // that went unseen.
+            return "#";
+        }
+    }
+
+    private static string FirstLine(string text)
+    {
+        var trimmed = text.Trim();
+        var newline = trimmed.IndexOfAny(new[] { '\r', '\n' });
+        return newline < 0 ? trimmed : trimmed.Substring(0, newline);
+    }
+
     public static Type DelegateType(TargetKind kind) => kind switch
     {
         TargetKind.SyntaxNode => typeof(NodeMatch),
@@ -152,6 +199,19 @@ internal static class PredicateCompiler
 
     public static Delegate Compile(TargetKind kind, string expression)
     {
+        // Rejected outright rather than normalized or passed through. ParseTokens evaluates
+        // directives against ParseOptions, which defines no preprocessor symbols, so
+        // "#if DEBUG a #else b #endif" collapses to "b" with the other branch gone before anything
+        // downstream can see it. Compiling half of what was written, silently, is worse than
+        // saying the construct is unsupported.
+        var directive = FindDirective(expression);
+        if (directive != null)
+        {
+            throw new PredicateCompilationException(
+                $"Preprocessor directives are not supported here: found '{directive}'.",
+                ImmutableArray<Diagnostic>.Empty);
+        }
+
         var normalized = Normalize(expression);
         var key = (kind, normalized);
         if (Cache.TryGetValue(key, out var cached)) return cached;
