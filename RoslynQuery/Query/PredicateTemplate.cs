@@ -51,7 +51,11 @@ internal static class PredicateTemplate
     public static string Signature(TargetKind kind) => $"bool ({ParameterType(kind)} {ParameterName(kind)}, SemanticModel model, Document doc)";
 
     /// <summary>Returns the full source and the offset at which <paramref name="expression"/> starts.</summary>
-    public static string Build(TargetKind kind, string expression, out int expressionOffset)
+    public static string Build(TargetKind kind, string expression, out int expressionOffset) =>
+        Build(kind, PredicateMode.Expression, expression, out expressionOffset);
+
+    /// <summary>Returns the full source and the offset at which <paramref name="text"/> starts.</summary>
+    public static string Build(TargetKind kind, PredicateMode mode, string text, out int textOffset)
     {
         using var sw = new StringWriter();
         using (var itw = new IndentedTextWriter(sw))
@@ -70,12 +74,26 @@ internal static class PredicateTemplate
                 itw.Write(", SemanticModel model, Document doc)");
                 using (itw.Scope())
                 {
-                    itw.Write("return ");
+                    // Write() before capturing the offset either way: IndentedTextWriter emits the
+                    // pending indent on the next write, so the offset would otherwise land on the
+                    // indent rather than on the user's first character.
+                    itw.Write(mode == PredicateMode.Body ? string.Empty : "return ");
                     itw.Flush();
                     sw.Flush();
-                    expressionOffset = sw.GetStringBuilder().Length;
-                    itw.WriteLine(string.IsNullOrWhiteSpace(expression) ? "true" : expression);
-                    itw.WriteLine(';');
+                    textOffset = sw.GetStringBuilder().Length;
+
+                    if (mode == PredicateMode.Body)
+                    {
+                        // Emitted verbatim: only the first line picks up the indent, which is
+                        // cosmetic, and keeping the rest byte-identical is what lets Describe map a
+                        // diagnostic back to the line and column the user actually typed.
+                        itw.WriteLine(string.IsNullOrWhiteSpace(text) ? "return true;" : text);
+                    }
+                    else
+                    {
+                        itw.WriteLine(string.IsNullOrWhiteSpace(text) ? "true" : text);
+                        itw.WriteLine(';');
+                    }
                 }
             }
         }
