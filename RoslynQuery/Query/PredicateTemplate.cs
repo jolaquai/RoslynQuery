@@ -24,7 +24,8 @@ internal static class PredicateTemplate
         using System.Linq;
         using System.Text;
         using System.Text.RegularExpressions;
-        
+        using System.Threading.Tasks;
+
         using Microsoft.CodeAnalysis;
         using Microsoft.CodeAnalysis.CSharp;
         using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -48,7 +49,7 @@ internal static class PredicateTemplate
         _ => throw new ArgumentOutOfRangeException(nameof(kind))
     };
 
-    public static string Signature(TargetKind kind) => $"bool ({ParameterType(kind)} {ParameterName(kind)}, SemanticModel model, Document doc)";
+    public static string Signature(TargetKind kind) => $"async ValueTask<bool> ({ParameterType(kind)} {ParameterName(kind)}, SemanticModel model, Document doc)";
 
     /// <summary>Returns the full source and the offset at which <paramref name="expression"/> starts.</summary>
     public static string Build(TargetKind kind, string expression, out int expressionOffset) =>
@@ -61,11 +62,16 @@ internal static class PredicateTemplate
         using (var itw = new IndentedTextWriter(sw))
         {
             itw.WriteLine(Usings);
+
+            // Awaiting is opt-in, so most predicates never do; without this every one of them would
+            // report CS1998 as a compile error the user did not cause.
+            itw.WriteLine("#pragma warning disable CS1998");
+
             itw.Write("public static class ");
             itw.WriteLine(ClassName);
             using (itw.Scope())
             {
-                itw.Write("public static bool ");
+                itw.Write("public static async ValueTask<bool> ");
                 itw.Write(MethodName);
                 itw.Write("(");
                 itw.Write(ParameterType(kind));

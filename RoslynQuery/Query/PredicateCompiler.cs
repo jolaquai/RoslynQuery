@@ -8,6 +8,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Tasks;
 
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -15,9 +16,12 @@ using Microsoft.CodeAnalysis.Text;
 
 namespace RoslynQuery.Query;
 
-internal delegate bool NodeMatch(SyntaxNode n, SemanticModel model, Document doc);
-internal delegate bool TokenMatch(SyntaxToken t, SemanticModel model, Document doc);
-internal delegate bool OperationMatch(IOperation op, SemanticModel model, Document doc);
+// ValueTask rather than Task: a predicate that never awaits completes synchronously, and at the
+// hundreds of thousands of invocations a wide run makes, one heap allocation per call would not be
+// affordable. Each returned value is awaited exactly once, at its single call site in QueryEngine.
+internal delegate ValueTask<bool> NodeMatch(SyntaxNode n, SemanticModel model, Document doc);
+internal delegate ValueTask<bool> TokenMatch(SyntaxToken t, SemanticModel model, Document doc);
+internal delegate ValueTask<bool> OperationMatch(IOperation op, SemanticModel model, Document doc);
 
 internal sealed class PredicateCompilationException : Exception
 {

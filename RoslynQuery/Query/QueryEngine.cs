@@ -161,26 +161,25 @@ internal static class QueryEngine
         if (needsModel && document.SupportsSemanticModel)
             model = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
 
-        var local = 0;
         switch (target)
         {
             case TargetKind.SyntaxNode:
-                ScanNodes(scopeRoot, model, document, text, (NodeMatch)predicate, emit, fail, ref local, cancellationToken);
-                break;
+                return await ScanNodesAsync(scopeRoot, model, document, text, (NodeMatch)predicate, emit, fail, cancellationToken).ConfigureAwait(false);
             case TargetKind.SyntaxToken:
-                ScanTokens(scopeRoot, model, document, text, (TokenMatch)predicate, emit, fail, ref local, cancellationToken);
-                break;
+                return await ScanTokensAsync(scopeRoot, model, document, text, (TokenMatch)predicate, emit, fail, cancellationToken).ConfigureAwait(false);
             case TargetKind.Operation:
-                if (model != null) ScanOperations(scopeRoot, model, document, text, (OperationMatch)predicate, emit, fail, ref local, cancellationToken);
-                break;
+                if (model is null) return 0;
+                return await ScanOperationsAsync(scopeRoot, model, document, text, (OperationMatch)predicate, emit, fail, cancellationToken).ConfigureAwait(false);
+            default:
+                return 0;
         }
-
-        return local;
     }
 
-    private static void ScanNodes(
+    // The scan methods return their count rather than taking `ref int examined`: an async method
+    // cannot have a ref parameter (CS1988).
+    private static async Task<int> ScanNodesAsync(
         SyntaxNode scopeRoot, SemanticModel model, Document document, SourceText text,
-        NodeMatch match, Action<QueryHit> emit, Action<Exception> fail, ref int examined, CancellationToken cancellationToken)
+        NodeMatch match, Action<QueryHit> emit, Action<Exception> fail, CancellationToken cancellationToken)
     {
         var count = 0;
         foreach (var node in scopeRoot.DescendantNodesAndSelf())
@@ -189,18 +188,18 @@ internal static class QueryEngine
             count++;
 
             bool hit;
-            try { hit = match(node, model, document); }
+            try { hit = await match(node, model, document).ConfigureAwait(false); }
             catch (Exception ex) { fail(ex); continue; }
 
             if (hit) emit(QueryHit.Create(document, text, node.Span, node.Kind().ToString(), TargetKind.SyntaxNode));
         }
 
-        examined += count;
+        return count;
     }
 
-    private static void ScanTokens(
+    private static async Task<int> ScanTokensAsync(
         SyntaxNode scopeRoot, SemanticModel model, Document document, SourceText text,
-        TokenMatch match, Action<QueryHit> emit, Action<Exception> fail, ref int examined, CancellationToken cancellationToken)
+        TokenMatch match, Action<QueryHit> emit, Action<Exception> fail, CancellationToken cancellationToken)
     {
         var count = 0;
         foreach (var token in scopeRoot.DescendantTokens())
@@ -209,18 +208,18 @@ internal static class QueryEngine
             count++;
 
             bool hit;
-            try { hit = match(token, model, document); }
+            try { hit = await match(token, model, document).ConfigureAwait(false); }
             catch (Exception ex) { fail(ex); continue; }
 
             if (hit) emit(QueryHit.Create(document, text, token.Span, token.Kind().ToString(), TargetKind.SyntaxToken));
         }
 
-        examined += count;
+        return count;
     }
 
-    private static void ScanOperations(
+    private static async Task<int> ScanOperationsAsync(
         SyntaxNode scopeRoot, SemanticModel model, Document document, SourceText text,
-        OperationMatch match, Action<QueryHit> emit, Action<Exception> fail, ref int examined, CancellationToken cancellationToken)
+        OperationMatch match, Action<QueryHit> emit, Action<Exception> fail, CancellationToken cancellationToken)
     {
         var count = 0;
         var stack = new Stack<IOperation>();
@@ -245,13 +244,13 @@ internal static class QueryEngine
                 foreach (var child in operation.ChildOperations) stack.Push(child);
 
                 bool hit;
-                try { hit = match(operation, model, document); }
+                try { hit = await match(operation, model, document).ConfigureAwait(false); }
                 catch (Exception ex) { fail(ex); continue; }
 
                 if (hit) emit(QueryHit.Create(document, text, operation.Syntax.Span, operation.Kind.ToString(), TargetKind.Operation));
             }
         }
 
-        examined += count;
+        return count;
     }
 }
