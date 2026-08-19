@@ -23,7 +23,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # VSIX projects (Microsoft.VSSDK.BuildTools) need full MSBuild from
       # Visual Studio, not the `dotnet` CLI.
@@ -66,7 +66,7 @@ jobs:
           Write-Host "VSIX payload is clean."
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: vsix
           path: artifacts/*.vsix
@@ -89,10 +89,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download build artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: vsix
           path: artifacts
