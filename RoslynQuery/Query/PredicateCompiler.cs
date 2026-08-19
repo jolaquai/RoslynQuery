@@ -272,6 +272,38 @@ internal static class PredicateCompiler
         return complete ? PredicateMode.Expression : PredicateMode.Body;
     }
 
+    /// <summary>
+    /// The mode completions should be scaffolded in, for text that is still being typed.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="DetectMode"/> is right for compiling finished text but wrong here: it answers
+    /// "not a complete expression" with Body, and text mid-token is never a complete expression, so
+    /// every keystroke of an expression predicate would scaffold as a statement body and complete
+    /// against the wrong context. Body is therefore only assumed when the text actually parses as
+    /// statements; anything still broken is treated as an expression in progress.
+    /// </remarks>
+    public static PredicateMode CompletionMode(string text)
+    {
+        if (DetectMode(text) == PredicateMode.Expression) return PredicateMode.Expression;
+        return ParsesAsStatements(text) ? PredicateMode.Body : PredicateMode.Expression;
+    }
+
+    private static bool ParsesAsStatements(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
+
+        try
+        {
+            // Wrapped in a block so a bare statement list is a legal parse unit on its own.
+            var block = SyntaxFactory.ParseStatement("{" + text + "}", options: PredicateTemplate.ParseOptions);
+            return !block.ContainsDiagnostics;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     public static Delegate Compile(TargetKind kind, string text) => Compile(kind, DetectMode(text), text);
 
     public static Delegate Compile(TargetKind kind, PredicateMode mode, string text)
