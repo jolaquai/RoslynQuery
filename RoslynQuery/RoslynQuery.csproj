@@ -27,6 +27,10 @@
   <Target Name="GetVsixVersion" Returns="$(Version)" />
 
   <ItemGroup>
+    <InternalsVisibleTo Include="RoslynQuery.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectCapability Include="CreateVsixContainer" />
 
     <VSCTCompile Include="RoslynQueryPackage.vsct">
