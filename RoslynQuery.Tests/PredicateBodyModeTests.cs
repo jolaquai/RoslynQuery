@@ -199,7 +199,7 @@ return count > 0;";
 
         var match = (NodeMatch)PredicateCompiler.Compile(TargetKind.SyntaxNode, body);
 
-        Assert.True(match(node, model, doc));
+        Assert.True(await match(node, model, doc));
     }
 
     [Fact]
@@ -211,7 +211,7 @@ return count > 0;";
 
         var match = (NodeMatch)PredicateCompiler.Compile(TargetKind.SyntaxNode, body);
 
-        Assert.True(match(node, model, doc));
+        Assert.True(await match(node, model, doc));
     }
 
     [Fact]
@@ -221,7 +221,7 @@ return count > 0;";
 
         var match = (NodeMatch)PredicateCompiler.Compile(TargetKind.SyntaxNode, "var x = 1;\r\nreturn x < 0;");
 
-        Assert.False(match(node, model, doc));
+        Assert.False(await match(node, model, doc));
     }
 
     [Fact]
@@ -233,7 +233,7 @@ return count > 0;";
         // compile because an expression is not a statement.
         var match = (NodeMatch)PredicateCompiler.Compile(TargetKind.SyntaxNode, "n.ChildNodes().Any(c => { return c != null; })");
 
-        Assert.True(match(node, model, doc));
+        Assert.True(await match(node, model, doc));
     }
 
     [Fact]

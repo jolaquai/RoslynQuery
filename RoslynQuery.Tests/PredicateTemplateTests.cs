@@ -39,9 +39,9 @@ public class PredicateTemplateParameterTests
         Assert.Throws<ArgumentOutOfRangeException>(() => PredicateTemplate.ParameterType((TargetKind)(-1)));
 
     [Theory]
-    [InlineData((int)TargetKind.SyntaxNode, "bool (SyntaxNode n, SemanticModel model, Document doc)")]
-    [InlineData((int)TargetKind.SyntaxToken, "bool (SyntaxToken t, SemanticModel model, Document doc)")]
-    [InlineData((int)TargetKind.Operation, "bool (IOperation op, SemanticModel model, Document doc)")]
+    [InlineData((int)TargetKind.SyntaxNode, "async ValueTask<bool> (SyntaxNode n, SemanticModel model, Document doc)")]
+    [InlineData((int)TargetKind.SyntaxToken, "async ValueTask<bool> (SyntaxToken t, SemanticModel model, Document doc)")]
+    [InlineData((int)TargetKind.Operation, "async ValueTask<bool> (IOperation op, SemanticModel model, Document doc)")]
     public void Signature_ReturnsExpected(int kind, string expected) =>
         Assert.Equal(expected, PredicateTemplate.Signature((TargetKind)kind));
 }
@@ -64,7 +64,7 @@ public class PredicateTemplateBuildTests
 
         Assert.Contains($"public static class {PredicateTemplate.ClassName}", source);
         Assert.Contains(
-            $"public static bool {PredicateTemplate.MethodName}({PredicateTemplate.ParameterType(kind)} {PredicateTemplate.ParameterName(kind)}, SemanticModel model, Document doc)",
+            $"public static async ValueTask<bool> {PredicateTemplate.MethodName}({PredicateTemplate.ParameterType(kind)} {PredicateTemplate.ParameterName(kind)}, SemanticModel model, Document doc)",
             source);
     }
 
@@ -77,7 +77,7 @@ public class PredicateTemplateBuildTests
         foreach (var ns in new[]
                  {
                      "System", "System.Collections.Generic", "System.Collections.Immutable", "System.Linq",
-                     "System.Text", "System.Text.RegularExpressions", "Microsoft.CodeAnalysis",
+                     "System.Text", "System.Text.RegularExpressions", "System.Threading.Tasks", "Microsoft.CodeAnalysis",
                      "Microsoft.CodeAnalysis.CSharp", "Microsoft.CodeAnalysis.CSharp.Syntax",
                      "Microsoft.CodeAnalysis.Operations", "Microsoft.CodeAnalysis.Text",
                  })
