@@ -34,10 +34,21 @@ jobs:
         run: msbuild RoslynQuery/RoslynQuery.csproj -t:Restore -p:Configuration=Release
 
       # Runs before the VSIX build so a broken predicate emitter/normalizer fails fast instead of
-      # spending time packaging a VSIX. dotnet test restores and builds RoslynQuery.Tests (and its
+      # spending time packaging a VSIX. This restores and builds RoslynQuery.Tests (and its
       # ProjectReference to RoslynQuery) on its own; separate from the msbuild restore above.
+      - name: Build tests
+        run: dotnet build RoslynQuery.Tests/RoslynQuery.Tests.csproj -c Release
+
+      # xunit.v3 on Microsoft.Testing.Platform emits a self-contained runner, so the exe is invoked
+      # directly. That skips the `dotnet test` bridge entirely, which the .NET 10 SDK no longer
+      # supports without an opt-in, and makes the runner's own exit code the step's result.
       - name: Test
-        run: dotnet test RoslynQuery.Tests/RoslynQuery.Tests.csproj -c Release
+        shell: pwsh
+        run: |
+          $exe = "RoslynQuery.Tests/bin/Release/net472/RoslynQuery.Tests.exe"
+          if (-not (Test-Path $exe)) { throw "Test runner not found at $exe" }
+          & $exe
+          if ($LASTEXITCODE -ne 0) { throw "Tests failed with exit code $LASTEXITCODE." }
 
       - name: Build
         run: msbuild RoslynQuery/RoslynQuery.csproj -t:Rebuild -p:Configuration=Release -p:DeployExtension=false
