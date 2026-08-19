@@ -145,6 +145,52 @@ internal static class PredicateCompiler
         return (IsIdentChar(a) && IsIdentChar(b)) || (IsOpChar(a) && IsOpChar(b));
     }
 
+    /// <summary>
+    /// Cache-key normalization for a full method body. Where <see cref="Normalize"/> drops a
+    /// separator whenever <see cref="NeedsSpaceBetween"/> judges the boundary safe, this always
+    /// emits exactly one separator between adjacent tokens. That is a weaker minification but a
+    /// stronger guarantee: adding whitespace between two tokens can never merge or split them, so
+    /// the result provably re-lexes to the input's token stream without relying on any adjacency
+    /// heuristic being correct for whatever a body happens to contain.
+    /// </summary>
+    /// <remarks>
+    /// Still canonical, so dedup survives: a gap of any width collapses to one separator, meaning
+    /// "a+b" and "a  +  b" both land on "a + b". Comments are dropped; a gap that spanned a line
+    /// break stays a line break so emitted bodies remain readable and compiler diagnostics keep
+    /// pointing at the line the user wrote.
+    /// </remarks>
+    public static string NormalizeBody(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return string.Empty;
+        // Defence in depth, as in Normalize: Compile rejects directives before getting here.
+        if (FindDirective(body) != null) return body.Trim();
+
+        try
+        {
+            var sb = new StringBuilder(body.Length);
+            var previousEnd = -1;
+
+            foreach (var token in SyntaxFactory.ParseTokens(body, options: PredicateTemplate.ParseOptions))
+            {
+                if (token.IsKind(SyntaxKind.EndOfFileToken)) continue;
+                if (token.Text.Length == 0) continue;
+
+                // The raw source between two tokens is exactly their trivia, so this decides
+                // newline-vs-space without depending on how Roslyn attaches that trivia.
+                if (previousEnd >= 0) sb.Append(body.IndexOf('\n', previousEnd, token.SpanStart - previousEnd) >= 0 ? '\n' : ' ');
+
+                sb.Append(token.Text);
+                previousEnd = token.Span.End;
+            }
+
+            return sb.ToString();
+        }
+        catch (Exception)
+        {
+            return body.Trim();
+        }
+    }
+
     /// <summary>The text of the first real preprocessor directive in <paramref name="text"/>, or null if it has none.</summary>
     /// <remarks>
     /// Lexer-based rather than textual, because the answer decides whether input is rejected: a
@@ -209,7 +255,7 @@ internal static class PredicateCompiler
         {
             throw new PredicateCompilationException(
                 $"Preprocessor directives are not supported here: found '{directive}'.",
-                ImmutableArray<Diagnostic>.Empty);
+                []);
         }
 
         var normalized = Normalize(expression);
