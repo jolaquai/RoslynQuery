@@ -23,12 +23,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       # VSIX projects (Microsoft.VSSDK.BuildTools) need full MSBuild from
       # Visual Studio, not the `dotnet` CLI.
       - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
+        uses: microsoft/setup-msbuild@v3
 
       - name: Restore
         run: msbuild RoslynQuery/RoslynQuery.csproj -t:Restore -p:Configuration=Release
@@ -77,7 +77,7 @@ jobs:
           Write-Host "VSIX payload is clean."
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: vsix
           path: artifacts/*.vsix
@@ -100,10 +100,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Download build artifact
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: vsix
           path: artifacts
@@ -140,7 +140,7 @@ jobs:
 
       - name: Create Release
         if: steps.tagcheck.outputs.exists == 'false'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: ${{ steps.ver.outputs.tag }}
