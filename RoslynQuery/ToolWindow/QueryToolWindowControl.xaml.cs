@@ -188,6 +188,7 @@ public partial class QueryToolWindowControl : UserControl
         var collapsed = SidebarColumn.Width.Value == 0;
         if (collapsed)
         {
+            SidebarColumn.MinWidth = 140;
             SidebarColumn.Width = new GridLength(_sidebarWidth);
             SidebarSplitterColumn.Width = GridLength.Auto;
             SidebarSplitter.Visibility = Visibility.Visible;
@@ -196,6 +197,9 @@ public partial class QueryToolWindowControl : UserControl
         else
         {
             _sidebarWidth = SidebarColumn.Width.Value > 0 ? SidebarColumn.Width.Value : _sidebarWidth;
+            // MinWidth is a hard floor Width can't override: left at 140 while "collapsed" it would
+            // pin the column open at 140px of dead space instead of actually closing it.
+            SidebarColumn.MinWidth = 0;
             SidebarColumn.Width = new GridLength(0);
             SidebarSplitterColumn.Width = new GridLength(0);
             SidebarSplitter.Visibility = Visibility.Collapsed;
