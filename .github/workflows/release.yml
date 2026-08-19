@@ -5,7 +5,6 @@ name: Build & Release
 # already merged into its base. A PR branch therefore builds twice, which is accepted.
 on:
   push:
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -23,15 +22,32 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # VSIX projects (Microsoft.VSSDK.BuildTools) need full MSBuild from
       # Visual Studio, not the `dotnet` CLI.
       - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
+        uses: microsoft/setup-msbuild@v3
 
       - name: Restore
         run: msbuild RoslynQuery/RoslynQuery.csproj -t:Restore -p:Configuration=Release
+
+      # Runs before the VSIX build so a broken predicate emitter/normalizer fails fast instead of
+      # spending time packaging a VSIX. This restores and builds RoslynQuery.Tests (and its
+      # ProjectReference to RoslynQuery) on its own; separate from the msbuild restore above.
+      - name: Build tests
+        run: dotnet build RoslynQuery.Tests/RoslynQuery.Tests.csproj -c Release
+
+      # xunit.v3 on Microsoft.Testing.Platform emits a self-contained runner, so the exe is invoked
+      # directly. That skips the `dotnet test` bridge entirely, which the .NET 10 SDK no longer
+      # supports without an opt-in, and makes the runner's own exit code the step's result.
+      - name: Test
+        shell: pwsh
+        run: |
+          $exe = "RoslynQuery.Tests/bin/Release/net472/RoslynQuery.Tests.exe"
+          if (-not (Test-Path $exe)) { throw "Test runner not found at $exe" }
+          & $exe
+          if ($LASTEXITCODE -ne 0) { throw "Tests failed with exit code $LASTEXITCODE." }
 
       - name: Build
         run: msbuild RoslynQuery/RoslynQuery.csproj -t:Rebuild -p:Configuration=Release -p:DeployExtension=false
@@ -60,7 +76,7 @@ jobs:
           Write-Host "VSIX payload is clean."
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vsix
           path: artifacts/*.vsix
@@ -69,9 +85,13 @@ jobs:
   # Releases the artifact the build job produced - it never rebuilds, so what ships is exactly
   # what was verified. Only pushes to main get here; other branches, PRs and manual
   # workflow_dispatch runs stop after build with just the artifact.
+  #
+  # success() is explicit and load-bearing here, not redundant with `needs: build`: a job's own
+  # `if` replaces the implicit "only run if needs succeeded" check, so without it this would still
+  # fire (and tag/release) even after a failed test run or build.
   release:
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -79,10 +99,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download build artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: vsix
           path: artifacts
@@ -119,7 +139,7 @@ jobs:
 
       - name: Create Release
         if: steps.tagcheck.outputs.exists == 'false'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: ${{ steps.ver.outputs.tag }}

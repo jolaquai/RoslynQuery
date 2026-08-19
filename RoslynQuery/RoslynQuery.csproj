@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <!-- In-proc VSIX only. devenv is .NET Framework, and VisualStudioWorkspace is unreachable
@@ -12,7 +12,7 @@
 
     <!-- Single source of truth for the extension version: the VSIX manifest is stamped from this
          via |%CurrentProject%;GetVsixVersion| and release.yml derives the release tag from it. -->
-    <Version>0.1.2</Version>
+    <Version>0.2.0</Version>
 
     <VSSDKBuildToolsAutoSetup>true</VSSDKBuildToolsAutoSetup>
     <GeneratePkgDefFile>true</GeneratePkgDefFile>
@@ -25,6 +25,10 @@
   </PropertyGroup>
 
   <Target Name="GetVsixVersion" Returns="$(Version)" />
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="RoslynQuery.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectCapability Include="CreateVsixContainer" />

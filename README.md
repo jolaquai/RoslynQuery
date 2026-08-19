@@ -7,18 +7,42 @@ A Visual Studio tool window that runs a C# predicate you write over every `Synta
 
 ## Using it
 
-Pick a **Target**, pick a **Scope**, type a boolean expression, press Enter (or Run).
+Pick a **Target**, pick a **Scope**, type a predicate, press Enter (or Run).
 
 The signature line above the box tells you what is in scope:
 
-| Target      | Predicate signature                                       |
-| ----------- | --------------------------------------------------------- |
-| SyntaxNode  | `bool (SyntaxNode n, SemanticModel model, Document doc)`  |
-| SyntaxToken | `bool (SyntaxToken t, SemanticModel model, Document doc)` |
-| IOperation  | `bool (IOperation op, SemanticModel model, Document doc)` |
+| Target      | Predicate signature                                                        |
+| ----------- | -------------------------------------------------------------------------- |
+| SyntaxNode  | `async ValueTask<bool> (SyntaxNode n, SemanticModel model, Document doc)`  |
+| SyntaxToken | `async ValueTask<bool> (SyntaxToken t, SemanticModel model, Document doc)` |
+| IOperation  | `async ValueTask<bool> (IOperation op, SemanticModel model, Document doc)` |
 
-`System`, `System.Linq`, `System.Text.RegularExpressions`, `Microsoft.CodeAnalysis`,
-`.CSharp`, `.CSharp.Syntax`, `.Operations` and `.Text` are already imported.
+`System`, `System.Collections.Generic`, `System.Collections.Immutable`, `System.Linq`,
+`System.Text`, `System.Text.RegularExpressions`, `System.Threading.Tasks`,
+`Microsoft.CodeAnalysis`, `.CSharp`, `.CSharp.Syntax`, `.Operations` and `.Text` are already
+imported.
+
+Write either a single boolean expression or a full statement body ending in a `return` - which one
+you meant is detected from the text, so nothing needs switching:
+
+```csharp
+n is MethodDeclarationSyntax m && m.ParameterList.Parameters.Count > 3
+```
+
+```csharp
+var m = n as MethodDeclarationSyntax;
+if (m is null) return false;
+return m.Body?.Statements.Count > 20;
+```
+
+Predicates are compiled `async`, so you can `await` inside one:
+
+```csharp
+(await doc.GetSyntaxRootAsync()).DescendantNodes().Count() > 500
+```
+
+Awaiting is worth it only for something a predicate cannot get synchronously - it runs once per
+node, so an `await` on a hot path costs you across the whole scope.
 
 Scopes: containing member, containing type, current document, current project, solution. The three
 narrow ones are resolved from the caret in the last active code window.
@@ -43,7 +67,7 @@ t.IsKind(SyntaxKind.StringLiteralToken) && t.ValueText.Length > 200
 ```
 
 ```csharp
-op.Kind == OperationKind.Conversion && ((IConversionOperation)op).Conversion.IsBoxing
+op is IConversionOperation c && c.GetConversion().IsBoxing
 ```
 
 ```csharp
@@ -62,6 +86,7 @@ n is IdentifierNameSyntax id && model.GetSymbolInfo(id).Symbol is IMethodSymbol 
 | Esc                   | dismiss the completion list, never leaves the box                  |
 | `.` `(` `,` operators | commit the completion item, then type the character                |
 | Double-click a result | open the file and select the match                                 |
+| Double-click history  | restore that predicate and re-run it                               |
 
 The predicate box is a real editor view, not a `TextBox`, and it is not wired into VS's command
 routing, so its keyboard map is implemented by the extension. Caret movement, selection, backspace
@@ -89,6 +114,20 @@ no file on disk, double-click reports that instead of navigating.
 The filter only applies to project and solution scope. A document you have pointed the caret at is
 always scanned, generated or not.
 
+### Query history
+
+The **History** button toggles a resizable sidebar listing every predicate still in the compile
+cache, newest first. Double-click one to put it back in the box and run it: the target is restored
+with it, the scope is left on whatever you currently have selected.
+
+Entries are shown re-formatted. The cache is keyed on a minified form of the text, so two spellings
+of the same predicate are one entry and one compiled assembly.
+
+That cache is also the leak referred to above. Every distinct predicate emits an assembly, and
+.NET Framework has no way to unload one, so it stays for the life of the VS process; the status line
+reports the running count and total size. The cache is capped at 512 entries, which bounds the list,
+not the underlying leak.
+
 ## Building
 
 Requires the Visual Studio SDK workload.
@@ -100,5 +139,10 @@ msbuild RoslynQuery/RoslynQuery.csproj -t:Rebuild -p:Configuration=Release -p:De
 The `.vsix` lands in `RoslynQuery/bin/Release/net472/`. F5 on the project launches the experimental
 instance with the extension deployed.
 
-Targets VS 2022 and VS 2026 from one artifact. See [CLAUDE.roslyn-query.md](CLAUDE.roslyn-query.md)
-for the design, the rejected alternatives and the deferred work.
+Targets VS 2022 and VS 2026 from one artifact.
+
+Tests are xUnit.v3 on Microsoft.Testing.Platform, which builds a self-contained runner:
+
+```bash
+dotnet test RoslynQuery.Tests/RoslynQuery.Tests.csproj -c Release
+```

@@ -34,7 +34,7 @@ internal sealed class PredicateCompletionSource : IAsyncCompletionSource
 {
     private static readonly object SessionStateKey = new object();
     private static readonly object RoslynItemKey = new object();
-    private static readonly VsData.CompletionContext Empty = new VsData.CompletionContext(ImmutableArray<VsData.CompletionItem>.Empty);
+    private static readonly VsData.CompletionContext Empty = new VsData.CompletionContext([]);
 
     private sealed class SessionState
     {
@@ -61,7 +61,10 @@ internal sealed class PredicateCompletionSource : IAsyncCompletionSource
         IAsyncCompletionSession session, VsData.CompletionTrigger trigger, SnapshotPoint triggerLocation, SnapshotSpan applicableToSpan, CancellationToken token)
     {
         var target = PredicateBufferContext.GetTarget(triggerLocation.Snapshot.TextBuffer);
-        var source = PredicateTemplate.Build(target, triggerLocation.Snapshot.GetText(), out var offset);
+        // Scaffolding has to match the mode the text will actually compile in, or a statement body
+        // gets completed against "return <statements>;" and binds nothing.
+        var text = triggerLocation.Snapshot.GetText();
+        var source = PredicateTemplate.Build(target, PredicateCompiler.CompletionMode(text), text, out var offset);
 
         var document = PredicateDocumentFactory.Create(source);
         if (document is null) return Empty;

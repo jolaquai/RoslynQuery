@@ -17,9 +17,9 @@ namespace RoslynQuery.Query;
 internal static class GeneratedCode
 {
     private static readonly string[] Suffixes =
-    {
+    [
         ".g.cs", ".g.i.cs", ".designer.cs", ".generated.cs", ".assemblyinfo.cs", ".assemblyattributes.cs"
-    };
+    ];
 
     public static bool IsGeneratedPath(Document document)
     {

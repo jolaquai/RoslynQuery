@@ -37,12 +37,14 @@ public partial class QueryToolWindowControl : UserControl
     }
 
     private readonly ObservableCollection<QueryHit> _hits = new ObservableCollection<QueryHit>();
+    private readonly ObservableCollection<CachedPredicateItem> _cachedPredicates = new ObservableCollection<CachedPredicateItem>();
 
     private IComponentModel _componentModel;
     private VisualStudioWorkspace _workspace;
     private IPredicateInput _input;
     private CancellationTokenSource _cancellation;
     private bool _initialized;
+    private double _sidebarWidth = 220;
 
     // Weak: a Solution roots its compilations, and pinning the snapshot a run used would keep the
     // whole thing alive for as long as the results are on screen. If it is gone, spans are used
@@ -54,6 +56,7 @@ public partial class QueryToolWindowControl : UserControl
         InitializeComponent();
 
         Results.ItemsSource = _hits;
+        CachedPredicates.ItemsSource = _cachedPredicates;
         Loaded += OnLoaded;
     }
 
@@ -113,6 +116,10 @@ public partial class QueryToolWindowControl : UserControl
 
         StatusText.Text = "Enter runs, Shift+Enter is a newline";
 
+        // The compiler cache is process-lifetime and static, so a reopened or second tool window
+        // instance can have entries in it before this instance ever runs anything itself.
+        RefreshCachedPredicates();
+
         // Nothing in the window is focusable-by-default in a useful place, so without this the
         // first keystroke goes to whatever the shell last focused. Input priority: the host has to
         // finish arranging before the view can take focus.
@@ -160,6 +167,57 @@ public partial class QueryToolWindowControl : UserControl
             SetError(DocumentNavigator.Navigate(ServiceProvider.GlobalProvider, target));
         }).FileAndForget("vs/roslynquery/navigate");
 #pragma warning restore VSSDK007
+    }
+
+    private void OnCachedPredicateDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        if (!(CachedPredicates.SelectedItem is CachedPredicateItem item)) return;
+
+        // TargetCombo is populated in OnLoaded in TargetKind declaration order, so the index and
+        // the enum value coincide - no lookup needed. Scope is deliberately left as the user has
+        // it: it has nothing to do with which predicate is running.
+        // Pretty, not Display: the latter is truncated for the list and would restore a fragment.
+        TargetCombo.SelectedIndex = (int)item.Kind;
+        _input.Text = item.Pretty;
+        Run();
+    }
+
+    private void OnToggleSidebarClick(object sender, RoutedEventArgs e)
+    {
+        var src = System.Runtime.CompilerServices.Unsafe.As<Button>(sender);
+        var collapsed = SidebarColumn.Width.Value == 0;
+        if (collapsed)
+        {
+            SidebarColumn.MinWidth = 140;
+            SidebarColumn.Width = new GridLength(_sidebarWidth);
+            SidebarSplitterColumn.Width = GridLength.Auto;
+            SidebarSplitter.Visibility = Visibility.Visible;
+            SidebarPane.Visibility = Visibility.Visible;
+            src.Content = "History <";
+        }
+        else
+        {
+            _sidebarWidth = SidebarColumn.Width.Value > 0 ? SidebarColumn.Width.Value : _sidebarWidth;
+            // MinWidth is a hard floor Width can't override: left at 140 while "collapsed" it would
+            // pin the column open at 140px of dead space instead of actually closing it.
+            SidebarColumn.MinWidth = 0;
+            SidebarColumn.Width = new GridLength(0);
+            SidebarSplitterColumn.Width = new GridLength(0);
+            SidebarSplitter.Visibility = Visibility.Collapsed;
+            SidebarPane.Visibility = Visibility.Collapsed;
+            src.Content = "History >";
+        }
+    }
+
+    private void RefreshCachedPredicates()
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        _cachedPredicates.Clear();
+        foreach (var (kind, mode, text) in PredicateCompiler.Snapshot())
+            _cachedPredicates.Add(new CachedPredicateItem(kind, mode, text));
     }
 
     private void UpdateSignature() => SignatureText.Text = PredicateTemplate.Signature(CurrentTarget);
@@ -219,6 +277,7 @@ public partial class QueryToolWindowControl : UserControl
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 StopButton.IsEnabled = false;
                 RunButton.IsEnabled = true;
+                RefreshCachedPredicates();
                 if (ReferenceEquals(_cancellation, cancellation)) _cancellation = null;
                 cancellation.Dispose();
             }

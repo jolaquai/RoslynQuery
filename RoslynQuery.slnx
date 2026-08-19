@@ -2,4 +2,5 @@
   <Project Path="RoslynQuery/RoslynQuery.csproj">
     <Deploy />
   </Project>
+  <Project Path="RoslynQuery.Tests/RoslynQuery.Tests.csproj" />
 </Solution>

@@ -9,7 +9,7 @@
              Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}"
              platformui:ImageThemingUtilities.ImageBackgroundColor="{DynamicResource {x:Static vsshell:VsColors.ToolWindowBackgroundKey}}"
              TextOptions.TextFormattingMode="Display"
-             MinWidth="420" MinHeight="220">
+             MinWidth="560" MinHeight="220">
 
     <UserControl.Resources>
         <local:TargetMonikerConverter x:Key="TargetMoniker" />
@@ -77,80 +77,136 @@
                 </StackPanel>
             </Grid>
         </DataTemplate>
+
+        <DataTemplate x:Key="CachedPredicateTemplate">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <imaging:CrispImage Grid.Column="0" Width="16" Height="16" Margin="0,1,8,0" VerticalAlignment="Top"
+                                    Moniker="{Binding Kind, Converter={StaticResource TargetMoniker}}" />
+
+                <StackPanel Grid.Column="1">
+                    <TextBlock Text="{Binding Display}" FontFamily="Consolas" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" MaxHeight="64"
+                               Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}" />
+                    <TextBlock Text="{Binding Subtitle}" Margin="0,1,0,0" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" />
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
     </UserControl.Resources>
 
-    <Grid Margin="8,8,8,0">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" MinWidth="260" />
+            <ColumnDefinition x:Name="SidebarSplitterColumn" Width="Auto" />
+            <ColumnDefinition x:Name="SidebarColumn" Width="220" MinWidth="140" />
+        </Grid.ColumnDefinitions>
 
-        <Border Grid.Row="0" MinHeight="24" MaxHeight="120" Padding="6,3" CornerRadius="2"
-                BorderThickness="1"
-                BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.SearchBoxBorderKey}}"
-                Background="{DynamicResource {x:Static vsshell:VsBrushes.SearchBoxBackgroundKey}}">
-            <ContentControl x:Name="PredicateHost" />
+        <Grid Grid.Column="0" Margin="8,8,8,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" MinHeight="24" MaxHeight="120" Padding="6,3" CornerRadius="2"
+                    BorderThickness="1"
+                    BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.SearchBoxBorderKey}}"
+                    Background="{DynamicResource {x:Static vsshell:VsBrushes.SearchBoxBackgroundKey}}">
+                <ContentControl x:Name="PredicateHost" />
+            </Border>
+
+            <Grid Grid.Row="1" Margin="0,7,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <WrapPanel Grid.Column="0" Orientation="Horizontal">
+                    <TextBlock Text="target" Style="{StaticResource Caption}" />
+                    <ComboBox x:Name="TargetCombo" MinWidth="104" Margin="0,0,14,3" VerticalAlignment="Center"
+                              Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}"
+                              SelectionChanged="OnTargetChanged" />
+
+                    <TextBlock Text="scope" Style="{StaticResource Caption}" />
+                    <ComboBox x:Name="ScopeCombo" MinWidth="132" Margin="0,0,14,3" VerticalAlignment="Center"
+                              Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}" />
+
+                    <TextBlock Text="cap" Style="{StaticResource Caption}" />
+                    <ComboBox x:Name="CapCombo" MinWidth="76" Margin="0,0,14,3" VerticalAlignment="Center"
+                              Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}" />
+
+                    <CheckBox x:Name="GeneratedCheckBox" Content="generated" VerticalAlignment="Center" Margin="0,0,14,3"
+                              Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogCheckBoxStyleKey}}"
+                              ToolTip="Include .g.cs / .designer.cs and source generated documents." />
+                </WrapPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                    <Button x:Name="RunButton" Content="Run" MinWidth="62" Margin="0,0,6,0" Padding="8,2"
+                            Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
+                            Click="OnRunClick" />
+                    <Button x:Name="StopButton" Content="Stop" MinWidth="62" Padding="8,2" IsEnabled="False"
+                            Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
+                            Click="OnStopClick" />
+                    <Button x:Name="SidebarToggleButton" Content="History &lt;" MinWidth="48" Margin="6,0,0,0" Padding="8,2"
+                            Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
+                            Click="OnToggleSidebarClick" ToolTip="Toggle the query history sidebar" />
+                </StackPanel>
+            </Grid>
+
+            <Grid Grid.Row="2" Margin="0,7,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock x:Name="SignatureText" Grid.Column="0" FontFamily="Consolas" Style="{StaticResource Meta}" />
+                <TextBlock x:Name="StatusText" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource Meta}" />
+            </Grid>
+
+            <TextBlock x:Name="ErrorText" Grid.Row="3" Margin="0,6,0,0" TextWrapping="Wrap"
+                       Visibility="Collapsed" Foreground="#FFE0655F" />
+
+            <ListBox x:Name="Results" Grid.Row="4" Margin="0,8,0,0"
+                     BorderThickness="0" Background="Transparent"
+                     HorizontalContentAlignment="Stretch"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     VirtualizingStackPanel.IsVirtualizing="True"
+                     VirtualizingStackPanel.VirtualizationMode="Recycling"
+                     ItemContainerStyle="{StaticResource ResultRow}"
+                     ItemTemplate="{StaticResource ResultTemplate}"
+                     MouseDoubleClick="OnResultDoubleClick" />
+        </Grid>
+
+        <GridSplitter x:Name="SidebarSplitter" Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
+                      VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext"
+                      Background="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarGradientKey}}" />
+
+        <Border x:Name="SidebarPane" Grid.Column="2" Margin="4,8,0,0" BorderThickness="1,0,0,0"
+                BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarBorderKey}}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Text="Query History" Style="{StaticResource Caption}" Margin="6,0,0,4" />
+
+                <ListBox x:Name="CachedPredicates" Grid.Row="1"
+                         BorderThickness="0" Background="Transparent"
+                         HorizontalContentAlignment="Stretch"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         VirtualizingStackPanel.IsVirtualizing="True"
+                         VirtualizingStackPanel.VirtualizationMode="Recycling"
+                         ItemContainerStyle="{StaticResource ResultRow}"
+                         ItemTemplate="{StaticResource CachedPredicateTemplate}"
+                         MouseDoubleClick="OnCachedPredicateDoubleClick" />
+            </Grid>
         </Border>
-
-        <Grid Grid.Row="1" Margin="0,7,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-
-            <WrapPanel Grid.Column="0" Orientation="Horizontal">
-                <TextBlock Text="target" Style="{StaticResource Caption}" />
-                <ComboBox x:Name="TargetCombo" MinWidth="104" Margin="0,0,14,3" VerticalAlignment="Center"
-                          Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}"
-                          SelectionChanged="OnTargetChanged" />
-
-                <TextBlock Text="scope" Style="{StaticResource Caption}" />
-                <ComboBox x:Name="ScopeCombo" MinWidth="132" Margin="0,0,14,3" VerticalAlignment="Center"
-                          Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}" />
-
-                <TextBlock Text="cap" Style="{StaticResource Caption}" />
-                <ComboBox x:Name="CapCombo" MinWidth="76" Margin="0,0,14,3" VerticalAlignment="Center"
-                          Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}" />
-
-                <CheckBox x:Name="GeneratedCheckBox" Content="generated" VerticalAlignment="Center" Margin="0,0,14,3"
-                          Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogCheckBoxStyleKey}}"
-                          ToolTip="Include .g.cs / .designer.cs and source generated documents." />
-            </WrapPanel>
-
-            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
-                <Button x:Name="RunButton" Content="Run" MinWidth="62" Margin="0,0,6,0" Padding="8,2"
-                        Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
-                        Click="OnRunClick" />
-                <Button x:Name="StopButton" Content="Stop" MinWidth="62" Padding="8,2" IsEnabled="False"
-                        Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
-                        Click="OnStopClick" />
-            </StackPanel>
-        </Grid>
-
-        <Grid Grid.Row="2" Margin="0,7,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-
-            <TextBlock x:Name="SignatureText" Grid.Column="0" FontFamily="Consolas" Style="{StaticResource Meta}" />
-            <TextBlock x:Name="StatusText" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource Meta}" />
-        </Grid>
-
-        <TextBlock x:Name="ErrorText" Grid.Row="3" Margin="0,6,0,0" TextWrapping="Wrap"
-                   Visibility="Collapsed" Foreground="#FFE0655F" />
-
-        <ListBox x:Name="Results" Grid.Row="4" Margin="0,8,0,0"
-                 BorderThickness="0" Background="Transparent"
-                 HorizontalContentAlignment="Stretch"
-                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                 VirtualizingStackPanel.IsVirtualizing="True"
-                 VirtualizingStackPanel.VirtualizationMode="Recycling"
-                 ItemContainerStyle="{StaticResource ResultRow}"
-                 ItemTemplate="{StaticResource ResultTemplate}"
-                 MouseDoubleClick="OnResultDoubleClick" />
     </Grid>
 </UserControl>
