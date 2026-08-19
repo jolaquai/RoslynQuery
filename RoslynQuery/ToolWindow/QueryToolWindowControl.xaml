@@ -153,9 +153,9 @@
                     <Button x:Name="StopButton" Content="Stop" MinWidth="62" Padding="8,2" IsEnabled="False"
                             Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
                             Click="OnStopClick" />
-                    <Button x:Name="SidebarToggleButton" Content="cache" MinWidth="48" Margin="6,0,0,0" Padding="8,2"
+                    <Button x:Name="SidebarToggleButton" Content="History &lt;" MinWidth="48" Margin="6,0,0,0" Padding="8,2"
                             Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
-                            Click="OnToggleSidebarClick" ToolTip="Show or hide the cached predicates sidebar" />
+                            Click="OnToggleSidebarClick" ToolTip="Toggle the query history sidebar" />
                 </StackPanel>
             </Grid>
 
@@ -195,7 +195,7 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" Text="cached predicates" Style="{StaticResource Caption}" Margin="6,0,0,4" />
+                <TextBlock Grid.Row="0" Text="Query History" Style="{StaticResource Caption}" Margin="6,0,0,4" />
 
                 <ListBox x:Name="CachedPredicates" Grid.Row="1"
                          BorderThickness="0" Background="Transparent"

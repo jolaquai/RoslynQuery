@@ -185,6 +185,7 @@ public partial class QueryToolWindowControl : UserControl
 
     private void OnToggleSidebarClick(object sender, RoutedEventArgs e)
     {
+        var src = System.Runtime.CompilerServices.Unsafe.As<Button>(sender);
         var collapsed = SidebarColumn.Width.Value == 0;
         if (collapsed)
         {
@@ -193,6 +194,7 @@ public partial class QueryToolWindowControl : UserControl
             SidebarSplitterColumn.Width = GridLength.Auto;
             SidebarSplitter.Visibility = Visibility.Visible;
             SidebarPane.Visibility = Visibility.Visible;
+            src.Content = "History <";
         }
         else
         {
@@ -204,6 +206,7 @@ public partial class QueryToolWindowControl : UserControl
             SidebarSplitterColumn.Width = new GridLength(0);
             SidebarSplitter.Visibility = Visibility.Collapsed;
             SidebarPane.Visibility = Visibility.Collapsed;
+            src.Content = "History >";
         }
     }
 
