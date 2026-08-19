@@ -78,17 +78,17 @@ internal static class ScopeResolver
 
             case ScopeKind.Project:
                 if (document is null) return Array.Empty<ScopeUnit>();
-                return await CollectAsync(new[] { document.Project }, includeGenerated, cancellationToken).ConfigureAwait(false);
+                return await CollectAsync([document.Project], includeGenerated, cancellationToken).ConfigureAwait(false);
 
             case ScopeKind.Document:
                 if (document is null) return Array.Empty<ScopeUnit>();
-                return new[] { new ScopeUnit(document, null, filterGenerated: false) };
+                return [new ScopeUnit(document, null, filterGenerated: false)];
 
             case ScopeKind.ContainingMember:
             case ScopeKind.ContainingType:
                 if (document is null) return Array.Empty<ScopeUnit>();
                 var unit = await ResolveDeclarationAsync(document, scope, active, cancellationToken).ConfigureAwait(false);
-                return unit.HasValue ? new[] { unit.Value } : Array.Empty<ScopeUnit>();
+                return unit.HasValue ? new[] { unit.Value } : [];
 
             default:
                 throw new ArgumentOutOfRangeException(nameof(scope));

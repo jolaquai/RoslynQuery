@@ -34,7 +34,7 @@ internal sealed class PredicateCompletionSource : IAsyncCompletionSource
 {
     private static readonly object SessionStateKey = new object();
     private static readonly object RoslynItemKey = new object();
-    private static readonly VsData.CompletionContext Empty = new VsData.CompletionContext(ImmutableArray<VsData.CompletionItem>.Empty);
+    private static readonly VsData.CompletionContext Empty = new VsData.CompletionContext([]);
 
     private sealed class SessionState
     {
