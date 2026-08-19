@@ -272,7 +272,7 @@ internal static class PredicateCompiler
         if (directive != null)
         {
             throw new PredicateCompilationException(
-                $"Preprocessor directives are not supported here: found '{directive}'.",
+                $"#directives are not supported: found '{directive}'.",
                 []);
         }
 
