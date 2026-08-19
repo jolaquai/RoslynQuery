@@ -1,4 +1,6 @@
 using System;
+using System.CodeDom.Compiler;
+using System.IO;
 
 using Microsoft.CodeAnalysis.CSharp;
 
@@ -13,25 +15,22 @@ internal static class PredicateTemplate
     public const string ClassName = "RoslynQueryPredicate";
     public const string MethodName = "Match";
 
-    public static readonly CSharpParseOptions ParseOptions =
-        new CSharpParseOptions(LanguageVersion.Preview, documentationMode: Microsoft.CodeAnalysis.DocumentationMode.None);
+    public static readonly CSharpParseOptions ParseOptions = new CSharpParseOptions(LanguageVersion.Preview, documentationMode: Microsoft.CodeAnalysis.DocumentationMode.None);
 
-    private const string Usings =
-        "using System;\r\n" +
-        "using System.Collections.Generic;\r\n" +
-        "using System.Collections.Immutable;\r\n" +
-        "using System.Linq;\r\n" +
-        "using System.Text;\r\n" +
-        "using System.Text.RegularExpressions;\r\n" +
-        "\r\n" +
-        "using Microsoft.CodeAnalysis;\r\n" +
-        "using Microsoft.CodeAnalysis.CSharp;\r\n" +
-        "using Microsoft.CodeAnalysis.CSharp.Syntax;\r\n" +
-        "using Microsoft.CodeAnalysis.Operations;\r\n" +
-        "using Microsoft.CodeAnalysis.Text;\r\n" +
-        "\r\n";
-
-    private const string Tail = ";\r\n    }\r\n}\r\n";
+    private const string Usings = """
+        using System;
+        using System.Collections.Generic;
+        using System.Collections.Immutable;
+        using System.Linq;
+        using System.Text;
+        using System.Text.RegularExpressions;
+        
+        using Microsoft.CodeAnalysis;
+        using Microsoft.CodeAnalysis.CSharp;
+        using Microsoft.CodeAnalysis.CSharp.Syntax;
+        using Microsoft.CodeAnalysis.Operations;
+        using Microsoft.CodeAnalysis.Text;
+        """;
 
     public static string ParameterName(TargetKind kind) => kind switch
     {
@@ -49,19 +48,71 @@ internal static class PredicateTemplate
         _ => throw new ArgumentOutOfRangeException(nameof(kind))
     };
 
-    public static string Signature(TargetKind kind) =>
-        $"bool ({ParameterType(kind)} {ParameterName(kind)}, SemanticModel model, Document doc)";
+    public static string Signature(TargetKind kind) => $"bool ({ParameterType(kind)} {ParameterName(kind)}, SemanticModel model, Document doc)";
 
     /// <summary>Returns the full source and the offset at which <paramref name="expression"/> starts.</summary>
     public static string Build(TargetKind kind, string expression, out int expressionOffset)
     {
-        var head = Usings +
-            "public static class " + ClassName + "\r\n{\r\n" +
-            "    public static bool " + MethodName + "(" + ParameterType(kind) + " " + ParameterName(kind) + ", SemanticModel model, Document doc)\r\n" +
-            "    {\r\n" +
-            "        return ";
+        using var sw = new StringWriter();
+        using (var itw = new IndentedTextWriter(sw))
+        {
+            itw.WriteLine(Usings);
+            itw.Write("public static class ");
+            itw.WriteLine(ClassName);
+            using (itw.Scope())
+            {
+                itw.Write("public static bool ");
+                itw.Write(MethodName);
+                itw.Write("(");
+                itw.Write(ParameterType(kind));
+                itw.Write(" ");
+                itw.Write(ParameterName(kind));
+                itw.Write(", SemanticModel model, Document doc)");
+                using (itw.Scope())
+                {
+                    itw.Write("return ");
+                    itw.Flush();
+                    sw.Flush();
+                    expressionOffset = sw.GetStringBuilder().Length;
+                    itw.WriteLine(string.IsNullOrWhiteSpace(expression) ? "true" : expression);
+                    itw.WriteLine(';');
+                }
+            }
+        }
 
-        expressionOffset = head.Length;
-        return head + (string.IsNullOrWhiteSpace(expression) ? "true" : expression) + Tail;
+        return sw.ToString();
+    }
+}
+internal static class ItwExtensions
+{
+    extension(IndentedTextWriter itw)
+    {
+        internal IndentScope Indent() => new IndentScope(itw);
+        internal BraceScope Scope() => new BraceScope(itw);
+    }
+}
+internal readonly ref struct IndentScope : IDisposable
+{
+    private readonly IndentedTextWriter _itw;
+    public IndentScope(IndentedTextWriter itw)
+    {
+        _itw = itw;
+        itw.Indent++;
+    }
+    public readonly void Dispose() => _itw.Indent--;
+}
+internal readonly ref struct BraceScope : IDisposable
+{
+    private readonly IndentedTextWriter _itw;
+    public BraceScope(IndentedTextWriter itw)
+    {
+        _itw = itw;
+        itw.WriteLine('{');
+        itw.Indent++;
+    }
+    public readonly void Dispose()
+    {
+        _itw.Indent--;
+        _itw.WriteLine('}');
     }
 }
