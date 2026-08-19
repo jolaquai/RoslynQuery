@@ -11,6 +11,7 @@ namespace RoslynQuery.Tests;
 // "#if DEBUG a #else b #endif" lexes down to just "b" - the discarded branch is gone before
 // anything downstream could notice it was ever there. Compile therefore rejects directive-bearing
 // input outright instead of silently compiling whichever branch happened to survive.
+[Collection(PredicateCompilerCacheCollection.Name)]
 public class PredicateCompilerDirectiveTests
 {
     private static readonly MethodInfo NormalizeMethod =

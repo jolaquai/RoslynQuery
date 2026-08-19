@@ -129,6 +129,7 @@ public class PredicateCompilerNormalizeTests
 // differently-formatted-but-equivalent expressions to the same cache key, and to never change the
 // meaning of the expression it normalizes. These exercise that contract via the real cache and a
 // real compiled+invoked delegate rather than by re-deriving the normalizer's own logic.
+[Collection(PredicateCompilerCacheCollection.Name)]
 public class PredicateCompilerCachingTests
 {
     [Fact]

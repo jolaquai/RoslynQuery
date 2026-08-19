@@ -162,6 +162,7 @@ public class PredicateTemplateBodyModeTests
     }
 }
 
+[Collection(PredicateCompilerCacheCollection.Name)]
 public class PredicateBodyModeCompilationTests
 {
     private static async Task<(SyntaxNode node, SemanticModel model, Document doc)> LocalDeclarationAsync()

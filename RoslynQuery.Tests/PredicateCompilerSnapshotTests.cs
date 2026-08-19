@@ -14,6 +14,7 @@ namespace RoslynQuery.Tests;
 // hand-computed normalized string - re-deriving Normalize's own spacing rules here would just
 // duplicate (and risk diverging from) the logic under test, same reasoning as
 // PredicateCompilerCachingTests above.
+[Collection(PredicateCompilerCacheCollection.Name)]
 public class PredicateCompilerSnapshotTests
 {
     private static int UniqueToken() => Guid.NewGuid().GetHashCode() & int.MaxValue;
