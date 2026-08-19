@@ -89,7 +89,7 @@
                                     Moniker="{Binding Kind, Converter={StaticResource TargetMoniker}}" />
 
                 <StackPanel Grid.Column="1">
-                    <TextBlock Text="{Binding Preview}" FontFamily="Consolas" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" MaxHeight="48"
+                    <TextBlock Text="{Binding Display}" FontFamily="Consolas" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" MaxHeight="64"
                                Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}" />
                     <TextBlock Text="{Binding Subtitle}" Margin="0,1,0,0" TextTrimming="CharacterEllipsis"
                                Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" />

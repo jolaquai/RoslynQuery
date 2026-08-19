@@ -178,8 +178,9 @@ public partial class QueryToolWindowControl : UserControl
         // TargetCombo is populated in OnLoaded in TargetKind declaration order, so the index and
         // the enum value coincide - no lookup needed. Scope is deliberately left as the user has
         // it: it has nothing to do with which predicate is running.
+        // Pretty, not Display: the latter is truncated for the list and would restore a fragment.
         TargetCombo.SelectedIndex = (int)item.Kind;
-        _input.Text = item.Text;
+        _input.Text = item.Pretty;
         Run();
     }
 
