@@ -150,9 +150,14 @@ window keeps a history; **Clear** empties it. Every root has two branches:
 | `References From 'X'` | The declarations `X` itself references                       |
 
 Every row expands the same way, recursively, staying in the direction its branch started in. A row
-is one declaration, not one call site: its second line reads `3 refs (1 invocation, 2 reads)`, and
-double-clicking navigates to the first of them. A row whose symbol already appears above it in the
-tree is marked `(recursive)` and does not expand further, so a cycle terminates instead of looping.
+is one declaration, not one call site: its second line reads `3 refs (1 invocation, 2 reads)`. A row
+backed by more than one occurrence opens onto a `Locations (3)` branch listing each of them, ahead of
+the rows the graph continues into.
+
+Double-click a row, or select it and press Enter, to jump to it - the individual location rows go to
+that exact occurrence, and a row with only one occurrence goes straight there. A row whose symbol
+already appears above it in the tree is marked `(recursive)` and does not expand further, so a cycle
+terminates instead of looping.
 
 ### Scope
 

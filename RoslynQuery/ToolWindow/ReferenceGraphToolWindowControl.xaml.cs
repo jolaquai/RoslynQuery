@@ -180,6 +180,21 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         Navigate(node);
     }
 
+    /// <summary>
+    /// Enter navigates from the selected row, the same as double-clicking it. A row with nowhere to
+    /// go is left unhandled, so Enter keeps whatever the TreeView would otherwise do with it.
+    /// </summary>
+    private void OnTreeKeyDown(object sender, KeyEventArgs e)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        if (e.Key != Key.Enter || _workspace is null) return;
+        if (!(Tree.SelectedItem is ReferenceGraphNode node) || node.DocumentId is null) return;
+
+        e.Handled = true;
+        Navigate(node);
+    }
+
     private static T Ancestor<T>(DependencyObject node) where T : DependencyObject
     {
         for (; node != null; node = VisualTreeHelper.GetParent(node))

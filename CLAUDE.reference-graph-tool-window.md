@@ -23,10 +23,10 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress - all code complete, blocked only on step 8's manual smoke test
-- **Current step:** 8 and 12 - manual F5 smoke test (five defects found and fixed so far; needs re-running)
+- **Current step:** 8, 12 and 14 - manual F5 smoke test (seven defects found and fixed so far; needs re-running)
 - **Branch:** v0.3.0
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `stop double-click from toggling row expansion` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `navigate on enter from the selected row` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-08-20
 
 ## Goal
@@ -169,6 +169,17 @@ supersede **Non-goal 1** ("no per-call-site leaf level under a node"), which the
   alone. A single-occurrence row gets no branch - the row itself already navigates there.
 - **Verify:** `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceGraphNodeLocationRowTests"`.
 - **Commit:** `add navigable rows for each reference location`
+
+### 14. Enter navigates from the selected row `[~]`
+
+- **Files:** `RoslynQuery/ToolWindow/ReferenceGraphToolWindowControl.xaml` / `.xaml.cs`, `README.md`
+- **Do:** `KeyDown` on the TreeView: Enter on a selected row with a `DocumentId` navigates through the
+  same `Navigate` path double-click uses, and marks the event handled. A row with nowhere to go is left
+  unhandled so the TreeView keeps its own behaviour. README updated for Enter and for the
+  `Locations (N)` branch added in step 11, which its double-click paragraph still predated.
+- **Progress:** Builds clean, `ReadmeExampleTests` still passes. Keyboard handling has no WPF host in
+  the test suite, so confirm in the smoke test.
+- **Commit:** `navigate on enter from the selected row`
 
 ### 13. Filter changes no longer wipe the tree `[x]`
 
