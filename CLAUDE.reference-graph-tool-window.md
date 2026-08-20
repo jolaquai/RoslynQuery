@@ -22,11 +22,11 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 
 ## Status
 
-- **State:** not-started
-- **Current step:** 1 - Reference-kind classification model
+- **State:** in-progress
+- **Current step:** 2 - Caret symbol resolution
 - **Branch:** v0.3.0
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit:** (none yet - this plan file's own initial commit)
+- **Last synced commit subject:** `add reference usage kind and classifier` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-08-20
 
 ## Goal
@@ -67,7 +67,7 @@ A second VSIX tool window, "Reference Graph", alongside the existing "Roslyn Que
 
 ## Steps
 
-### 1. Reference-kind classification model `[ ]`
+### 1. Reference-kind classification model `[x]`
 
 - **Files:** `RoslynQuery/ReferenceGraph/ReferenceUsageKind.cs` (new), `RoslynQuery/ReferenceGraph/ReferenceUsageClassifier.cs` (new), `RoslynQuery.Tests/ReferenceUsageClassifierTests.cs` (new)
 - **Do:** Add `[Flags] internal enum ReferenceUsageKind { Invocation = 1, Read = 2, Write = 4, Construction = 8, TypeReference = 16 }`. Add `internal static class ReferenceUsageClassifier` with `Classify(SyntaxNode occurrence, ISymbol target) -> ReferenceUsageKind`: inspect `occurrence`'s ancestor syntax - callee of `InvocationExpressionSyntax` -> `Invocation`; LHS of `AssignmentExpressionSyntax`, `ref`/`out` argument, or operand of `++`/`--` -> `Write`; inside `ObjectCreationExpressionSyntax`/`ConstructorInitializerSyntax` -> `Construction`; inside `TypeSyntax`/`BaseListSyntax`/`CastExpressionSyntax`/`TypeOfExpressionSyntax`/`CatchClauseSyntax`/type-argument list -> `TypeReference`; otherwise `Read`. A single occurrence can return combined flags only where genuinely ambiguous (e.g. compound assignment `x += 1` on a field is both `Read` and `Write`) - default to the single most specific flag elsewhere.
@@ -132,7 +132,20 @@ A second VSIX tool window, "Reference Graph", alongside the existing "Roslyn Que
 
 ## Deviations
 
-(none yet)
+- **Status field records the commit subject, not the hash.** Rule 5 requires the code change and this
+  file's update to land in one commit, so a hash recorded in that same commit can never be its own.
+  The field is `Last synced commit subject` instead; check it with `git log -1 --format=%s`.
+- **Step 1: `++`/`--` classify as `Write` only.** Followed the step's literal rule rather than the
+  "genuinely ambiguous" latitude. Increment does read, but the filter is more useful when a mutation
+  shows up under `Write` alone; compound assignment stays `Read | Write` as specified.
+- **Step 1: type-position detection keys off the target symbol first.** A syntactic ancestor walk
+  alone misses cases and duplicates what the binder already knows, so `Classify` returns
+  `TypeReference` whenever the target is an `ITypeSymbol`/`INamespaceSymbol` (after the construction
+  check), with the ancestor walk kept only as a fallback for occurrences that did not bind.
+- **Step 1 extra: `+=`/`-=` on an `IEventSymbol` classifies as `Write`, not `Read | Write`.** A
+  subscription is not a read-modify-write of a value.
+- **Step 1: `ReferenceUsageKind.None = 0` added.** Needed so `default` and filter intersection
+  (`(kind & filter) != ReferenceUsageKind.None`) have a name.
 
 ## Open questions
 
