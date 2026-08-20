@@ -23,10 +23,10 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress
-- **Current step:** 2 - Caret symbol resolution
+- **Current step:** 3 - Reference graph node model
 - **Branch:** v0.3.0
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `add reference usage kind and classifier` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `add caret symbol resolver` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-08-20
 
 ## Goal
@@ -65,6 +65,12 @@ A second VSIX tool window, "Reference Graph", alongside the existing "Roslyn Que
 - `RoslynQuery/RoslynQuery.csproj` - already has `InternalsVisibleTo` for the test project; no new wiring needed for `internal` types.
 - `RoslynQuery.slnx` - solution file (not `.sln`).
 
+**Folder convention:** every file this plan adds lives in a subfolder, never at a project root -
+production code under `RoslynQuery/ReferenceGraph/` and `RoslynQuery/ToolWindow/`, tests under
+`RoslynQuery.Tests/ReferenceGraph/`, `RoslynQuery.Tests/ToolWindow/`, and shared test fixtures under
+`RoslynQuery.Tests/Infrastructure/`. Namespaces stay flat (`RoslynQuery.Tests`) to match the existing
+test project and to keep this plan's `-class` filters valid.
+
 ## Steps
 
 ### 1. Reference-kind classification model `[x]`
@@ -74,7 +80,7 @@ A second VSIX tool window, "Reference Graph", alongside the existing "Roslyn Que
 - **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then `RoslynQuery.Tests/bin/Debug/net472/RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceUsageClassifierTests"` passes. Cover: plain invocation, field read, field write (assignment LHS), compound assignment (Read|Write), `new Foo()` construction, `this()`/`base()` initializer, parameter type reference, cast, `typeof`, generic type argument, catch clause type.
 - **Commit:** `add reference usage kind and classifier`
 
-### 2. Caret symbol resolution `[ ]`
+### 2. Caret symbol resolution `[x]`
 
 - **Files:** `RoslynQuery/ReferenceGraph/SymbolResolver.cs` (new), `RoslynQuery.Tests/SymbolResolverTests.cs` (new)
 - **Do:** `internal static class SymbolResolver` with `ResolveAtCaretAsync(Solution solution, ActiveContext active, CancellationToken)`. Find the document the same way `ScopeResolver`'s private `FindDocument` does (`RoslynQuery/Query/ScopeResolver.cs:171`) - either call it if accessible or duplicate the two-line lookup (it's `private static`, so duplicate rather than change its visibility). Get the semantic model and syntax root, find the token at the caret position (reuse `ScopeResolver`'s `ToPosition` logic at line 179, likely duplicated for the same visibility reason), try `GetDeclaredSymbol` on the token's parent first (caret on a declaration), fall back to `GetSymbolInfo` (caret on a usage), fall back further by walking `token.Parent.Parent` a few levels if the immediate node binds to nothing useful. Restrict the accepted result to `SymbolKind` in {Method, Property, Field, Event, NamedType} (constructors are `IMethodSymbol` with `MethodKind.Constructor`, already covered by `Method`).
@@ -83,28 +89,28 @@ A second VSIX tool window, "Reference Graph", alongside the existing "Roslyn Que
 
 ### 3. Reference graph node model `[ ]`
 
-- **Files:** `RoslynQuery/ReferenceGraph/ReferenceGraphNode.cs` (new), `RoslynQuery/ReferenceGraph/ReferenceDirection.cs` (new, `internal enum ReferenceDirection { Incoming, Outgoing }`), `RoslynQuery.Tests/ReferenceGraphNodeTests.cs` (new)
+- **Files:** `RoslynQuery/ReferenceGraph/ReferenceGraphNode.cs` (new), `RoslynQuery/ReferenceGraph/ReferenceDirection.cs` (new, `internal enum ReferenceDirection { Incoming, Outgoing }`), `RoslynQuery.Tests/ReferenceGraph/ReferenceGraphNodeTests.cs` (new)
 - **Do:** Before writing this file, empirically verify `Microsoft.CodeAnalysis.SymbolKey`'s exact API (static `Create`, instance `Resolve`, `GetSymbolKey` extension availability) against the Roslyn package version this project references, via a throwaway console probe - do not commit the probe. Then add `internal sealed class ReferenceGraphNode : INotifyPropertyChanged` with: `DisplayText`, `SecondaryText`, `SymbolKindForGlyph` (or similar, feeds `SymbolKindMonikerConverter` later), `DocumentId` + primary `TextSpan` (first location), `IReadOnlyList<(DocumentId DocumentId, TextSpan Span, ReferenceUsageKind Kind)> Locations`, `ReferenceDirection Direction`, `ReferenceGraphNode Parent` (for ancestor-chain cycle checks in step 5), `bool IsRecursive`, a stored `SymbolKey` string/struct for re-resolution, and a lazily-populated `ObservableCollection<ReferenceGraphNode> Children` seeded with a single placeholder node so the tree shows an expand arrow before the real fetch. Add a helper `bool HasAncestor(SymbolKey key)` walking `Parent` up.
 - **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then `RoslynQuery.Tests/bin/Debug/net472/RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceGraphNodeTests"` passes. Cover: constructing a node and resolving its stored `SymbolKey` back to the original `ISymbol` against the same solution's compilation round-trips correctly; `HasAncestor` finds a symbol two levels up the `Parent` chain and correctly returns false for an unrelated symbol.
 - **Commit:** `add reference graph node model`
 
 ### 4. Engine: incoming references `[ ]`
 
-- **Files:** `RoslynQuery/ReferenceGraph/ReferenceGraphEngine.cs` (new), `RoslynQuery.Tests/ReferenceGraphEngineIncomingTests.cs` (new)
+- **Files:** `RoslynQuery/ReferenceGraph/ReferenceGraphEngine.cs` (new), `RoslynQuery.Tests/ReferenceGraph/ReferenceGraphEngineIncomingTests.cs` (new)
 - **Do:** `internal static class ReferenceGraphEngine` with `FindIncomingAsync(ISymbol target, Solution solution, IImmutableSet<Document> documents, ReferenceUsageKind filter, ReferenceGraphNode parent, CancellationToken)`. Call `SymbolFinder.FindReferencesAsync(target, solution, documents, cancellationToken)`. For every `ReferenceLocation` where `!IsCandidateLocation`, classify it with `ReferenceUsageClassifier.Classify`, skip if the result doesn't intersect `filter`, then find the enclosing declaration symbol via `SemanticModel.GetEnclosingSymbol` at that location - same walk as `ScopeResolver.ResolveDeclarationAsync` (`RoslynQuery/Query/ScopeResolver.cs:131`), stopping at the first symbol satisfying the same "declaration symbol" test as `ScopeResolver.IsDeclarationSymbol` (line 154). Group by that enclosing symbol into one `ReferenceGraphNode` per group (respecting `parent.HasAncestor` to mark `IsRecursive` and skip descending further into an already-visited ancestor), each carrying its group's `Locations` list. Cap at 200 nodes with a trailing "N more..." placeholder node.
 - **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then `RoslynQuery.Tests/bin/Debug/net472/RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceGraphEngineIncomingTests"` passes. Cover (multi-document `AdhocWorkspace` fixtures per `PredicateAwaitTests.cs:21-41`): a method called from two different methods produces two nodes both flagged `Invocation`; a field read in one method and written in another produces nodes flagged `Read` and `Write` respectively; restricting `documents` to a single document excludes a same-project caller in a different file that passing `null` (whole solution) would include; a type root's incoming set includes both a `new Foo()` site (`Construction`) and a parameter-typed-as-`Foo` site (`TypeReference`) when the filter includes both kinds, and excludes the `TypeReference` one when the filter doesn't.
 - **Commit:** `add reference graph engine incoming path`
 
 ### 5. Engine: outgoing references `[ ]`
 
-- **Files:** `RoslynQuery/ReferenceGraph/ReferenceGraphEngine.cs` (extend), `RoslynQuery.Tests/ReferenceGraphEngineOutgoingTests.cs` (new)
+- **Files:** `RoslynQuery/ReferenceGraph/ReferenceGraphEngine.cs` (extend), `RoslynQuery.Tests/ReferenceGraph/ReferenceGraphEngineOutgoingTests.cs` (new)
 - **Do:** Add `FindOutgoingAsync(ISymbol root, Solution solution, ReferenceUsageKind filter, ReferenceGraphNode parent, CancellationToken)`. For a member root: union `root.DeclaringSyntaxReferences` (partial methods/types), get each `SemanticModel`, walk descendant nodes (include constructor initializers and property accessor bodies) the way `QueryEngine.ScanNodesAsync` walks a tree (`RoslynQuery/Query/QueryEngine.cs:180`), call `GetSymbolInfo` on each candidate node, classify with the same `ReferenceUsageClassifier.Classify`, skip anything outside `filter`, group by target symbol into one `ReferenceGraphNode` per group (same `HasAncestor`/`IsRecursive`/200-cap handling as step 4). For a type root: union this same walk over every member's declaring syntax plus the type's own `BaseListSyntax` (classified `TypeReference`), since a type has no single body of its own.
 - **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then `RoslynQuery.Tests/bin/Debug/net472/RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceGraphEngineOutgoingTests"` passes. Cover: a method that calls two other methods produces two `Invocation` nodes; a method that reads and writes two different fields produces correctly-flagged nodes; a directly self-recursive method's outgoing set marks the self-entry `IsRecursive` and does not attempt to expand it further; a partial method's outgoing set unions references from both partial declarations; a type root's outgoing set includes a reference made only inside one of its members plus its base type.
 - **Commit:** `add reference graph engine outgoing path`
 
 ### 6. Symbol glyph converter `[ ]`
 
-- **Files:** `RoslynQuery/ToolWindow/SymbolKindMonikerConverter.cs` (new), `RoslynQuery.Tests/SymbolKindMonikerConverterTests.cs` (new)
+- **Files:** `RoslynQuery/ToolWindow/SymbolKindMonikerConverter.cs` (new), `RoslynQuery.Tests/ToolWindow/SymbolKindMonikerConverterTests.cs` (new)
 - **Do:** `IValueConverter` mapping `SymbolKind`/`MethodKind` (method vs constructor vs property vs field vs event vs named type, further split class/struct/interface/enum via `TypeKind` where the input is a `NamedType`) to `Microsoft.VisualStudio.Imaging.Interop.ImageMoniker` values from `KnownMonikers` (Method, Field, Property, Event, Class, Struct, Interface, Enumeration, EnumerationItem as needed) - same shape as `RoslynQuery/ToolWindow/TargetMonikerConverter.cs`.
 - **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then `RoslynQuery.Tests/bin/Debug/net472/RoslynQuery.Tests.exe -class "RoslynQuery.Tests.SymbolKindMonikerConverterTests"` passes. `Convert` is a pure function over enum inputs - test it directly without any WPF/UI host.
 - **Commit:** `add symbol kind moniker converter`
@@ -144,6 +150,19 @@ A second VSIX tool window, "Reference Graph", alongside the existing "Roslyn Que
   check), with the ancestor walk kept only as a fallback for occurrences that did not bind.
 - **Step 1 extra: `+=`/`-=` on an `IEventSymbol` classifies as `Write`, not `Read | Write`.** A
   subscription is not a read-modify-write of a value.
+- **Test files moved into subfolders (user instruction, mid-step-2).** `ReferenceUsageClassifierTests.cs`
+  moved from the test project root to `RoslynQuery.Tests/ReferenceGraph/`; later steps' file paths were
+  retargeted the same way. See the folder convention under **Key files**.
+- **Step 2 extra: `RoslynQuery.Tests/Infrastructure/TestSolutions.cs` added.** A shared `AdhocWorkspace`
+  fixture (`Create`, `PathFor`, `Document`, `ExtractCaret`) instead of copying the `PredicateAwaitTests`
+  boilerplate into each of the four new test files. Documents get real file paths because
+  `Solution.GetDocumentIdsWithFilePath` is how the caret's document is found.
+- **Step 2: the ancestor climb stops at the first node that binds to anything.** A caret on a local
+  binds to an `ILocalSymbol`, so resolution returns null rather than climbing out to the enclosing
+  method or, worse, to the call an argument sits in. The climb (capped at 4 levels) only runs for
+  tokens that bind to nothing at all, so a caret on a brace still reaches its declaration.
+- **Step 2 extra: `SymbolResolver.IsSupportedRoot` is public within the assembly**, so step 8's
+  command handler can reuse the same root test rather than duplicating the kind switch.
 - **Step 1: `ReferenceUsageKind.None = 0` added.** Needed so `default` and filter intersection
   (`(kind & filter) != ReferenceUsageKind.None`) have a name.
 
