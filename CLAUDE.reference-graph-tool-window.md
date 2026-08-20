@@ -23,10 +23,10 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress - all code complete, blocked only on step 8's manual smoke test
-- **Current step:** 8 - manual F5 smoke test (first run crashed on open; fixed, needs re-running)
+- **Current step:** 8 - manual F5 smoke test (two defects found and fixed so far; needs re-running)
 - **Branch:** v0.3.0
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `fix filter toggle style target type mismatch` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `autoload the package when a c# editor is active` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-08-20
 
 ## Goal
@@ -171,6 +171,15 @@ test project and to keep this plan's `-class` filters valid.
   was re-checked for the same mismatch; the rest are all type-matched. **A `TargetType` mismatch is
   invisible to the compiler and only surfaces when the control is constructed** - it is exactly the
   class of defect this step's manual smoke test exists to catch.
+- **Step 8: the package needed rule-based background autoload.** "View Reference Graph" was greyed out
+  on a first right-click unless a window had already been opened by hand: the button is
+  `DefaultDisabled`, so it stays disabled until `BeforeQueryStatus` runs, and `BeforeQueryStatus`
+  cannot run until the package is loaded - which nothing did except opening a window.
+  `[ProvideAutoLoad]` + `[ProvideUIContextRule]` on an `ActiveEditorContentType:CSharp` term now load
+  the package in the background whenever a C# editor is active, which is exactly the set of cases
+  where the command is meant to be usable. Confirmed in the generated
+  `RoslynQuery/bin/Debug/net472/RoslynQuery.pkgdef`: an `AutoLoadPackages\{c6829cab-...}` entry with
+  `dword:00000002` (BackgroundLoad) and a `UIContextRules\{c6829cab-...}` entry carrying the term.
 - **Step 8: the manual smoke test is still outstanding past that first crash.** The window now
   constructs, but the rest of the checklist below has not been walked, so the step stays `[~]`.
 - **Step 7: the filter popup uses `StaysOpen="False"`, not `True`.** `IsOpen` is bound two-way to the

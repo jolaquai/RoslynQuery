@@ -25,9 +25,22 @@ namespace RoslynQuery;
 // Docked with the Error List by default: the results grid wants the same horizontal space.
 [ProvideToolWindow(typeof(QueryToolWindow), Style = VsDockStyle.Tabbed, Window = "{D78612C7-9962-4B83-95D9-268046DAD23A}")]
 [ProvideToolWindow(typeof(ReferenceGraphToolWindow), Style = VsDockStyle.Tabbed, Window = "{D78612C7-9962-4B83-95D9-268046DAD23A}")]
+// "View Reference Graph" is a DefaultDisabled command, so it stays greyed out until this package is
+// loaded and its BeforeQueryStatus can run - and nothing else loads the package until one of its
+// windows is opened. An active C# editor is the narrowest trigger that covers every case where the
+// command is meant to be usable.
+[ProvideAutoLoad(CSharpEditorContextGuidString, PackageAutoLoadFlags.BackgroundLoad)]
+[ProvideUIContextRule(
+    CSharpEditorContextGuidString,
+    name: "C# editor active",
+    expression: "CSharp",
+    termNames: ["CSharp"],
+    termValues: ["ActiveEditorContentType:CSharp"])]
 public sealed class RoslynQueryPackage : AsyncPackage
 {
     public const string PackageGuidString = "943e02ac-bfd8-4648-9948-4b7d144f6a2d";
+
+    private const string CSharpEditorContextGuidString = "c6829cab-589c-4037-b587-0ac4a1bb2aa8";
 
     public static readonly Guid CommandSet = new Guid("7acc99ae-d964-461e-94d9-9ef567e60889");
     public const int ShowToolWindowCommandId = 0x0100;
