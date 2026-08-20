@@ -20,7 +20,7 @@ namespace RoslynQuery;
 
 [Guid(PackageGuidString)]
 [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
-[InstalledProductRegistration("#110", "#112", "0.2.0")]
+[InstalledProductRegistration("#110", "#112", "0.3.0")]
 [ProvideMenuResource("Menus.ctmenu", 1)]
 // Docked with the Error List by default: the results grid wants the same horizontal space.
 [ProvideToolWindow(typeof(QueryToolWindow), Style = VsDockStyle.Tabbed, Window = "{D78612C7-9962-4B83-95D9-268046DAD23A}")]
