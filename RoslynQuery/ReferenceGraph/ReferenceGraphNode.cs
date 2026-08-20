@@ -110,6 +110,25 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
         { IsMessage = true };
 
     /// <summary>
+    /// The rows a refresh has to re-read: the shallowest fetchable, expanded, already-loaded row on
+    /// each path. Their children are replaced wholesale, so re-reading anything below one of them
+    /// would be work thrown away.
+    /// </summary>
+    public static IEnumerable<ReferenceGraphNode> ShallowestExpanded(IEnumerable<ReferenceGraphNode> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.IsExpandable && node.IsExpanded && node.IsLoaded)
+            {
+                yield return node;
+                continue;
+            }
+
+            foreach (var descendant in ShallowestExpanded(node.Children)) yield return descendant;
+        }
+    }
+
+    /// <summary>
     /// Walks the parent chain, this node included: a node's own symbol turning up again below it is
     /// exactly the self-recursion the graph has to stop at.
     /// </summary>
@@ -149,6 +168,29 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
         foreach (var location in Locations) branch.Children.Add(CreateLocation(location, branch));
 
         return branch;
+    }
+
+    /// <summary>
+    /// A root and its two branches. The root is deliberately not <see cref="IsExpandable"/>: its
+    /// children are these branches and nothing else. Marked expandable it looked to the refresh walk
+    /// like an ordinary fetchable row, and re-expanding it replaced both branches with a plain
+    /// incoming result - which is what changing the filter used to do to the whole tree.
+    /// </summary>
+    public static ReferenceGraphNode CreateRoot(string displayText, string symbolName, SymbolIdentity identity, SymbolGlyph glyph)
+    {
+        var root = new ReferenceGraphNode(displayText, identity, glyph, ReferenceDirection.Incoming, expandable: false);
+
+        root.SetChildren(
+        [
+            new ReferenceGraphNode($"References To '{symbolName}'", identity, SymbolGlyph.IncomingBranch,
+                ReferenceDirection.Incoming, parent: root),
+            new ReferenceGraphNode($"References From '{symbolName}'", identity, SymbolGlyph.OutgoingBranch,
+                ReferenceDirection.Outgoing, parent: root)
+        ]);
+
+        root.IsExpanded = true;
+
+        return root;
     }
 
     /// <summary>A single occurrence: a leaf that exists to be double-clicked.</summary>

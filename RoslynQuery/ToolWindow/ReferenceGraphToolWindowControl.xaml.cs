@@ -7,7 +7,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Threading;
 
 using Microsoft.CodeAnalysis;
 using Microsoft.VisualStudio.ComponentModelHost;
@@ -117,18 +120,8 @@ public partial class ReferenceGraphToolWindowControl : UserControl
             return;
         }
 
-        var root = new ReferenceGraphNode(
-            ReferenceGraphDisplay.Of(symbol), identity, SymbolGlyphs.For(symbol), ReferenceDirection.Incoming);
-
-        root.SetChildren(
-        [
-            new ReferenceGraphNode($"References To '{symbol.Name}'", identity, SymbolGlyph.IncomingBranch,
-                ReferenceDirection.Incoming, parent: root),
-            new ReferenceGraphNode($"References From '{symbol.Name}'", identity, SymbolGlyph.OutgoingBranch,
-                ReferenceDirection.Outgoing, parent: root)
-        ]);
-
-        root.IsExpanded = true;
+        var root = ReferenceGraphNode.CreateRoot(
+            ReferenceGraphDisplay.Of(symbol), symbol.Name, identity, SymbolGlyphs.For(symbol));
 
         _roots.Insert(0, root);
         SetError(null);
@@ -151,21 +144,53 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         BeginExpand(node);
     }
 
-    private void OnNodeDoubleClick(object sender, MouseButtonEventArgs e)
+    /// <summary>
+    /// Double-click navigates, and must not also open or close the row.
+    /// <c>TreeViewItem.OnMouseLeftButtonDown</c> is what toggles <c>IsExpanded</c>, and it only does so
+    /// when the event reaches it unhandled - so this hooks the tunnelling
+    /// <c>PreviewMouseLeftButtonDown</c> on the TreeView, which runs before any item sees anything.
+    /// Handling <c>MouseDoubleClick</c> was tried first and was too late in the chain.
+    /// The <c>IsExpanded</c> restore afterwards is a belt-and-braces no-op when that works.
+    /// </summary>
+    private void OnTreePreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        if (!(Tree.SelectedItem is ReferenceGraphNode node) || _workspace is null) return;
+        if (e.ClickCount != 2 || _workspace is null) return;
 
-        // A branch row has nowhere to navigate to, so leave the event alone and let the default
-        // double-click behaviour expand it.
+        var source = e.OriginalSource as DependencyObject;
+
+        // The expander chevron is a ToggleButton; double-clicking it means "expand", not "navigate".
+        if (Ancestor<ToggleButton>(source) != null) return;
+
+        if (!(Ancestor<TreeViewItem>(source)?.DataContext is ReferenceGraphNode node)) return;
+
+        // A branch row has nowhere to navigate to, so leave the event alone and let it expand.
         if (node.DocumentId is null) return;
 
-        // TreeViewItem toggles IsExpanded from its MouseLeftButtonDown class handler. MouseDoubleClick
-        // is raised while MouseDown is still routing, and WPF only promotes MouseDown to
-        // MouseLeftButtonDown when it comes back unhandled - so handling it here is what stops a
-        // navigating double-click from also opening or closing the row.
         e.Handled = true;
+
+        var wasExpanded = node.IsExpanded;
+
+        // Setting the same value is a no-op on the node, so this costs nothing when Handled did its job.
+#pragma warning disable VSTHRD001, VSTHRD110
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => node.IsExpanded = wasExpanded));
+#pragma warning restore VSTHRD001, VSTHRD110
+
+        Navigate(node);
+    }
+
+    private static T Ancestor<T>(DependencyObject node) where T : DependencyObject
+    {
+        for (; node != null; node = VisualTreeHelper.GetParent(node))
+            if (node is T match) return match;
+
+        return null;
+    }
+
+    private void Navigate(ReferenceGraphNode node)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
 
         // VSSDK007: a WPF event handler has nothing to await into; FileAndForget is the terminus.
 #pragma warning disable VSSDK007
@@ -219,29 +244,11 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         StatusText.Text = "Cleared.";
     }
 
-    /// <summary>
-    /// Re-reads every expanded row. Only the shallowest expanded row on each path is re-run: its
-    /// children are replaced wholesale, so refreshing its descendants first would be work thrown away.
-    /// </summary>
     private void RefreshExpanded()
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        foreach (var node in ShallowestExpanded(_roots).ToList()) BeginExpand(node);
-    }
-
-    private static IEnumerable<ReferenceGraphNode> ShallowestExpanded(IEnumerable<ReferenceGraphNode> nodes)
-    {
-        foreach (var node in nodes)
-        {
-            if (node.IsExpandable && node.IsExpanded && node.IsLoaded)
-            {
-                yield return node;
-                continue;
-            }
-
-            foreach (var descendant in ShallowestExpanded(node.Children)) yield return descendant;
-        }
+        foreach (var node in ReferenceGraphNode.ShallowestExpanded(_roots).ToList()) BeginExpand(node);
     }
 
     private void BeginExpand(ReferenceGraphNode node)

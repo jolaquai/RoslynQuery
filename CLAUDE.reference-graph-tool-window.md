@@ -170,7 +170,19 @@ supersede **Non-goal 1** ("no per-call-site leaf level under a node"), which the
 - **Verify:** `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceGraphNodeLocationRowTests"`.
 - **Commit:** `add navigable rows for each reference location`
 
-### 12. Double-click navigates without toggling `[~]`
+### 13. Filter changes no longer wipe the tree `[x]`
+
+- **Files:** `RoslynQuery/ReferenceGraph/ReferenceGraphNode.cs`,
+  `RoslynQuery/ToolWindow/ReferenceGraphToolWindowControl.xaml.cs`,
+  `RoslynQuery.Tests/ReferenceGraph/ReferenceGraphRefreshTests.cs` (new)
+- **Do:** Root construction moved into `ReferenceGraphNode.CreateRoot`, which builds the root
+  **not** `IsExpandable`. `ShallowestExpanded` moved onto the node too, so the refresh walk is
+  reachable from tests.
+- **Verify:** `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceGraphRefreshTests"`.
+- **Commit:** folded into the step 12 commit - both fixes touch the same file, and splitting them
+  would have left a commit that does not compile.
+
+### 12. Double-click navigates without toggling `[~]` (second attempt)
 
 - **Files:** `RoslynQuery/ToolWindow/ReferenceGraphToolWindowControl.xaml.cs`
 - **Do:** `OnNodeDoubleClick` sets `e.Handled = true` when it navigates. `TreeViewItem` toggles
@@ -178,9 +190,11 @@ supersede **Non-goal 1** ("no per-call-site leaf level under a node"), which the
   `MouseDown` is still routing; WPF promotes `MouseDown` to `MouseLeftButtonDown` only when it comes
   back unhandled, so handling it suppresses the toggle. A branch row (no `DocumentId`) is left
   unhandled on purpose, so double-clicking one still expands it.
-- **Progress:** Builds clean. **Not verified** - this is WPF input-promotion behaviour that no unit
-  test in this project can exercise, so it stays `[~]` until the manual smoke test confirms a
-  navigating double-click no longer toggles the row.
+- **Progress:** First attempt (handling `MouseDoubleClick`) was reported still toggling. Now hooks the
+  tunnelling `PreviewMouseLeftButtonDown` on the TreeView, which runs before any `TreeViewItem` sees
+  the input, plus an `IsExpanded` restore posted at `DispatcherPriority.Input` as a fallback that makes
+  the final state correct even if the suppression fails again. Still **not verified** - no WPF host in
+  the test suite.
 - **Commit:** `stop double-click from toggling row expansion`
 
 ## Deviations
@@ -221,6 +235,19 @@ supersede **Non-goal 1** ("no per-call-site leaf level under a node"), which the
   where the command is meant to be usable. Confirmed in the generated
   `RoslynQuery/bin/Debug/net472/RoslynQuery.pkgdef`: an `AutoLoadPackages\{c6829cab-...}` entry with
   `dword:00000002` (BackgroundLoad) and a `UIContextRules\{c6829cab-...}` entry carrying the term.
+- **Step 13: changing the filter replaced a root's two branches with a bare incoming result.** The
+  root was built with the default `expandable: true`, so the refresh walk saw it as an ordinary
+  fetchable row: `BeginExpand(root)` ran `FindIncomingAsync` on it and `SetChildren` overwrote
+  "References To" and "References From" with the incoming rows. `CreateRoot` now builds it
+  `expandable: false` - its children are the two branches and nothing else - which makes the walk skip
+  it and descend to the branches instead. Four tests in `ReferenceGraphRefreshTests` reproduce the
+  failure (verified by flipping the flag back).
+- **Step 12, second attempt: `MouseDoubleClick` was too late in the input chain.** `e.Handled` there did
+  not stop `TreeViewItem.OnMouseLeftButtonDown` from toggling. The handler moved to
+  `PreviewMouseLeftButtonDown` on the TreeView - tunnelling, so it runs before any item - and skips the
+  expander chevron (a `ToggleButton`) and branch rows so those still expand on double-click. A restore
+  of `IsExpanded` posted at `DispatcherPriority.Input` backs it up: a no-op when the suppression works,
+  and a correction when it does not.
 - **Step 12 is reasoned, not measured.** The `e.Handled = true` fix depends on WPF promoting
   `MouseDown` to `MouseLeftButtonDown` only when the former is unhandled. That is the same mechanism
   that makes handling `MouseDown` suppress `MouseLeftButtonDown` generally, but it is not something the

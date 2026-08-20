@@ -130,6 +130,6 @@
                   ItemContainerStyle="{StaticResource NodeItem}"
                   ItemTemplate="{StaticResource NodeTemplate}"
                   TreeViewItem.Expanded="OnNodeExpanded"
-                  MouseDoubleClick="OnNodeDoubleClick" />
+                  PreviewMouseLeftButtonDown="OnTreePreviewMouseLeftButtonDown" />
     </Grid>
 </UserControl>
