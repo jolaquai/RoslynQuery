@@ -123,13 +123,44 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
         return false;
     }
 
-    /// <summary>Drops the seeded placeholder and takes the fetched rows in one shot.</summary>
+    /// <summary>
+    /// Drops the seeded placeholder and takes the fetched rows in one shot. A row backed by more than
+    /// one occurrence gets a "Locations" branch in front of them, so a row reading "4 reads" can be
+    /// opened to reach all four rather than only the first. One occurrence needs no branch: the row
+    /// itself already navigates to it.
+    /// </summary>
     public void SetChildren(IEnumerable<ReferenceGraphNode> children)
     {
         Children.Clear();
+
+        if (Locations.Count > 1) Children.Add(BuildLocationsBranch());
         foreach (var child in children) Children.Add(child);
+
         IsLoaded = true;
     }
+
+    private ReferenceGraphNode BuildLocationsBranch()
+    {
+        // Not expandable: it is built already populated, so the lazy fetch must leave it alone.
+        var branch = new ReferenceGraphNode(
+            $"Locations ({Locations.Count})", default, SymbolGlyph.Locations, Direction, parent: this, expandable: false)
+        { IsLoaded = true };
+
+        foreach (var location in Locations) branch.Children.Add(CreateLocation(location, branch));
+
+        return branch;
+    }
+
+    /// <summary>A single occurrence: a leaf that exists to be double-clicked.</summary>
+    public static ReferenceGraphNode CreateLocation(ReferenceLocationInfo location, ReferenceGraphNode parent) =>
+        new ReferenceGraphNode(
+            location.Display,
+            default,
+            SymbolGlyph.Location,
+            parent?.Direction ?? ReferenceDirection.Incoming,
+            [location],
+            parent,
+            expandable: false);
 
     /// <summary>"3 refs (2 reads, 1 write)", or just "2 invocations" when there is only one kind.</summary>
     public static string Describe(IReadOnlyList<ReferenceLocationInfo> locations)

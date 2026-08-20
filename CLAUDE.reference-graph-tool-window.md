@@ -158,10 +158,16 @@ supersede **Non-goal 1** ("no per-call-site leaf level under a node"), which the
 - **Verify:** `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceGraphEngineLinkedFileTests"`.
 - **Commit:** `collapse duplicate reference occurrences from linked documents`
 
-### 11. Per-location child rows `[ ]`
+### 11. Per-location child rows `[x]`
 
-- **Do:** A node with more than one location gets a synthetic "Locations" child listing one navigable
-  row per occurrence, so a row that says "4 reads" can be expanded to reach all four.
+- **Files:** `RoslynQuery/ReferenceGraph/ReferenceGraphNode.cs`, `SymbolGlyph.cs`,
+  `RoslynQuery/ToolWindow/SymbolGlyphMonikerConverter.cs`,
+  `RoslynQuery.Tests/ReferenceGraph/ReferenceGraphNodeLocationRowTests.cs` (new)
+- **Do:** `SetChildren` prepends a synthetic "Locations (N)" branch to any row backed by more than one
+  occurrence, holding one navigable leaf per occurrence (`FileName (line,col)`), ahead of the graph
+  rows. The branch is built already populated and is not `IsExpandable`, so the lazy fetch leaves it
+  alone. A single-occurrence row gets no branch - the row itself already navigates there.
+- **Verify:** `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceGraphNodeLocationRowTests"`.
 - **Commit:** `add navigable rows for each reference location`
 
 ### 12. Double-click navigates without toggling `[ ]`
@@ -207,6 +213,10 @@ supersede **Non-goal 1** ("no per-call-site leaf level under a node"), which the
   where the command is meant to be usable. Confirmed in the generated
   `RoslynQuery/bin/Debug/net472/RoslynQuery.pkgdef`: an `AutoLoadPackages\{c6829cab-...}` entry with
   `dword:00000002` (BackgroundLoad) and a `UIContextRules\{c6829cab-...}` entry carrying the term.
+- **Step 11 supersedes Non-goal 1.** The plan ruled out a per-call-site leaf level; the user reversed
+  that after seeing a row report several references with no way to reach any but the first. The leaves
+  sit under their own "Locations (N)" branch rather than being mixed in with the recursive graph rows,
+  so a row's children stay one kind of thing.
 - **Step 10: the same occurrence was reported once per project.** A multi-targeted project is several
   Roslyn projects over one set of files, so `SymbolFinder` returned each occurrence once per target
   framework. Because `SymbolIdentity` included the declaring `ProjectId`, the copies did not even merge

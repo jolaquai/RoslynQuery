@@ -37,6 +37,8 @@ public sealed class SymbolGlyphMonikerConverter : IValueConverter
             case SymbolGlyph.Delegate: return KnownMonikers.Delegate;
             case SymbolGlyph.IncomingBranch: return KnownMonikers.CallTo;
             case SymbolGlyph.OutgoingBranch: return KnownMonikers.CallFrom;
+            case SymbolGlyph.Locations: return KnownMonikers.BulletList;
+            case SymbolGlyph.Location: return KnownMonikers.GoToSourceCode;
             default: return KnownMonikers.CodeInformation;
         }
     }

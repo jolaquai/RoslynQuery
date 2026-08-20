@@ -22,7 +22,11 @@ internal enum SymbolGlyph
     Enumeration,
     Delegate,
     IncomingBranch,
-    OutgoingBranch
+    OutgoingBranch,
+
+    /// <summary>The synthetic row grouping one node's individual occurrences, and one such occurrence.</summary>
+    Locations,
+    Location
 }
 
 internal static class SymbolGlyphs
