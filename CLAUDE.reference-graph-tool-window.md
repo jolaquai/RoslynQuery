@@ -23,10 +23,10 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress
-- **Current step:** 8 - Commands, package wiring, and smoke test
+- **Current step:** 8 - Commands, package wiring, and smoke test (code done; manual smoke test outstanding), then 9 - README
 - **Branch:** v0.3.0
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `add reference graph tool window ui` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `wire up reference graph commands and tool window registration` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-08-20
 
 ## Goal
@@ -121,11 +121,18 @@ test project and to keep this plan's `-class` filters valid.
 - **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds (XAML compiles, no runtime UI test at this step - deferred to step 8's manual smoke test).
 - **Commit:** `add reference graph tool window ui`
 
-### 8. Commands, package wiring, and smoke test `[ ]`
+### 8. Commands, package wiring, and smoke test `[~]`
 
 - **Files:** `RoslynQuery/RoslynQueryPackage.vsct` (extend), `RoslynQuery/RoslynQueryPackage.cs` (extend)
 - **Do:** In the `.vsct`, add a `<Button>` under `IDG_VS_WNDO_OTRWNDWS1` for "Reference Graph" (View > Other Windows), mirroring the existing `cmdidShowQueryToolWindow` button (`RoslynQuery/RoslynQueryPackage.vsct:11`), plus a `View Reference Graph` button in the editor's code-window context menu group (check `vsshlids.h`/`stdidcmd.h` for the exact `IDG_VS_CTXT_CODEWIN_*` group real "Go To Definition" lives in, and use that). In `RoslynQueryPackage.cs`, add `[ProvideToolWindow(typeof(ReferenceGraphToolWindow), Style = VsDockStyle.Tabbed, Window = ...)]` alongside the existing attribute (line 20), wire the "open blank window" command the same way `ShowToolWindowCommandId` is wired (lines 33-41), and wire the context-menu command with a synchronous, cheap `BeforeQueryStatus` (enabled whenever `ScopeResolver.GetActiveContext` finds an active C# view - do not attempt semantic symbol resolution on the UI thread) whose invoke handler resolves the caret symbol (`SymbolResolver.ResolveAtCaretAsync`) off the UI thread and, on success, shows the tool window and roots a new graph on it; on failure (no resolvable symbol), show the tool window with an error line via the same `SetError` pattern `QueryToolWindowControl` already uses (`RoslynQuery/ToolWindow/QueryToolWindowControl.xaml.cs:225-229`).
 - **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then manually launch the VS experimental instance (F5 on the `RoslynQuery` project) and: right-click a method with known callers/callees in a test solution -> View Reference Graph; confirm both "References To" and "References From" populate; expand a few levels including into a recursive method and confirm it terminates cleanly with an `IsRecursive` marker instead of looping; toggle the filter flyout's `TypeReference` checkbox and confirm the tree refreshes to include/exclude type-usage nodes; double-click a node in each direction and confirm navigation lands on the correct line; open the window from View > Other Windows with no prior invocation and confirm it opens blank without error.
+- **Progress:** Code complete and `dotnet build RoslynQuery.slnx -c Debug` succeeds with no warnings.
+  The `.vsct` gained `cmdidShowReferenceGraphToolWindow` (0x0101, View > Other Windows) and
+  `cmdidViewReferenceGraph` (0x0102, editor context menu under `IDG_VS_CODEWIN_NAVIGATETOLOCATION`);
+  `RoslynQueryPackage` gained the second `[ProvideToolWindow]`, both command registrations, and the
+  synchronous `BeforeQueryStatus`. **What is left is only the manual F5 smoke test** in the experimental
+  instance - it needs a human at a running Visual Studio and cannot be automated from here. Run the
+  checklist under **Verify** below; if it all passes, flip this step to `[x]`.
 - **Commit:** `wire up reference graph commands and tool window registration`
 
 ### 9. README documentation `[ ]`
@@ -149,6 +156,11 @@ test project and to keep this plan's `-class` filters valid.
   check), with the ancestor walk kept only as a fallback for occurrences that did not bind.
 - **Step 1 extra: `+=`/`-=` on an `IEventSymbol` classifies as `Write`, not `Read | Write`.** A
   subscription is not a read-modify-write of a value.
+- **Step 8: the context-menu button is `DynamicVisibility` + `DefaultDisabled`.** `BeforeQueryStatus`
+  enables it only when there is an active view whose file is `.cs`, which is the cheapest test that
+  matches the plan's "do not resolve symbols on the UI thread" constraint.
+- **Step 8: the manual smoke test has not been run.** Everything else in the step is done and builds
+  clean; the F5 checklist needs a human at a running Visual Studio, so the step stays `[~]`.
 - **Step 7: the filter popup uses `StaysOpen="False"`, not `True`.** `IsOpen` is bound two-way to the
   toggle's `IsChecked`, so an outside click closes the popup and unchecks the button together; with
   `StaysOpen="True"` the popup could only ever be dismissed by hitting the toggle again. Clicks on the
@@ -241,5 +253,7 @@ test project and to keep this plan's `-class` filters valid.
 
 ## Open questions
 
-- Exact `IDG_VS_CTXT_CODEWIN_*` group ID for the editor context-menu command (step 8) - resolve by inspecting `vsshlids.h`/`stdidcmd.h` at implementation time; not blocking earlier steps.
+- ~~Exact `IDG_VS_CTXT_CODEWIN_*` group ID for the editor context-menu command (step 8)~~ - **resolved:**
+  `IDG_VS_CODEWIN_NAVIGATETOLOCATION` (0x02B1 in `vsshlids.h`), the group Go To Definition and Find All
+  References live in, parented under `IDM_VS_CTXT_CODEWIN`.
 - ~~Exact `SymbolKey.Create`/`.Resolve` overload signatures (step 3)~~ - **resolved:** `SymbolKey` is internal, `DocumentationCommentId` is used instead. See **Deviations**.
