@@ -128,20 +128,20 @@
                 </Grid.ColumnDefinitions>
 
                 <WrapPanel Grid.Column="0" Orientation="Horizontal">
-                    <TextBlock Text="target" Style="{StaticResource Caption}" />
+                    <TextBlock Text="Target" Style="{StaticResource Caption}" Margin="0,0,5,3" />
                     <ComboBox x:Name="TargetCombo" MinWidth="104" Margin="0,0,14,3" VerticalAlignment="Center"
                               Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}"
                               SelectionChanged="OnTargetChanged" />
 
-                    <TextBlock Text="scope" Style="{StaticResource Caption}" />
+                    <TextBlock Text="Scope" Style="{StaticResource Caption}" />
                     <ComboBox x:Name="ScopeCombo" MinWidth="132" Margin="0,0,14,3" VerticalAlignment="Center"
                               Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}" />
 
-                    <TextBlock Text="cap" Style="{StaticResource Caption}" />
+                    <TextBlock Text="Cap" Style="{StaticResource Caption}" />
                     <ComboBox x:Name="CapCombo" MinWidth="76" Margin="0,0,14,3" VerticalAlignment="Center"
                               Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}" />
 
-                    <CheckBox x:Name="GeneratedCheckBox" Content="generated" VerticalAlignment="Center" Margin="0,0,14,3"
+                    <CheckBox x:Name="GeneratedCheckBox" Content="Generated" VerticalAlignment="Center" Margin="0,0,14,3"
                               Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogCheckBoxStyleKey}}"
                               ToolTip="Include .g.cs / .designer.cs and source generated documents." />
                 </WrapPanel>
