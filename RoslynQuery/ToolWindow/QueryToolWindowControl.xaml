@@ -133,11 +133,11 @@
                               Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}"
                               SelectionChanged="OnTargetChanged" />
 
-                    <TextBlock Text="Scope" Style="{StaticResource Caption}" />
+                    <TextBlock Text="Scope" Style="{StaticResource Caption}" Margin="0,0,5,3" />
                     <ComboBox x:Name="ScopeCombo" MinWidth="132" Margin="0,0,14,3" VerticalAlignment="Center"
                               Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}" />
 
-                    <TextBlock Text="Cap" Style="{StaticResource Caption}" />
+                    <TextBlock Text="Cap" Style="{StaticResource Caption}" Margin="0,0,5,3" />
                     <ComboBox x:Name="CapCombo" MinWidth="76" Margin="0,0,14,3" VerticalAlignment="Center"
                               Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}" />
 
