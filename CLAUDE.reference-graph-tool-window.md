@@ -23,10 +23,10 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress
-- **Current step:** 4 - Engine: incoming references
+- **Current step:** 5 - Engine: outgoing references
 - **Branch:** v0.3.0
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `add reference graph node model` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `add reference graph engine incoming path` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-08-20
 
 ## Goal
@@ -93,7 +93,7 @@ test project and to keep this plan's `-class` filters valid.
 - **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then `RoslynQuery.Tests/bin/Debug/net472/RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceGraphNodeTests"` passes. Cover: constructing a node and resolving its stored `SymbolKey` back to the original `ISymbol` against the same solution's compilation round-trips correctly; `HasAncestor` finds a symbol two levels up the `Parent` chain and correctly returns false for an unrelated symbol.
 - **Commit:** `add reference graph node model`
 
-### 4. Engine: incoming references `[ ]`
+### 4. Engine: incoming references `[x]`
 
 - **Files:** `RoslynQuery/ReferenceGraph/ReferenceGraphEngine.cs` (new), `RoslynQuery.Tests/ReferenceGraph/ReferenceGraphEngineIncomingTests.cs` (new)
 - **Do:** `internal static class ReferenceGraphEngine` with `FindIncomingAsync(ISymbol target, Solution solution, IImmutableSet<Document> documents, ReferenceUsageKind filter, ReferenceGraphNode parent, CancellationToken)`. Call `SymbolFinder.FindReferencesAsync(target, solution, documents, cancellationToken)`. For every `ReferenceLocation` where `!IsCandidateLocation`, classify it with `ReferenceUsageClassifier.Classify`, skip if the result doesn't intersect `filter`, then find the enclosing declaration symbol via `SemanticModel.GetEnclosingSymbol` at that location - same walk as `ScopeResolver.ResolveDeclarationAsync` (`RoslynQuery/Query/ScopeResolver.cs:131`), stopping at the first symbol satisfying the same "declaration symbol" test as `ScopeResolver.IsDeclarationSymbol` (line 154). Group by that enclosing symbol into one `ReferenceGraphNode` per group (respecting `parent.HasAncestor` to mark `IsRecursive` and skip descending further into an already-visited ancestor), each carrying its group's `Locations` list. Cap at 200 nodes with a trailing "N more..." placeholder node.
@@ -149,6 +149,18 @@ test project and to keep this plan's `-class` filters valid.
   check), with the ancestor walk kept only as a fallback for occurrences that did not bind.
 - **Step 1 extra: `+=`/`-=` on an `IEventSymbol` classifies as `Write`, not `Read | Write`.** A
   subscription is not a read-modify-write of a value.
+- **Step 4: the enclosing declaration is found syntactically, not via `GetEnclosingSymbol`.** The step
+  said to copy `ScopeResolver.ResolveDeclarationAsync`'s walk, but the binder answers "the containing
+  type" for every occurrence outside a body - a parameter's type, a return type, an attribute - so
+  `void Accept(Foo f)` came back attributed to `Uses` rather than to `Uses.Accept`. `EnclosingDeclaration`
+  now climbs the occurrence's ancestors to the first `MemberDeclarationSyntax` / `AccessorDeclarationSyntax` /
+  `VariableDeclaratorSyntax` that declares a symbol, and only falls back to `GetEnclosingSymbol`. Lambdas
+  and local functions are not member declarations, so they are stepped over for free.
+- **Step 4: accessors roll up to their property or event.** `Normalize` maps a symbol with an
+  `AssociatedSymbol` to that symbol, so a reference from a getter shows as a row for the property,
+  matching Call Hierarchy and the plan's list of root kinds.
+- **Step 4: recursive nodes are built non-expandable.** `IsRecursive` marks them and `expandable: false`
+  keeps them from seeding a placeholder child that could never be filled.
 - **Step 3: `SymbolKey` is internal - replaced by `SymbolIdentity` over `DocumentationCommentId`.** The
   throwaway probe the step called for showed `Microsoft.CodeAnalysis.SymbolKey` and
   `SymbolKeyResolution` are both non-public in Microsoft.CodeAnalysis.Workspaces 5.6.0, so the plan's
