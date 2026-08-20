@@ -23,10 +23,10 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress
-- **Current step:** 7 - Tool window UI
+- **Current step:** 8 - Commands, package wiring, and smoke test
 - **Branch:** v0.3.0
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `add symbol glyph moniker converter` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `add reference graph tool window ui` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-08-20
 
 ## Goal
@@ -114,7 +114,7 @@ test project and to keep this plan's `-class` filters valid.
 - **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then `RoslynQuery.Tests/bin/Debug/net472/RoslynQuery.Tests.exe -class "RoslynQuery.Tests.SymbolGlyphMonikerConverterTests"` passes. `Convert` is a pure function over enum inputs - test it directly without any WPF/UI host.
 - **Commit:** `add symbol glyph moniker converter`
 
-### 7. Tool window UI `[ ]`
+### 7. Tool window UI `[x]`
 
 - **Files:** `RoslynQuery/ToolWindow/ReferenceGraphToolWindow.cs` (new), `RoslynQuery/ToolWindow/ReferenceGraphToolWindowControl.xaml` (new), `RoslynQuery/ToolWindow/ReferenceGraphToolWindowControl.xaml.cs` (new)
 - **Do:** `ReferenceGraphToolWindow` mirrors `QueryToolWindow.cs` (new GUID, `Caption = "Reference Graph"`). `ReferenceGraphToolWindowControl.xaml` mirrors `QueryToolWindowControl.xaml`'s theme brushes and `ThemedDialog*StyleKey` styles. Toolbar: scope `ComboBox` (Current Document / Current Project / My Solution, default Current Project, tooltip noting it only affects "References To"), Refresh button (re-expands every currently-expanded node), Stop button (cancels the shared `CancellationTokenSource`, same field idiom as `QueryToolWindowControl._cancellation`), Clear/trash button (empties the root `ObservableCollection<ReferenceGraphNode>`), and a "Filter" `ToggleButton` opening a `Popup` (`StaysOpen="True"`, `IsOpen` bound to the toggle's `IsChecked`) containing one `CheckBox` per `ReferenceUsageKind` flag - changing any checkbox re-expands every currently-expanded node via the same refresh path as the Refresh button. Body: a `TreeView` bound to the root collection with a `HierarchicalDataTemplate` over `Children`; a node's `Expanded` event (or a `IsExpanded` property setter) triggers the lazy `ReferenceGraphEngine.FindIncomingAsync`/`FindOutgoingAsync` call on a background thread (`ThreadHelper.JoinableTaskFactory.RunAsync(...).FileAndForget(...)` -> `TaskScheduler.Default` -> `Dispatcher.BeginInvoke(DispatcherPriority.Background, ...)` to swap the placeholder child for real results, same shape as `QueryToolWindowControl.Run`/`RunCoreAsync`, lines 231-347). Double-click a node navigates via `SpanMapper.ResolveAsync` + `DocumentNavigator.Navigate`, same as `OnResultDoubleClick` (lines 148-170). Each "root" invocation (a public method the package command handlers will call) resolves the target `ISymbol` (via `SymbolResolver`), builds a new root `ReferenceGraphNode` with two synthetic children ("References To 'X'", "References From 'X'"), and prepends it to the root collection.
@@ -149,6 +149,20 @@ test project and to keep this plan's `-class` filters valid.
   check), with the ancestor walk kept only as a fallback for occurrences that did not bind.
 - **Step 1 extra: `+=`/`-=` on an `IEventSymbol` classifies as `Write`, not `Read | Write`.** A
   subscription is not a read-modify-write of a value.
+- **Step 7: the filter popup uses `StaysOpen="False"`, not `True`.** `IsOpen` is bound two-way to the
+  toggle's `IsChecked`, so an outside click closes the popup and unchecks the button together; with
+  `StaysOpen="True"` the popup could only ever be dismissed by hitting the toggle again. Clicks on the
+  checkboxes inside it do not close it either way.
+- **Step 7: the incoming scope is anchored on the row's own symbol, not on the caret.** "Current
+  document" means the document declaring the symbol being expanded, so a row means the same thing
+  however long the window has been open and wherever the caret has since moved.
+- **Step 7: Refresh re-runs only the shallowest expanded row on each path.** Its children are replaced
+  wholesale, so re-running its descendants first would be thrown away.
+- **Step 7 extra: `ReferenceGraphDisplay`.** The `SymbolDisplayFormat` moved out of
+  `ReferenceGraphEngine` so a root row is spelled exactly like the child rows under it.
+- **Step 7: node types stay `internal`.** WPF binds fine to public properties of internal types here -
+  `QueryHit` and `CachedPredicateItem` already do it in the shipping window. Only the converter and the
+  control itself are public, which is what compiled XAML actually requires.
 - **Step 6: named `SymbolGlyphMonikerConverter`,** since it maps `SymbolGlyph` rather than `SymbolKind`.
 - **Step 6: `KnownMonikers` has no constructor glyph.** Verified by reflecting over
   Microsoft.VisualStudio.ImageCatalog 17.14: `Constructor` does not exist. `NewClass` is used instead.

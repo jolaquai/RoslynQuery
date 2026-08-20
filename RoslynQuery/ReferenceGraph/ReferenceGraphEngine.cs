@@ -21,15 +21,6 @@ internal static class ReferenceGraphEngine
     /// <summary>Past this the tree stops being navigable, so the rest collapses into one row.</summary>
     public const int MaxNodes = 200;
 
-    private static readonly SymbolDisplayFormat NodeFormat = new SymbolDisplayFormat(
-        typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypes,
-        genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters,
-        memberOptions: SymbolDisplayMemberOptions.IncludeParameters
-            | SymbolDisplayMemberOptions.IncludeContainingType
-            | SymbolDisplayMemberOptions.IncludeExplicitInterface,
-        parameterOptions: SymbolDisplayParameterOptions.IncludeType | SymbolDisplayParameterOptions.IncludeParamsRefOut,
-        miscellaneousOptions: SymbolDisplayMiscellaneousOptions.UseSpecialTypes);
-
     public static async Task<IReadOnlyList<ReferenceGraphNode>> FindIncomingAsync(
         ISymbol target,
         Solution solution,
@@ -233,8 +224,6 @@ internal static class ReferenceGraphEngine
         return symbol;
     }
 
-    private static string Display(ISymbol symbol) => symbol.ToDisplayString(NodeFormat);
-
     /// <summary>Accumulates locations per symbol while preserving first-seen order.</summary>
     private sealed class GroupSet
     {
@@ -274,7 +263,7 @@ internal static class ReferenceGraphEngine
                 var recursive = parent != null && parent.HasAncestor(group.Identity);
 
                 nodes.Add(new ReferenceGraphNode(
-                    Display(group.Symbol),
+                    ReferenceGraphDisplay.Of(group.Symbol),
                     group.Identity,
                     SymbolGlyphs.For(group.Symbol),
                     direction,
