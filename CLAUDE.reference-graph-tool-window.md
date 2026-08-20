@@ -142,6 +142,33 @@ test project and to keep this plan's `-class` filters valid.
 - **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then `RoslynQuery.Tests/bin/Debug/net472/RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReadmeExampleTests"` still passes.
 - **Commit:** `document reference graph window in readme`
 
+## Steps added after the plan was written
+
+These come from smoke-test feedback and are user-directed changes to the original design. Steps 10-12
+supersede **Non-goal 1** ("no per-call-site leaf level under a node"), which the user reversed.
+
+### 10. Collapse duplicate occurrences from linked documents `[x]`
+
+- **Files:** `RoslynQuery/ReferenceGraph/ReferenceLocationInfo.cs`, `SymbolIdentity.cs`,
+  `ReferenceGraphEngine.cs`, `RoslynQuery.Tests/Infrastructure/TestSolutions.cs`,
+  `RoslynQuery.Tests/ReferenceGraph/ReferenceGraphEngineLinkedFileTests.cs` (new)
+- **Do:** `ReferenceLocationInfo` carries the file path, line and column. `GroupSet.Add` keys
+  occurrences on (file path, span) and ORs the kinds of a repeat instead of appending a second entry.
+  `SymbolIdentity` equality drops `ProjectId`. Locations sort by file then position.
+- **Verify:** `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceGraphEngineLinkedFileTests"`.
+- **Commit:** `collapse duplicate reference occurrences from linked documents`
+
+### 11. Per-location child rows `[ ]`
+
+- **Do:** A node with more than one location gets a synthetic "Locations" child listing one navigable
+  row per occurrence, so a row that says "4 reads" can be expanded to reach all four.
+- **Commit:** `add navigable rows for each reference location`
+
+### 12. Double-click navigates without toggling `[ ]`
+
+- **Do:** Double-clicking a row currently both navigates and expands/collapses it.
+- **Commit:** `stop double-click from toggling row expansion`
+
 ## Deviations
 
 - **Status field records the commit subject, not the hash.** Rule 5 requires the code change and this
@@ -180,6 +207,16 @@ test project and to keep this plan's `-class` filters valid.
   where the command is meant to be usable. Confirmed in the generated
   `RoslynQuery/bin/Debug/net472/RoslynQuery.pkgdef`: an `AutoLoadPackages\{c6829cab-...}` entry with
   `dword:00000002` (BackgroundLoad) and a `UIContextRules\{c6829cab-...}` entry carrying the term.
+- **Step 10: the same occurrence was reported once per project.** A multi-targeted project is several
+  Roslyn projects over one set of files, so `SymbolFinder` returned each occurrence once per target
+  framework. Because `SymbolIdentity` included the declaring `ProjectId`, the copies did not even merge
+  into one row - a 4-TFM project produced four identical rows for every reference. Occurrences are now
+  keyed on (file path, span), which is what actually identifies one place in the source, and
+  `SymbolIdentity` compares on the declaration id alone. Verified against a 4-project fixture over one
+  file path: 8 rows collapse to 2, each with one location.
+  **This is not confirmed to be the cause of the reported "4 constructions" on a single `new()`** - see
+  the note in **Open questions**. Probes over single-project fixtures showed every count correct
+  (a collection initializer with three `new`s reports exactly "3 constructions").
 - **Step 8: incoming rows came back in a different order on every refresh.** `SymbolFinder` searches
   documents in parallel, so `GroupSet`'s first-seen ordering was whatever the scheduler happened to do -
   the tree reshuffled on each refresh over an unchanged solution, which made the window untestable.
@@ -287,6 +324,11 @@ test project and to keep this plan's `-class` filters valid.
   (`(kind & filter) != ReferenceUsageKind.None`) have a name.
 
 ## Open questions
+
+- **Is the reported "4 constructions" the linked-document bug fixed in step 10?** It reproduces as four
+  duplicate *rows* rather than one row counting four, so either the observed solution multi-targets
+  four ways (in which case step 10 fixes it) or there is a second cause still unfound. Needs the user
+  to say whether the field's row appeared once or four times, and whether the project multi-targets.
 
 - ~~Exact `IDG_VS_CTXT_CODEWIN_*` group ID for the editor context-menu command (step 8)~~ - **resolved:**
   `IDG_VS_CODEWIN_NAVIGATETOLOCATION` (0x02B1 in `vsshlids.h`), the group Go To Definition and Find All

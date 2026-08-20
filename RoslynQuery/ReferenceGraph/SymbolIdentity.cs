@@ -60,13 +60,18 @@ internal readonly struct SymbolIdentity : IEquatable<SymbolIdentity>
         return tree is null ? null : solution.GetDocument(tree)?.Project.Id;
     }
 
-    public bool Equals(SymbolIdentity other) =>
-        DeclarationId == other.DeclarationId && Equals(ProjectId, other.ProjectId);
+    /// <summary>
+    /// Compares on the declaration id alone. <see cref="ProjectId"/> is carried for resolution, not
+    /// for identity: a multi-targeted project is several Roslyn projects over one set of files, and
+    /// including the project here made every symbol in one show up as one row per target framework.
+    /// The cost is that the same declaration id in two genuinely unrelated assemblies shares a row,
+    /// which is both rarer and far less noisy than the duplication it replaces.
+    /// </summary>
+    public bool Equals(SymbolIdentity other) => DeclarationId == other.DeclarationId;
 
     public override bool Equals(object obj) => obj is SymbolIdentity other && Equals(other);
 
-    public override int GetHashCode() =>
-        unchecked((DeclarationId?.GetHashCode() ?? 0) * 397 ^ (ProjectId?.GetHashCode() ?? 0));
+    public override int GetHashCode() => DeclarationId?.GetHashCode() ?? 0;
 
     public override string ToString() => DeclarationId ?? "<none>";
 }

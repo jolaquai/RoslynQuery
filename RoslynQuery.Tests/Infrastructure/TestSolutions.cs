@@ -46,6 +46,30 @@ internal static class TestSolutions
         return solution;
     }
 
+    /// <summary>
+    /// Several projects over one physical file, which is what a multi-targeted project (or a linked
+    /// file) looks like to Roslyn: one <c>DocumentId</c> per project, one path on disk.
+    /// </summary>
+    public static Solution MultiTargeted(int projectCount, string name, string source)
+    {
+        var solution = new AdhocWorkspace().CurrentSolution;
+
+        for (var i = 0; i < projectCount; i++)
+        {
+            var projectId = ProjectId.CreateNewId();
+
+            solution = solution.AddProject(ProjectInfo.Create(
+                projectId, VersionStamp.Create(), $"P{i}", $"P{i}", LanguageNames.CSharp,
+                compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
+                metadataReferences: [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]));
+
+            solution = solution.AddDocument(
+                DocumentId.CreateNewId(projectId), name, SourceText.From(source), filePath: PathFor(name));
+        }
+
+        return solution;
+    }
+
     public static Document Document(Solution solution, string name) =>
         solution.Projects.SelectMany(p => p.Documents).First(d => d.Name == name);
 

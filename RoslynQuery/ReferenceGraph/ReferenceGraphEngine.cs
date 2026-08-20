@@ -35,6 +35,7 @@ internal static class ReferenceGraphEngine
         var references = await SymbolFinder.FindReferencesAsync(target, solution, documents, cancellationToken).ConfigureAwait(false);
         var groups = new GroupSet();
         var models = new Dictionary<DocumentId, SemanticModel>();
+        var texts = new Dictionary<DocumentId, SourceText>();
         var roots = new Dictionary<SyntaxTree, SyntaxNode>();
 
         foreach (var reference in references)
@@ -74,7 +75,13 @@ internal static class ReferenceGraphEngine
                 var enclosing = EnclosingDeclaration(model, occurrence, span.Start, cancellationToken);
                 if (enclosing is null) continue;
 
-                groups.Add(enclosing, solution, document.Project.Id, new ReferenceLocationInfo(document.Id, span, kind));
+                if (!texts.TryGetValue(document.Id, out var text))
+                {
+                    text = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);
+                    texts[document.Id] = text;
+                }
+
+                groups.Add(enclosing, solution, document.Project.Id, ReferenceLocationInfo.Create(document, text, span, kind));
             }
         }
 
@@ -108,16 +115,17 @@ internal static class ReferenceGraphEngine
             if (model is null) continue;
 
             var declaration = await reference.GetSyntaxAsync(cancellationToken).ConfigureAwait(false);
+            var text = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);
 
             foreach (var scope in Scopes(declaration))
-                Walk(scope, model, document, filter, groups, solution, cancellationToken);
+                Walk(scope, model, document, text, filter, groups, solution, cancellationToken);
         }
 
         return groups.Build(ReferenceDirection.Outgoing, parent);
     }
 
     private static void Walk(
-        SyntaxNode scope, SemanticModel model, Document document, ReferenceUsageKind filter,
+        SyntaxNode scope, SemanticModel model, Document document, SourceText text, ReferenceUsageKind filter,
         GroupSet groups, Solution solution, CancellationToken cancellationToken)
     {
         // A nested type is its own row in the graph, so its contents are not part of the outer type's
@@ -139,7 +147,7 @@ internal static class ReferenceGraphEngine
 
             if (!SymbolResolver.IsSupportedRoot(symbol)) continue;
 
-            groups.Add(symbol, solution, document.Project.Id, new ReferenceLocationInfo(document.Id, node.Span, kind));
+            groups.Add(symbol, solution, document.Project.Id, ReferenceLocationInfo.Create(document, text, node.Span, kind));
         }
     }
 
@@ -245,6 +253,19 @@ internal static class ReferenceGraphEngine
                 _ordered.Add(group);
             }
 
+            // One physical occurrence, one entry. SymbolFinder reports a span once per project the
+            // file is compiled into, so without this a multi-targeted project counted every
+            // reference once per target framework.
+            var key = (location.FilePath, location.Span);
+
+            if (group.Seen.TryGetValue(key, out var existing))
+            {
+                var merged = group.Locations[existing];
+                group.Locations[existing] = merged.WithKind(merged.Kind | location.Kind);
+                return;
+            }
+
+            group.Seen[key] = group.Locations.Count;
             group.Locations.Add(location);
         }
 
@@ -305,11 +326,13 @@ internal static class ReferenceGraphEngine
                 .ToList();
         }
 
+        // By file then position, so the rows read in source order and the first one - the one
+        // double-click uses - is the same on every refresh and in every session.
         private static int CompareLocations(ReferenceLocationInfo x, ReferenceLocationInfo y)
         {
-            var byDocument = (x.DocumentId?.Id ?? Guid.Empty).CompareTo(y.DocumentId?.Id ?? Guid.Empty);
+            var byFile = string.CompareOrdinal(x.FilePath, y.FilePath);
 
-            return byDocument != 0 ? byDocument : x.Span.Start.CompareTo(y.Span.Start);
+            return byFile != 0 ? byFile : x.Span.Start.CompareTo(y.Span.Start);
         }
 
         /// <summary>
@@ -329,6 +352,9 @@ internal static class ReferenceGraphEngine
             public ISymbol Symbol;
             public string Display;
             public List<ReferenceLocationInfo> Locations = [];
+
+            /// <summary>Occurrence key to its index in <see cref="Locations"/>.</summary>
+            public Dictionary<(string, TextSpan), int> Seen = [];
         }
     }
 }
