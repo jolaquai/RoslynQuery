@@ -23,10 +23,10 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress
-- **Current step:** 3 - Reference graph node model
+- **Current step:** 4 - Engine: incoming references
 - **Branch:** v0.3.0
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `add caret symbol resolver` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `add reference graph node model` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-08-20
 
 ## Goal
@@ -46,11 +46,10 @@ A second VSIX tool window, "Reference Graph", alongside the existing "Roslyn Que
 - **Root kinds:** methods, constructors, properties, fields, events, and types are all valid roots. Rejected: methods-only (matches VS's built-in Call Hierarchy but is narrower than the user's explicit ask - "references the current member" plus a follow-up answer explicitly adding types).
 - **Reference-kind filter is unified across both directions:** one `[Flags] ReferenceUsageKind { Invocation, Read, Write, Construction, TypeReference }` enum and one `ReferenceUsageClassifier` used by both the incoming and outgoing engine paths, exposed in the UI as a live checkbox flyout (not a fixed include/exclude choice). Default enabled = `Invocation | Read | Write | Construction`; `TypeReference` starts off. Rejected: hardcoding one fixed scope for outgoing (user explicitly asked for a toggleable checkbox filter instead of picking one of the two original proposals).
 - **Node granularity:** one tree node per referencing/referenced symbol, carrying a list of individual locations (each tagged with its `ReferenceUsageKind`) for the secondary "N refs (read/write breakdown)" line; double-click navigates to the first location. Rejected: a separate leaf node per call site (adds tree depth not justified for v1; can be added later without changing the engine).
-- **Symbol identity across expansions:** `ReferenceGraphNode` stores a `Microsoft.CodeAnalysis.SymbolKey` (serializable, survives compilation snapshots), not a live `ISymbol` - re-resolved against `_workspace.CurrentSolution` only when a node is expanded. Rejected: holding the `ISymbol` directly, which would pin the compilation that produced it alive for as long as the tool window stays open (the same problem `QueryHit` already deliberately avoids - see `RoslynQuery/Query/QueryHit.cs:10-13`).
+- **Symbol identity across expansions:** `ReferenceGraphNode` stores a `SymbolIdentity` (declaring `ProjectId` + the symbol's documentation-comment declaration id), not a live `ISymbol` - re-resolved against `_workspace.CurrentSolution` only when a node is expanded. Rejected: holding the `ISymbol` directly, which would pin the compilation that produced it alive for as long as the tool window stays open (the same problem `QueryHit` already deliberately avoids - see `RoslynQuery/Query/QueryHit.cs:10-13`). Also rejected: `Microsoft.CodeAnalysis.SymbolKey`, which the step-3 probe showed is **internal** to Microsoft.CodeAnalysis.Workspaces (see **Deviations**).
 - **Multi-root history:** every invocation (context menu or the window's own toolbar) prepends a new root node to the tree instead of replacing the current one - mirrors VS's real Call Hierarchy behavior. The trash-icon button clears the whole root list. Rejected: single-root replace-on-invoke (loses history; the screenshot's trash icon implies a list worth clearing).
 - **Scope combo (Current Document / Current Project / My Solution) only affects the "References To" (incoming) branch.** "References From" (outgoing) is inherently local to the root's own declaration and never searches outside it - document this as a tooltip on the combo, not as a separate disabled state.
 - **Cancellation** uses one shared `CancellationTokenSource` field, same idiom as `QueryToolWindowControl._cancellation` (`RoslynQuery/ToolWindow/QueryToolWindowControl.xaml.cs:45`) - not per-node-expansion cancellation tokens. Simplicity over a rare concurrent-expansion benefit.
-- **`SymbolKey`'s exact overload set must be empirically verified** (per this project's API-verification convention in the user's global CLAUDE.md) with a throwaway probe program before step 3 is written, since the shape has shifted slightly across Roslyn versions. Do not commit the probe.
 
 ## Key files
 
@@ -87,7 +86,7 @@ test project and to keep this plan's `-class` filters valid.
 - **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then `RoslynQuery.Tests/bin/Debug/net472/RoslynQuery.Tests.exe -class "RoslynQuery.Tests.SymbolResolverTests"` passes. Cover: caret on a method declaration's name, caret on a call site, caret on a field declaration, caret inside a method body with the caret actually over an unrelated local (should resolve to the containing method via the declared-symbol path only if caret truly lands on a declaration token - otherwise confirm it resolves to whatever symbol the token under the caret actually binds to, not a silent fallback to "enclosing method").
 - **Commit:** `add caret symbol resolver`
 
-### 3. Reference graph node model `[ ]`
+### 3. Reference graph node model `[x]`
 
 - **Files:** `RoslynQuery/ReferenceGraph/ReferenceGraphNode.cs` (new), `RoslynQuery/ReferenceGraph/ReferenceDirection.cs` (new, `internal enum ReferenceDirection { Incoming, Outgoing }`), `RoslynQuery.Tests/ReferenceGraph/ReferenceGraphNodeTests.cs` (new)
 - **Do:** Before writing this file, empirically verify `Microsoft.CodeAnalysis.SymbolKey`'s exact API (static `Create`, instance `Resolve`, `GetSymbolKey` extension availability) against the Roslyn package version this project references, via a throwaway console probe - do not commit the probe. Then add `internal sealed class ReferenceGraphNode : INotifyPropertyChanged` with: `DisplayText`, `SecondaryText`, `SymbolKindForGlyph` (or similar, feeds `SymbolKindMonikerConverter` later), `DocumentId` + primary `TextSpan` (first location), `IReadOnlyList<(DocumentId DocumentId, TextSpan Span, ReferenceUsageKind Kind)> Locations`, `ReferenceDirection Direction`, `ReferenceGraphNode Parent` (for ancestor-chain cycle checks in step 5), `bool IsRecursive`, a stored `SymbolKey` string/struct for re-resolution, and a lazily-populated `ObservableCollection<ReferenceGraphNode> Children` seeded with a single placeholder node so the tree shows an expand arrow before the real fetch. Add a helper `bool HasAncestor(SymbolKey key)` walking `Parent` up.
@@ -111,7 +110,7 @@ test project and to keep this plan's `-class` filters valid.
 ### 6. Symbol glyph converter `[ ]`
 
 - **Files:** `RoslynQuery/ToolWindow/SymbolKindMonikerConverter.cs` (new), `RoslynQuery.Tests/ToolWindow/SymbolKindMonikerConverterTests.cs` (new)
-- **Do:** `IValueConverter` mapping `SymbolKind`/`MethodKind` (method vs constructor vs property vs field vs event vs named type, further split class/struct/interface/enum via `TypeKind` where the input is a `NamedType`) to `Microsoft.VisualStudio.Imaging.Interop.ImageMoniker` values from `KnownMonikers` (Method, Field, Property, Event, Class, Struct, Interface, Enumeration, EnumerationItem as needed) - same shape as `RoslynQuery/ToolWindow/TargetMonikerConverter.cs`.
+- **Do:** `IValueConverter` mapping the `SymbolGlyph` enum added in step 3 (`Method`, `Constructor`, `Property`, `Field`, `Event`, `Constant`, `EnumMember`, `Class`, `Structure`, `Interface`, `Enumeration`, `Delegate`, `Branch`, `Unknown`) to `Microsoft.VisualStudio.Imaging.Interop.ImageMoniker` values from `KnownMonikers` - same shape as `RoslynQuery/ToolWindow/TargetMonikerConverter.cs`. The `SymbolKind`/`MethodKind`/`TypeKind` collapsing already happened in `SymbolGlyphs.For`, so the converter stays a flat enum switch.
 - **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then `RoslynQuery.Tests/bin/Debug/net472/RoslynQuery.Tests.exe -class "RoslynQuery.Tests.SymbolKindMonikerConverterTests"` passes. `Convert` is a pure function over enum inputs - test it directly without any WPF/UI host.
 - **Commit:** `add symbol kind moniker converter`
 
@@ -150,6 +149,27 @@ test project and to keep this plan's `-class` filters valid.
   check), with the ancestor walk kept only as a fallback for occurrences that did not bind.
 - **Step 1 extra: `+=`/`-=` on an `IEventSymbol` classifies as `Write`, not `Read | Write`.** A
   subscription is not a read-modify-write of a value.
+- **Step 3: `SymbolKey` is internal - replaced by `SymbolIdentity` over `DocumentationCommentId`.** The
+  throwaway probe the step called for showed `Microsoft.CodeAnalysis.SymbolKey` and
+  `SymbolKeyResolution` are both non-public in Microsoft.CodeAnalysis.Workspaces 5.6.0, so the plan's
+  original identity design is not implementable against public API (and reflection is out: devenv
+  redirects Roslyn to its own build at runtime). `SymbolIdentity` stores the declaring `ProjectId` plus
+  `DocumentationCommentId.CreateDeclarationId(symbol.OriginalDefinition)` and resolves via
+  `GetFirstSymbolForDeclarationId` against the project's compilation. The probe confirmed round-trips
+  for every supported root kind - types, nested types, fields, properties, events, constructors,
+  overloads (the signature is part of the id), generic methods - plus resolution across a changed
+  compilation snapshot. Constructed generics collapse to their definition, which is what the graph
+  wants anyway.
+- **Step 3 extra: `SymbolGlyph` enum + `SymbolGlyphs.For(ISymbol)`.** The node has to survive without a
+  live `ISymbol`, so the icon is decided once at construction. Step 6's converter was restated to map
+  this enum instead of `SymbolKind`/`MethodKind`.
+- **Step 3: `ReferenceLocationInfo` struct instead of the planned value tuple.** Same three fields, but
+  named - the list is threaded through four files.
+- **Step 3 extra: `ReferenceGraphNode.Describe`.** Builds the secondary line ("3 refs (1 invocation,
+  1 read, 1 construction)", or "2 invocations" when only one kind is present) next to the data it
+  describes rather than in the XAML layer.
+- **Step 3: `HasAncestor` includes the node itself.** Step 5 needs a directly self-recursive method to
+  come back flagged, and that is a match on the node's own identity, not on a strict ancestor.
 - **Test files moved into subfolders (user instruction, mid-step-2).** `ReferenceUsageClassifierTests.cs`
   moved from the test project root to `RoslynQuery.Tests/ReferenceGraph/`; later steps' file paths were
   retargeted the same way. See the folder convention under **Key files**.
@@ -169,4 +189,4 @@ test project and to keep this plan's `-class` filters valid.
 ## Open questions
 
 - Exact `IDG_VS_CTXT_CODEWIN_*` group ID for the editor context-menu command (step 8) - resolve by inspecting `vsshlids.h`/`stdidcmd.h` at implementation time; not blocking earlier steps.
-- Exact `SymbolKey.Create`/`.Resolve` overload signatures (step 3) - resolve via the empirical probe described in that step; not blocking steps 1-2.
+- ~~Exact `SymbolKey.Create`/`.Resolve` overload signatures (step 3)~~ - **resolved:** `SymbolKey` is internal, `DocumentationCommentId` is used instead. See **Deviations**.
