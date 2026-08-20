@@ -62,7 +62,7 @@ public partial class QueryToolWindowControl : UserControl
 
     private TargetKind CurrentTarget => ((Choice<TargetKind>)TargetCombo.SelectedItem)?.Value ?? TargetKind.SyntaxNode;
 
-    private ScopeKind CurrentScope => ((Choice<ScopeKind>)ScopeCombo.SelectedItem)?.Value ?? ScopeKind.Document;
+    private ScopeKind CurrentScope => ((Choice<ScopeKind>)ScopeCombo.SelectedItem)?.Value ?? ScopeKind.Solution;
 
     private int CurrentCap => ((Choice<int>)CapCombo.SelectedItem)?.Value ?? 5000;
 
