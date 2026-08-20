@@ -21,7 +21,8 @@ internal enum SymbolGlyph
     Interface,
     Enumeration,
     Delegate,
-    Branch
+    IncomingBranch,
+    OutgoingBranch
 }
 
 internal static class SymbolGlyphs

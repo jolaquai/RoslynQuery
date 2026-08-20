@@ -23,10 +23,10 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress
-- **Current step:** 6 - Symbol glyph converter
+- **Current step:** 7 - Tool window UI
 - **Branch:** v0.3.0
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `add reference graph engine outgoing path` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `add symbol glyph moniker converter` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-08-20
 
 ## Goal
@@ -57,7 +57,7 @@ A second VSIX tool window, "Reference Graph", alongside the existing "Roslyn Que
 - `RoslynQuery/Query/ScopeResolver.cs` - `GetActiveContext` (caret file/line/column, reuse as-is, line 49), `ResolveDeclarationAsync`'s enclosing-symbol walk to copy for incoming grouping (line 131), `IsDeclarationSymbol` (line 154) as the model for which symbol kinds count as declarations.
 - `RoslynQuery/Query/QueryHit.cs` - "hold no live Roslyn object" discipline to follow for `ReferenceGraphNode` (lines 10-13).
 - `RoslynQuery/ToolWindow/QueryToolWindowControl.xaml` / `.xaml.cs` - WPF styling conventions, toolbar layout, threading pattern (`Run`/`RunCoreAsync`, lines 231-347), navigation on double-click (`OnResultDoubleClick`, lines 148-170), error reporting (`SetError`, lines 225-229) - the template for the new control.
-- `RoslynQuery/ToolWindow/QueryToolWindow.cs`, `RoslynQuery/ToolWindow/TargetMonikerConverter.cs` - templates for `ReferenceGraphToolWindow.cs` and `SymbolKindMonikerConverter.cs`.
+- `RoslynQuery/ToolWindow/QueryToolWindow.cs`, `RoslynQuery/ToolWindow/TargetMonikerConverter.cs` - templates for `ReferenceGraphToolWindow.cs` and `SymbolGlyphMonikerConverter.cs`.
 - `RoslynQuery/Navigation/DocumentNavigator.cs`, `RoslynQuery/Navigation/SpanMapper.cs` - reused unchanged for navigation.
 - `RoslynQuery/RoslynQueryPackage.cs`, `RoslynQuery/RoslynQueryPackage.vsct` - existing command/tool-window registration to extend.
 - `RoslynQuery.Tests/PredicateAwaitTests.cs:21-41` - `AdhocWorkspace` + `ProjectInfo.Create` + `workspace.AddDocument` fixture pattern to copy for every new test file.
@@ -89,7 +89,7 @@ test project and to keep this plan's `-class` filters valid.
 ### 3. Reference graph node model `[x]`
 
 - **Files:** `RoslynQuery/ReferenceGraph/ReferenceGraphNode.cs` (new), `RoslynQuery/ReferenceGraph/ReferenceDirection.cs` (new, `internal enum ReferenceDirection { Incoming, Outgoing }`), `RoslynQuery.Tests/ReferenceGraph/ReferenceGraphNodeTests.cs` (new)
-- **Do:** Before writing this file, empirically verify `Microsoft.CodeAnalysis.SymbolKey`'s exact API (static `Create`, instance `Resolve`, `GetSymbolKey` extension availability) against the Roslyn package version this project references, via a throwaway console probe - do not commit the probe. Then add `internal sealed class ReferenceGraphNode : INotifyPropertyChanged` with: `DisplayText`, `SecondaryText`, `SymbolKindForGlyph` (or similar, feeds `SymbolKindMonikerConverter` later), `DocumentId` + primary `TextSpan` (first location), `IReadOnlyList<(DocumentId DocumentId, TextSpan Span, ReferenceUsageKind Kind)> Locations`, `ReferenceDirection Direction`, `ReferenceGraphNode Parent` (for ancestor-chain cycle checks in step 5), `bool IsRecursive`, a stored `SymbolKey` string/struct for re-resolution, and a lazily-populated `ObservableCollection<ReferenceGraphNode> Children` seeded with a single placeholder node so the tree shows an expand arrow before the real fetch. Add a helper `bool HasAncestor(SymbolKey key)` walking `Parent` up.
+- **Do:** Before writing this file, empirically verify `Microsoft.CodeAnalysis.SymbolKey`'s exact API (static `Create`, instance `Resolve`, `GetSymbolKey` extension availability) against the Roslyn package version this project references, via a throwaway console probe - do not commit the probe. Then add `internal sealed class ReferenceGraphNode : INotifyPropertyChanged` with: `DisplayText`, `SecondaryText`, `SymbolKindForGlyph` (or similar, feeds `SymbolGlyphMonikerConverter` later), `DocumentId` + primary `TextSpan` (first location), `IReadOnlyList<(DocumentId DocumentId, TextSpan Span, ReferenceUsageKind Kind)> Locations`, `ReferenceDirection Direction`, `ReferenceGraphNode Parent` (for ancestor-chain cycle checks in step 5), `bool IsRecursive`, a stored `SymbolKey` string/struct for re-resolution, and a lazily-populated `ObservableCollection<ReferenceGraphNode> Children` seeded with a single placeholder node so the tree shows an expand arrow before the real fetch. Add a helper `bool HasAncestor(SymbolKey key)` walking `Parent` up.
 - **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then `RoslynQuery.Tests/bin/Debug/net472/RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceGraphNodeTests"` passes. Cover: constructing a node and resolving its stored `SymbolKey` back to the original `ISymbol` against the same solution's compilation round-trips correctly; `HasAncestor` finds a symbol two levels up the `Parent` chain and correctly returns false for an unrelated symbol.
 - **Commit:** `add reference graph node model`
 
@@ -107,12 +107,12 @@ test project and to keep this plan's `-class` filters valid.
 - **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then `RoslynQuery.Tests/bin/Debug/net472/RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceGraphEngineOutgoingTests"` passes. Cover: a method that calls two other methods produces two `Invocation` nodes; a method that reads and writes two different fields produces correctly-flagged nodes; a directly self-recursive method's outgoing set marks the self-entry `IsRecursive` and does not attempt to expand it further; a partial method's outgoing set unions references from both partial declarations; a type root's outgoing set includes a reference made only inside one of its members plus its base type.
 - **Commit:** `add reference graph engine outgoing path`
 
-### 6. Symbol glyph converter `[ ]`
+### 6. Symbol glyph converter `[x]`
 
-- **Files:** `RoslynQuery/ToolWindow/SymbolKindMonikerConverter.cs` (new), `RoslynQuery.Tests/ToolWindow/SymbolKindMonikerConverterTests.cs` (new)
+- **Files:** `RoslynQuery/ToolWindow/SymbolGlyphMonikerConverter.cs` (new), `RoslynQuery.Tests/ToolWindow/SymbolGlyphMonikerConverterTests.cs` (new)
 - **Do:** `IValueConverter` mapping the `SymbolGlyph` enum added in step 3 (`Method`, `Constructor`, `Property`, `Field`, `Event`, `Constant`, `EnumMember`, `Class`, `Structure`, `Interface`, `Enumeration`, `Delegate`, `Branch`, `Unknown`) to `Microsoft.VisualStudio.Imaging.Interop.ImageMoniker` values from `KnownMonikers` - same shape as `RoslynQuery/ToolWindow/TargetMonikerConverter.cs`. The `SymbolKind`/`MethodKind`/`TypeKind` collapsing already happened in `SymbolGlyphs.For`, so the converter stays a flat enum switch.
-- **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then `RoslynQuery.Tests/bin/Debug/net472/RoslynQuery.Tests.exe -class "RoslynQuery.Tests.SymbolKindMonikerConverterTests"` passes. `Convert` is a pure function over enum inputs - test it directly without any WPF/UI host.
-- **Commit:** `add symbol kind moniker converter`
+- **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then `RoslynQuery.Tests/bin/Debug/net472/RoslynQuery.Tests.exe -class "RoslynQuery.Tests.SymbolGlyphMonikerConverterTests"` passes. `Convert` is a pure function over enum inputs - test it directly without any WPF/UI host.
+- **Commit:** `add symbol glyph moniker converter`
 
 ### 7. Tool window UI `[ ]`
 
@@ -149,6 +149,16 @@ test project and to keep this plan's `-class` filters valid.
   check), with the ancestor walk kept only as a fallback for occurrences that did not bind.
 - **Step 1 extra: `+=`/`-=` on an `IEventSymbol` classifies as `Write`, not `Read | Write`.** A
   subscription is not a read-modify-write of a value.
+- **Step 6: named `SymbolGlyphMonikerConverter`,** since it maps `SymbolGlyph` rather than `SymbolKind`.
+- **Step 6: `KnownMonikers` has no constructor glyph.** Verified by reflecting over
+  Microsoft.VisualStudio.ImageCatalog 17.14: `Constructor` does not exist. `NewClass` is used instead.
+  `SymbolGlyph.Branch` was also split into `IncomingBranch`/`OutgoingBranch` so the two branch rows get
+  `KnownMonikers.CallTo` and `CallFrom`.
+- **Step 6: the test project now references the imaging packages directly.** `RoslynQuery.csproj` pulls
+  the VS SDK with `ExcludeAssets="runtime"` so the VSIX never ships devenv's own assemblies, which left
+  nothing on disk for the converter to bind to in-process. `Microsoft.VisualStudio.ImageCatalog` and
+  `Microsoft.VisualStudio.Imaging.Interop.14.0.DesignTime` are referenced from the test project with
+  runtime assets. This is why `TargetMonikerConverter` has no tests today.
 - **Step 5: the outgoing walk binds name nodes, not every node.** `QueryEngine.ScanNodesAsync` visits
   every descendant, which here would bind `a.B.C()` three times over. The walk only considers
   `SimpleNameSyntax` plus the creation forms (`ObjectCreationExpressionSyntax`,
