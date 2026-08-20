@@ -23,10 +23,10 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress
-- **Current step:** 5 - Engine: outgoing references
+- **Current step:** 6 - Symbol glyph converter
 - **Branch:** v0.3.0
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `add reference graph engine incoming path` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `add reference graph engine outgoing path` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-08-20
 
 ## Goal
@@ -100,7 +100,7 @@ test project and to keep this plan's `-class` filters valid.
 - **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then `RoslynQuery.Tests/bin/Debug/net472/RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceGraphEngineIncomingTests"` passes. Cover (multi-document `AdhocWorkspace` fixtures per `PredicateAwaitTests.cs:21-41`): a method called from two different methods produces two nodes both flagged `Invocation`; a field read in one method and written in another produces nodes flagged `Read` and `Write` respectively; restricting `documents` to a single document excludes a same-project caller in a different file that passing `null` (whole solution) would include; a type root's incoming set includes both a `new Foo()` site (`Construction`) and a parameter-typed-as-`Foo` site (`TypeReference`) when the filter includes both kinds, and excludes the `TypeReference` one when the filter doesn't.
 - **Commit:** `add reference graph engine incoming path`
 
-### 5. Engine: outgoing references `[ ]`
+### 5. Engine: outgoing references `[x]`
 
 - **Files:** `RoslynQuery/ReferenceGraph/ReferenceGraphEngine.cs` (extend), `RoslynQuery.Tests/ReferenceGraph/ReferenceGraphEngineOutgoingTests.cs` (new)
 - **Do:** Add `FindOutgoingAsync(ISymbol root, Solution solution, ReferenceUsageKind filter, ReferenceGraphNode parent, CancellationToken)`. For a member root: union `root.DeclaringSyntaxReferences` (partial methods/types), get each `SemanticModel`, walk descendant nodes (include constructor initializers and property accessor bodies) the way `QueryEngine.ScanNodesAsync` walks a tree (`RoslynQuery/Query/QueryEngine.cs:180`), call `GetSymbolInfo` on each candidate node, classify with the same `ReferenceUsageClassifier.Classify`, skip anything outside `filter`, group by target symbol into one `ReferenceGraphNode` per group (same `HasAncestor`/`IsRecursive`/200-cap handling as step 4). For a type root: union this same walk over every member's declaring syntax plus the type's own `BaseListSyntax` (classified `TypeReference`), since a type has no single body of its own.
@@ -149,6 +149,23 @@ test project and to keep this plan's `-class` filters valid.
   check), with the ancestor walk kept only as a fallback for occurrences that did not bind.
 - **Step 1 extra: `+=`/`-=` on an `IEventSymbol` classifies as `Write`, not `Read | Write`.** A
   subscription is not a read-modify-write of a value.
+- **Step 5: the outgoing walk binds name nodes, not every node.** `QueryEngine.ScanNodesAsync` visits
+  every descendant, which here would bind `a.B.C()` three times over. The walk only considers
+  `SimpleNameSyntax` plus the creation forms (`ObjectCreationExpressionSyntax`,
+  `ImplicitObjectCreationExpressionSyntax`, `ConstructorInitializerSyntax`), which covers every symbol
+  exactly once.
+- **Step 5: `new Foo()` is reported as the constructor, not as the type.** The creation expression binds
+  to the constructor, so the type name that is its `Type` is skipped to avoid two rows for one span.
+  Type arguments inside it (`new List<Foo>()`) are still their own `TypeReference` rows.
+- **Step 5: `var` is not an outgoing reference.** It binds to the inferred type, but the user never
+  wrote that type - it was producing a duplicate row next to the constructor for `var f = new Foo();`.
+- **Step 5: a type root walks its declarations but stops at nested types.** Walking each
+  `TypeDeclarationSyntax` already covers the members and the base list the step asked for, and a nested
+  type is its own row, so the walk does not descend into one.
+- **Step 5: a field root also walks its declared type.** A field's `DeclaringSyntaxReferences` point at
+  the `VariableDeclarator`, which does not carry the type, so `VariableDeclaration.Type` is walked too.
+- **Step 5: reduced extension methods and constructed generics collapse to what they were built from**
+  (`ReducedFrom`, then `OriginalDefinition`), so the row matches the identity stored on it.
 - **Step 4: the enclosing declaration is found syntactically, not via `GetEnclosingSymbol`.** The step
   said to copy `ScopeResolver.ResolveDeclarationAsync`'s walk, but the binder answers "the containing
   type" for every occurrence outside a body - a parameter's type, a return type, an attribute - so
