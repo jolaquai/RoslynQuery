@@ -22,11 +22,11 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 
 ## Status
 
-- **State:** in-progress
-- **Current step:** 8 - Commands, package wiring, and smoke test (code done; manual smoke test outstanding), then 9 - README
+- **State:** in-progress - all code complete, blocked only on step 8's manual smoke test
+- **Current step:** 8 - manual F5 smoke test (the only outstanding work; everything else is done)
 - **Branch:** v0.3.0
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `wire up reference graph commands and tool window registration` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `document reference graph window in readme` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-08-20
 
 ## Goal
@@ -135,7 +135,7 @@ test project and to keep this plan's `-class` filters valid.
   checklist under **Verify** below; if it all passes, flip this step to `[x]`.
 - **Commit:** `wire up reference graph commands and tool window registration`
 
-### 9. README documentation `[ ]`
+### 9. README documentation `[x]`
 
 - **Files:** `README.md` (extend)
 - **Do:** Add a "Reference Graph" section mirroring the structure of the existing "Roslyn Query" section: how to open it (View > Other Windows, or right-click a member/type -> View Reference Graph), what the two branches mean, the scope combo's incoming-only scope, and the usage-kind filter flyout. No C# code fences in the new section (or if any are added, they must still satisfy `RoslynQuery.Tests/ReadmeExampleTests.cs`, which compiles every README code fence as a test).
@@ -156,6 +156,9 @@ test project and to keep this plan's `-class` filters valid.
   check), with the ancestor walk kept only as a fallback for occurrences that did not bind.
 - **Step 1 extra: `+=`/`-=` on an `IEventSymbol` classifies as `Write`, not `Read | Write`.** A
   subscription is not a read-modify-write of a value.
+- **Step 9: the README intro was rewritten too.** It described a single tool window; it now names both
+  and points at how each is opened. The new section adds no C# fences, so `ReadmeExampleTests`
+  (a hardcoded list, not a scanner) is unaffected - re-run and still green.
 - **Step 8: the context-menu button is `DynamicVisibility` + `DefaultDisabled`.** `BeforeQueryStatus`
   enables it only when there is an active view whose file is `.cs`, which is the cheapest test that
   matches the plan's "do not resolve symbols on the UI thread" constraint.

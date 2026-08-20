@@ -1,9 +1,14 @@
 # Roslyn Query
 
-A Visual Studio tool window that runs a C# predicate you write over every `SyntaxNode`,
-`SyntaxToken` or `IOperation` in a scope you pick, and jumps to a double-clicked match.
+Two Visual Studio tool windows over Roslyn.
 
+**Roslyn Query** runs a C# predicate you write over every `SyntaxNode`, `SyntaxToken` or
+`IOperation` in a scope you pick, and jumps to a double-clicked match.
 `View > Other Windows > Roslyn Query`.
+
+**Reference Graph** roots a lazily-expandable tree on the member or type at the caret, showing what
+references it and what it references, recursively.
+`View > Other Windows > Reference Graph`, or right-click in the editor.
 
 ## Using it
 
@@ -127,6 +132,53 @@ That cache is also the leak referred to above. Every distinct predicate emits an
 .NET Framework has no way to unload one, so it stays for the life of the VS process; the status line
 reports the running count and total size. The cache is capped at 512 entries, which bounds the list,
 not the underlying leak.
+
+## Reference Graph
+
+A second window, styled after the built-in Call Hierarchy but generalized to every kind of
+reference rather than just calls.
+
+Right-click a method, constructor, property, field, event or type in the editor and choose
+**View Reference Graph**, or open the window empty from `View > Other Windows > Reference Graph`.
+
+Each invocation adds a root at the top of the list rather than replacing what is there, so the
+window keeps a history; **Clear** empties it. Every root has two branches:
+
+| Branch                | What is under it                                             |
+| --------------------- | ------------------------------------------------------------ |
+| `References To 'X'`   | The declarations that reference `X`                          |
+| `References From 'X'` | The declarations `X` itself references                       |
+
+Every row expands the same way, recursively, staying in the direction its branch started in. A row
+is one declaration, not one call site: its second line reads `3 refs (1 invocation, 2 reads)`, and
+double-clicking navigates to the first of them. A row whose symbol already appears above it in the
+tree is marked `(recursive)` and does not expand further, so a cycle terminates instead of looping.
+
+### Scope
+
+The **scope** combo - current document, current project, my solution - narrows `References To`
+only. `References From` is read out of the root's own declarations and never searches outside them,
+so there is nothing for a scope to narrow. Scope is measured from the declaration of the row being
+expanded, not from wherever the caret happens to be at the time.
+
+### Usage kinds
+
+The **Filter** button opens a checkbox flyout, one box per kind of reference:
+
+| Kind             | What it matches                                                          |
+| ---------------- | ------------------------------------------------------------------------ |
+| Invocations      | The callee of a call                                                     |
+| Reads            | Anything read, including a method group                                  |
+| Writes           | An assignment target, an `out`/`ref` argument, `++`/`--`, `+=` on events |
+| Constructions    | `new T(...)`, a `this()`/`base()` initializer, an attribute              |
+| Type references  | A parameter or return type, a base type, a cast, `typeof`, a type argument, a `catch` clause |
+
+Invocations, reads, writes and constructions start on; type references start off, because on a type
+root they otherwise swamp everything else. Ticking or unticking a box re-reads every expanded row
+immediately, as does **Refresh** and changing the scope. **Stop** cancels whatever is in flight.
+
+A compound assignment is both a read and a write, and is counted under each. Any single branch stops
+at 200 rows, with the remainder collapsed into one `N more...` row.
 
 ## Building
 
