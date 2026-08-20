@@ -156,7 +156,16 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         ThreadHelper.ThrowIfNotOnUIThread();
 
         if (!(Tree.SelectedItem is ReferenceGraphNode node) || _workspace is null) return;
+
+        // A branch row has nowhere to navigate to, so leave the event alone and let the default
+        // double-click behaviour expand it.
         if (node.DocumentId is null) return;
+
+        // TreeViewItem toggles IsExpanded from its MouseLeftButtonDown class handler. MouseDoubleClick
+        // is raised while MouseDown is still routing, and WPF only promotes MouseDown to
+        // MouseLeftButtonDown when it comes back unhandled - so handling it here is what stops a
+        // navigating double-click from also opening or closing the row.
+        e.Handled = true;
 
         // VSSDK007: a WPF event handler has nothing to await into; FileAndForget is the terminus.
 #pragma warning disable VSSDK007

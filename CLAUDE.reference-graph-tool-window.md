@@ -23,10 +23,10 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress - all code complete, blocked only on step 8's manual smoke test
-- **Current step:** 8 - manual F5 smoke test (three defects found and fixed so far; needs re-running)
+- **Current step:** 8 and 12 - manual F5 smoke test (five defects found and fixed so far; needs re-running)
 - **Branch:** v0.3.0
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `order incoming reference rows deterministically` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `stop double-click from toggling row expansion` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-08-20
 
 ## Goal
@@ -170,9 +170,17 @@ supersede **Non-goal 1** ("no per-call-site leaf level under a node"), which the
 - **Verify:** `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceGraphNodeLocationRowTests"`.
 - **Commit:** `add navigable rows for each reference location`
 
-### 12. Double-click navigates without toggling `[ ]`
+### 12. Double-click navigates without toggling `[~]`
 
-- **Do:** Double-clicking a row currently both navigates and expands/collapses it.
+- **Files:** `RoslynQuery/ToolWindow/ReferenceGraphToolWindowControl.xaml.cs`
+- **Do:** `OnNodeDoubleClick` sets `e.Handled = true` when it navigates. `TreeViewItem` toggles
+  `IsExpanded` from its `MouseLeftButtonDown` class handler, and `MouseDoubleClick` is raised while
+  `MouseDown` is still routing; WPF promotes `MouseDown` to `MouseLeftButtonDown` only when it comes
+  back unhandled, so handling it suppresses the toggle. A branch row (no `DocumentId`) is left
+  unhandled on purpose, so double-clicking one still expands it.
+- **Progress:** Builds clean. **Not verified** - this is WPF input-promotion behaviour that no unit
+  test in this project can exercise, so it stays `[~]` until the manual smoke test confirms a
+  navigating double-click no longer toggles the row.
 - **Commit:** `stop double-click from toggling row expansion`
 
 ## Deviations
@@ -213,6 +221,10 @@ supersede **Non-goal 1** ("no per-call-site leaf level under a node"), which the
   where the command is meant to be usable. Confirmed in the generated
   `RoslynQuery/bin/Debug/net472/RoslynQuery.pkgdef`: an `AutoLoadPackages\{c6829cab-...}` entry with
   `dword:00000002` (BackgroundLoad) and a `UIContextRules\{c6829cab-...}` entry carrying the term.
+- **Step 12 is reasoned, not measured.** The `e.Handled = true` fix depends on WPF promoting
+  `MouseDown` to `MouseLeftButtonDown` only when the former is unhandled. That is the same mechanism
+  that makes handling `MouseDown` suppress `MouseLeftButtonDown` generally, but it is not something the
+  test suite can exercise - there is no WPF host here. Confirm it in the smoke test.
 - **Step 11 supersedes Non-goal 1.** The plan ruled out a per-call-site leaf level; the user reversed
   that after seeing a row report several references with no way to reach any but the first. The leaves
   sit under their own "Locations (N)" branch rather than being mixed in with the recursive graph rows,
