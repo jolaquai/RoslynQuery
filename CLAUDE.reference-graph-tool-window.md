@@ -23,10 +23,10 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress - all code complete, blocked only on step 8's manual smoke test
-- **Current step:** 8 - manual F5 smoke test (two defects found and fixed so far; needs re-running)
+- **Current step:** 8 - manual F5 smoke test (three defects found and fixed so far; needs re-running)
 - **Branch:** v0.3.0
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `autoload the package when a c# editor is active` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `order incoming reference rows deterministically` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-08-20
 
 ## Goal
@@ -180,6 +180,20 @@ test project and to keep this plan's `-class` filters valid.
   where the command is meant to be usable. Confirmed in the generated
   `RoslynQuery/bin/Debug/net472/RoslynQuery.pkgdef`: an `AutoLoadPackages\{c6829cab-...}` entry with
   `dword:00000002` (BackgroundLoad) and a `UIContextRules\{c6829cab-...}` entry carrying the term.
+- **Step 8: incoming rows came back in a different order on every refresh.** `SymbolFinder` searches
+  documents in parallel, so `GroupSet`'s first-seen ordering was whatever the scheduler happened to do -
+  the tree reshuffled on each refresh over an unchanged solution, which made the window untestable.
+  `Build` now sorts incoming rows by display text (tie-broken on the declaration id, since two rows can
+  share a signature across namespaces) **before** applying the 200-row cap, or which rows survived the
+  cap would have been arbitrary too. Outgoing rows keep insertion order: that is already deterministic
+  and is the order they appear in the source, which is more useful there than alphabetical.
+  Each group's `Locations` list is sorted as well - the first location is what double-click navigates
+  to, so it has to be the same one every time.
+  Three regression tests were added; only `Incoming_RowOrder_IsSortedAndStableAcrossRuns` reproduces
+  the failure deterministically (verified by reverting the sort). The other two - location order within
+  a row, and the cap keeping the sorted prefix - pass either way at these fixture sizes, because
+  `SymbolFinder` happens to return a single document's hits in source order. They are kept as cheap
+  guards, not as proof.
 - **Step 8: the manual smoke test is still outstanding past that first crash.** The window now
   constructs, but the rest of the checklist below has not been walked, so the step stays `[~]`.
 - **Step 7: the filter popup uses `StaysOpen="False"`, not `True`.** `IsOpen` is bound two-way to the

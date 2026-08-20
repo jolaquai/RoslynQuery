@@ -157,4 +157,74 @@ public class ReferenceGraphEngineIncomingTests
 
         Assert.Empty(nodes);
     }
+
+    // SymbolFinder searches documents in parallel, so grouping by first-seen order made the row
+    // order change from one refresh to the next over an unchanged solution.
+    [Fact]
+    public async Task Incoming_RowOrder_IsSortedAndStableAcrossRuns()
+    {
+        var solution = TestSolutions.Create(
+            ("A.cs", "class Owner { public void Target() { } }"),
+            ("Z.cs", "class Zeta { void Go() { new Owner().Target(); } }"),
+            ("M.cs", "class Mid { void Go() { new Owner().Target(); } }"),
+            ("B.cs", "class Beta { void Go() { new Owner().Target(); } }"),
+            ("Q.cs", "class Quux { void Go() { new Owner().Target(); } }"));
+
+        var target = await SymbolAsync(solution, "Owner", "Target");
+
+        var first = await ReferenceGraphEngine.FindIncomingAsync(
+            target, solution, null, All, null, TestContext.Current.CancellationToken);
+        var second = await ReferenceGraphEngine.FindIncomingAsync(
+            target, solution, null, All, null, TestContext.Current.CancellationToken);
+
+        var names = first.Select(n => n.DisplayText).ToList();
+
+        Assert.Equal(["Beta.Go()", "Mid.Go()", "Quux.Go()", "Zeta.Go()"], names);
+        Assert.Equal(names, second.Select(n => n.DisplayText));
+    }
+
+    [Fact]
+    public async Task Incoming_LocationsWithinARow_AreOrderedSoDoubleClickIsStable()
+    {
+        var solution = TestSolutions.Create(
+            ("A.cs", """
+                class Owner
+                {
+                    public void Target() { }
+                    public void Caller() { Target(); Target(); Target(); }
+                }
+                """));
+
+        var target = await SymbolAsync(solution, "Owner", "Target");
+
+        var first = await ReferenceGraphEngine.FindIncomingAsync(
+            target, solution, null, All, null, TestContext.Current.CancellationToken);
+        var second = await ReferenceGraphEngine.FindIncomingAsync(
+            target, solution, null, All, null, TestContext.Current.CancellationToken);
+
+        var spans = Assert.Single(first).Locations.Select(l => l.Span.Start).ToList();
+
+        Assert.Equal(spans.OrderBy(x => x), spans);
+        Assert.Equal(spans, Assert.Single(second).Locations.Select(l => l.Span.Start));
+    }
+
+    [Fact]
+    public async Task Incoming_TheCap_KeepsTheFirstRowsInSortedOrder()
+    {
+        var source = new StringBuilder();
+        source.AppendLine("class Owner { public void Target() { } }");
+        for (var i = 0; i < MaxPlusFive; i++)
+            source.AppendLine($"class Caller{i:D4} {{ void Go() {{ new Owner().Target(); }} }}");
+
+        var solution = TestSolutions.Create(("Many.cs", source.ToString()));
+
+        var nodes = await ReferenceGraphEngine.FindIncomingAsync(
+            await SymbolAsync(solution, "Owner", "Target"), solution, null, All, null, TestContext.Current.CancellationToken);
+
+        var rows = nodes.Take(ReferenceGraphEngine.MaxNodes).Select(n => n.DisplayText).ToList();
+
+        // Which rows survive the cap must not depend on which document finished searching first.
+        Assert.Equal(rows.OrderBy(x => x, System.StringComparer.Ordinal), rows);
+        Assert.Equal("Caller0000.Go()", rows[0]);
+    }
 }

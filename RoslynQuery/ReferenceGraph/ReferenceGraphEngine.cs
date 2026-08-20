@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -239,7 +240,7 @@ internal static class ReferenceGraphEngine
 
             if (!_byIdentity.TryGetValue(identity, out var group))
             {
-                group = new Group { Identity = identity, Symbol = symbol };
+                group = new Group { Identity = identity, Symbol = symbol, Display = ReferenceGraphDisplay.Of(symbol) };
                 _byIdentity[identity] = group;
                 _ordered.Add(group);
             }
@@ -249,21 +250,26 @@ internal static class ReferenceGraphEngine
 
         public IReadOnlyList<ReferenceGraphNode> Build(ReferenceDirection direction, ReferenceGraphNode parent)
         {
-            var nodes = new List<ReferenceGraphNode>(_ordered.Count);
+            var ordered = Order(direction);
+            var nodes = new List<ReferenceGraphNode>(ordered.Count);
             var count = 0;
 
-            foreach (var group in _ordered)
+            foreach (var group in ordered)
             {
                 if (count == MaxNodes)
                 {
-                    nodes.Add(ReferenceGraphNode.CreateMessage($"{_ordered.Count - MaxNodes} more...", parent));
+                    nodes.Add(ReferenceGraphNode.CreateMessage($"{ordered.Count - MaxNodes} more...", parent));
                     break;
                 }
+
+                // Whichever location ends up first is the one double-click navigates to, so it has to
+                // be the same one on every refresh.
+                group.Locations.Sort(CompareLocations);
 
                 var recursive = parent != null && parent.HasAncestor(group.Identity);
 
                 nodes.Add(new ReferenceGraphNode(
-                    ReferenceGraphDisplay.Of(group.Symbol),
+                    group.Display,
                     group.Identity,
                     SymbolGlyphs.For(group.Symbol),
                     direction,
@@ -281,6 +287,32 @@ internal static class ReferenceGraphEngine
         }
 
         /// <summary>
+        /// <c>SymbolFinder</c> searches documents in parallel, so the order incoming groups were first
+        /// seen in is whatever the scheduler happened to do - it changes between two runs over an
+        /// unchanged solution. Incoming rows are therefore sorted by name; outgoing rows keep insertion
+        /// order, which is already deterministic and is the order they appear in the source.
+        /// Sorting happens before the cap, or which rows survive it would be arbitrary too.
+        /// </summary>
+        private List<Group> Order(ReferenceDirection direction)
+        {
+            if (direction != ReferenceDirection.Incoming) return _ordered;
+
+            return _ordered
+                .OrderBy(g => g.Display, StringComparer.Ordinal)
+                // Two rows can share a display string (same signature in different namespaces), and
+                // the tie has to break the same way every time.
+                .ThenBy(g => g.Identity.DeclarationId, StringComparer.Ordinal)
+                .ToList();
+        }
+
+        private static int CompareLocations(ReferenceLocationInfo x, ReferenceLocationInfo y)
+        {
+            var byDocument = (x.DocumentId?.Id ?? Guid.Empty).CompareTo(y.DocumentId?.Id ?? Guid.Empty);
+
+            return byDocument != 0 ? byDocument : x.Span.Start.CompareTo(y.Span.Start);
+        }
+
+        /// <summary>
         /// Collapses the shapes that share one identity: an extension method called in reduced form,
         /// and a constructed generic, both belong on the row of the thing they were built from.
         /// </summary>
@@ -295,6 +327,7 @@ internal static class ReferenceGraphEngine
         {
             public SymbolIdentity Identity;
             public ISymbol Symbol;
+            public string Display;
             public List<ReferenceLocationInfo> Locations = [];
         }
     }
