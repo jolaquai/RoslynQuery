@@ -42,7 +42,7 @@ internal static class PredicateDocumentFactory
             var projectId = ProjectId.CreateNewId("RoslynQueryPredicate");
             var project = workspace.AddProject(ProjectInfo
                 .Create(projectId, VersionStamp.Create(), "RoslynQueryPredicate", "RoslynQueryPredicate", LanguageNames.CSharp)
-                .WithMetadataReferences(PredicateCompiler.References)
+                .WithMetadataReferences(ExpressionSupport.References)
                 .WithParseOptions(PredicateTemplate.ParseOptions)
                 .WithCompilationOptions(new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)));
 
