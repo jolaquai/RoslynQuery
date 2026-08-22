@@ -55,7 +55,8 @@ internal static class SpanMapper
         };
     }
 
-    private static async Task<TextSpan> MapForwardAsync(Document original, Document current, TextSpan span, CancellationToken cancellationToken)
+    /// <summary>Also used directly by <see cref="RoslynQuery.Replace.ChangeApplier"/>, which needs the mapped span itself rather than a caret position.</summary>
+    internal static async Task<TextSpan> MapForwardAsync(Document original, Document current, TextSpan span, CancellationToken cancellationToken)
     {
         var start = span.Start;
         var end = span.End;
