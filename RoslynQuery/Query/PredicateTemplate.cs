@@ -17,7 +17,8 @@ internal static class PredicateTemplate
 
     public static readonly CSharpParseOptions ParseOptions = new CSharpParseOptions(LanguageVersion.Preview, documentationMode: Microsoft.CodeAnalysis.DocumentationMode.None);
 
-    private const string Usings = """
+    /// <summary>Shared with <see cref="RoslynQuery.Replace.ReplaceTemplate"/>: both wrappers need the same imports.</summary>
+    public const string Usings = """
         using System;
         using System.Collections.Generic;
         using System.Collections.Immutable;
