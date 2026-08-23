@@ -34,16 +34,33 @@ Pick a **Target**, pick a **Scope**, type a predicate, press Enter (or Run).
 
 The signature line above the box tells you what is in scope:
 
-| Target      | Predicate signature                                                        |
-| ----------- | -------------------------------------------------------------------------- |
-| SyntaxNode  | `async ValueTask<bool> (SyntaxNode n, SemanticModel model, Document doc)`  |
-| SyntaxToken | `async ValueTask<bool> (SyntaxToken t, SemanticModel model, Document doc)` |
-| IOperation  | `async ValueTask<bool> (IOperation op, SemanticModel model, Document doc)` |
+| Target      | Predicate signature                                                          |
+| ----------- | ----------------------------------------------------------------------------- |
+| SyntaxNode  | `async ValueTask<object> (SyntaxNode n, SemanticModel model, Document doc)`  |
+| SyntaxToken | `async ValueTask<object> (SyntaxToken t, SemanticModel model, Document doc)` |
+| IOperation  | `async ValueTask<object> (IOperation op, SemanticModel model, Document doc)` |
 
 `System`, `System.Collections.Generic`, `System.Collections.Immutable`, `System.Linq`,
 `System.Text`, `System.Text.RegularExpressions`, `System.Threading.Tasks`,
 `Microsoft.CodeAnalysis`, `.CSharp`, `.CSharp.Syntax`, `.Operations` and `.Text` are already
 imported.
+
+Despite the `object` return, a predicate is still ordinarily written as a plain `bool`
+expression/body - `true` means match, `false` and `null` both mean no match. The one other thing
+you can return is the parameter's own type (`SyntaxNode` for a SyntaxNode search, `SyntaxToken` for
+a SyntaxToken search, `IOperation` for an IOperation search): that lets a single query pick a
+*different* location to report as the hit - a Where+Select in one, e.g. matching an `if` statement
+but reporting its containing method:
+
+```csharp
+if (n.IsKind(SyntaxKind.IfStatement)) return n.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+return false;
+```
+
+The returned node/token/operation must actually come from the tree being searched - one of its own
+descendants, ancestors, or siblings is fine, but a node built with `SyntaxFactory` (or lifted from
+some other document) is rejected as an error for that hit rather than silently accepted, since
+neither navigation nor a later Replace pass could resolve it back to anything real.
 
 Write either a single boolean expression or a full statement body ending in a `return` - which one
 you meant is detected from the text, so nothing needs switching:
@@ -168,7 +185,7 @@ against a changed query. It returns one of:
 | `SyntaxNode` / `SyntaxToken` | Replaces structurally; normalized and re-printed as text. |
 | `null`                       | Skips the match.                                          |
 
-The replacement signature mirrors the predicate's, with an `object` return in place of `bool`:
+The replacement signature mirrors the predicate's:
 
 | Target      | Replacement signature                                                        |
 | ----------- | ---------------------------------------------------------------------------- |
