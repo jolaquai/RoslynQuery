@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 
 using RoslynQuery.Query;
@@ -167,5 +168,32 @@ public class ChangeApplierTests
         var finalText = await workspace.CurrentSolution.GetDocument(docId).GetTextAsync(TestContext.Current.CancellationToken);
         Assert.Contains("int renamed = 1;", finalText.ToString());
         Assert.Contains("// a leading comment", finalText.ToString());
+    }
+
+    [Fact]
+    public async Task ApplyAsync_BadlyIndentedReplacement_IsReformattedToMatchContext()
+    {
+        var (workspace, docId) = NewDocument("class C\r\n{\r\n    void M()\r\n    {\r\n        DoWork();\r\n    }\r\n}");
+        var document = workspace.CurrentSolution.GetDocument(docId);
+        var root = await document.GetSyntaxRootAsync(TestContext.Current.CancellationToken);
+        var statement = root.DescendantNodes().OfType<ExpressionStatementSyntax>().First();
+        var hit = await HitAtAsync(document, statement.Span, statement.Kind().ToString());
+
+        // Deliberately flush-left, the way a raw text splice lands regardless of surrounding
+        // indentation - this is the shape of replacement Formatter is meant to clean up.
+        var item = new ReplacementItem { Hit = hit, Before = "DoWork();", After = "if (Enabled)\r\nFluxMetrics.Add(1);" };
+        var outcome = await ChangeApplier.ApplyAsync(workspace, workspace.CurrentSolution, [item], TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, outcome.Applied);
+        var lines = (await workspace.CurrentSolution.GetDocument(docId).GetTextAsync(TestContext.Current.CancellationToken))
+            .Lines.Select(l => l.ToString()).ToArray();
+
+        var ifLine = Assert.Single(lines, l => l.TrimStart().StartsWith("if (Enabled)"));
+        var addLine = Assert.Single(lines, l => l.TrimStart().StartsWith("FluxMetrics.Add(1);"));
+
+        // Same indent as the statement it replaced (nested one level inside M's block), and the if's
+        // own body nested one level deeper than that - not both flush-left as originally spliced.
+        Assert.Equal(8, ifLine.Length - ifLine.TrimStart().Length);
+        Assert.True(addLine.Length - addLine.TrimStart().Length > 8);
     }
 }
