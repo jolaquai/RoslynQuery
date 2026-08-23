@@ -15,10 +15,9 @@ public class PredicateCompilerNormalizeBodyTests
 {
     /// <summary>Kind+text of every token, which is the only thing the compiler ultimately sees.</summary>
     private static List<string> Tokens(string text) =>
-        SyntaxFactory.ParseTokens(text, options: PredicateTemplate.ParseOptions)
+        [.. SyntaxFactory.ParseTokens(text, options: PredicateTemplate.ParseOptions)
             .Where(t => !t.IsKind(SyntaxKind.EndOfFileToken))
-            .Select(t => t.Kind() + ":" + t.Text)
-            .ToList();
+            .Select(t => t.Kind() + ":" + t.Text)];
 
     // The whole reason NormalizeBody exists: it must be impossible for it to change what a body
     // lexes to, for any body, without appealing to an adjacency heuristic being right.
@@ -44,7 +43,7 @@ public class PredicateCompilerNormalizeBodyTests
     [InlineData("// leading\r\nreturn true; /* trailing */")]
     public void NormalizeBody_PreservesTokenStream(string body)
     {
-        var normalized = PredicateCompiler.NormalizeBody(body);
+        var normalized = ExpressionSupport.NormalizeBody(body);
 
         Assert.Equal(Tokens(body), Tokens(normalized));
     }
@@ -54,13 +53,13 @@ public class PredicateCompilerNormalizeBodyTests
     {
         var body = "return \"\"\"a  b\"\"\".Length > 0;";
 
-        Assert.Equal(Tokens(body), Tokens(PredicateCompiler.NormalizeBody(body)));
+        Assert.Equal(Tokens(body), Tokens(ExpressionSupport.NormalizeBody(body)));
     }
 
     [Fact]
     public void NormalizeBody_DoesNotCollapseWhitespaceInsideStringLiterals()
     {
-        var normalized = PredicateCompiler.NormalizeBody(@"return ""a    b"" == s;");
+        var normalized = ExpressionSupport.NormalizeBody(@"return ""a    b"" == s;");
 
         Assert.Contains(@"""a    b""", normalized);
     }
@@ -71,22 +70,22 @@ public class PredicateCompilerNormalizeBodyTests
     [InlineData("   ")]
     [InlineData("\t\r\n")]
     public void NormalizeBody_NullOrWhitespace_NormalizesToEmpty(string body) =>
-        Assert.Equal(string.Empty, PredicateCompiler.NormalizeBody(body));
+        Assert.Equal(string.Empty, ExpressionSupport.NormalizeBody(body));
 
     [Fact]
     public void NormalizeBody_CollapsesGapsToASingleSeparator()
     {
         // Both directions converge on the same canonical form, which is what makes it a cache key.
-        Assert.Equal("var x = 1 ;", PredicateCompiler.NormalizeBody("var    x=1;"));
-        Assert.Equal("var x = 1 ;", PredicateCompiler.NormalizeBody("var x  =  1 ;"));
+        Assert.Equal("var x = 1 ;", ExpressionSupport.NormalizeBody("var    x=1;"));
+        Assert.Equal("var x = 1 ;", ExpressionSupport.NormalizeBody("var x  =  1 ;"));
     }
 
     [Fact]
     public void NormalizeBody_DifferentlyFormattedEquivalentBodies_ShareAKey()
     {
-        var a = PredicateCompiler.NormalizeBody("if (n != null) { return true; }\r\nreturn false;");
-        var b = PredicateCompiler.NormalizeBody("if(n!=null){return true;}\r\nreturn false;");
-        var c = PredicateCompiler.NormalizeBody("if ( n  !=  null )  { return true; }\r\n/* x */ return false;");
+        var a = ExpressionSupport.NormalizeBody("if (n != null) { return true; }\r\nreturn false;");
+        var b = ExpressionSupport.NormalizeBody("if(n!=null){return true;}\r\nreturn false;");
+        var c = ExpressionSupport.NormalizeBody("if ( n  !=  null )  { return true; }\r\n/* x */ return false;");
 
         Assert.Equal(a, b);
         Assert.Equal(a, c);
@@ -96,7 +95,7 @@ public class PredicateCompilerNormalizeBodyTests
     public void NormalizeBody_CollapsesLineBreaks()
     {
         // A line break is just another gap: reformatting a body must not leak a second assembly.
-        var normalized = PredicateCompiler.NormalizeBody("var x = 1;\r\nreturn x > 0;");
+        var normalized = ExpressionSupport.NormalizeBody("var x = 1;\r\nreturn x > 0;");
 
         Assert.DoesNotContain("\n", normalized);
         Assert.DoesNotContain("\r", normalized);
@@ -105,9 +104,9 @@ public class PredicateCompilerNormalizeBodyTests
     [Fact]
     public void NormalizeBody_LineBreakOrSpace_ProducesOneKey()
     {
-        var multiLine = PredicateCompiler.NormalizeBody(
+        var multiLine = ExpressionSupport.NormalizeBody(
             "var node = n as MemberAccessExpressionSyntax;\r\nreturn node is not null;");
-        var singleLine = PredicateCompiler.NormalizeBody(
+        var singleLine = ExpressionSupport.NormalizeBody(
             "var node = n as MemberAccessExpressionSyntax; return node is not null;");
 
         Assert.Equal(multiLine, singleLine);
@@ -116,7 +115,7 @@ public class PredicateCompilerNormalizeBodyTests
     [Fact]
     public void NormalizeBody_DropsComments()
     {
-        var normalized = PredicateCompiler.NormalizeBody("return true; // why\r\n/* and */");
+        var normalized = ExpressionSupport.NormalizeBody("return true; // why\r\n/* and */");
 
         Assert.DoesNotContain("why", normalized);
         Assert.DoesNotContain("and", normalized);
@@ -128,9 +127,9 @@ public class PredicateCompilerNormalizeBodyTests
     [InlineData("if (n != null)\r\n{\r\n    return true;\r\n}\r\nreturn false;")]
     public void NormalizeBody_IsIdempotent(string body)
     {
-        var once = PredicateCompiler.NormalizeBody(body);
+        var once = ExpressionSupport.NormalizeBody(body);
 
-        Assert.Equal(once, PredicateCompiler.NormalizeBody(once));
+        Assert.Equal(once, ExpressionSupport.NormalizeBody(once));
     }
 
     // Defence in depth, matching Normalize: Compile rejects directives before NormalizeBody is
@@ -138,7 +137,7 @@ public class PredicateCompilerNormalizeBodyTests
     [Fact]
     public void NormalizeBody_ConditionalBody_KeepsBothBranches()
     {
-        var normalized = PredicateCompiler.NormalizeBody("#if DEBUG\r\nreturn true;\r\n#else\r\nreturn false;\r\n#endif");
+        var normalized = ExpressionSupport.NormalizeBody("#if DEBUG\r\nreturn true;\r\n#else\r\nreturn false;\r\n#endif");
 
         Assert.Contains("#if DEBUG", normalized);
         Assert.Contains("return true;", normalized);
@@ -152,10 +151,10 @@ public class PredicateCompilerNormalizeBodyTests
     {
         const string body = "#if DEBUG\r\nreturn true;\r\n#endif";
 
-        Assert.Equal(PredicateCompiler.NormalizeBody(body), PredicateCompiler.NormalizeBody(body));
+        Assert.Equal(ExpressionSupport.NormalizeBody(body), ExpressionSupport.NormalizeBody(body));
     }
 
     [Fact]
     public void NormalizeBody_HashInsideStringLiteral_TakesTheNormalPath() =>
-        Assert.Equal(@"return s == ""#if"" ;", PredicateCompiler.NormalizeBody(@"return s == ""#if"";"));
+        Assert.Equal(@"return s == ""#if"" ;", ExpressionSupport.NormalizeBody(@"return s == ""#if"";"));
 }

@@ -45,6 +45,8 @@ internal static class QueryEngine
         var needsModel = target == TargetKind.Operation || MentionsModel.IsMatch(expression ?? string.Empty);
 
         var pending = new List<QueryHit>(BatchSize);
+        // Dedupes matches that report the same result location (see TryClassifyResult).
+        var seen = new HashSet<(DocumentId DocumentId, TextSpan Span, string Kind)>();
         var sync = new object();
         var examined = 0;
         var matched = 0;
@@ -63,7 +65,7 @@ internal static class QueryEngine
                 {
                     if (pending.Count >= BatchSize || (force && pending.Count > 0))
                     {
-                        batch = new List<QueryHit>(pending);
+                        batch = [.. pending];
                         pending.Clear();
                     }
                 }
@@ -73,6 +75,12 @@ internal static class QueryEngine
 
             void Emit(QueryHit hit)
             {
+                lock (sync)
+                {
+                    if (!seen.Add((hit.DocumentId, hit.Span, hit.Kind)))
+                        return;
+                }
+
                 if (Interlocked.Increment(ref matched) > maxResults)
                 {
                     outcome.Truncated = true;
@@ -187,11 +195,15 @@ internal static class QueryEngine
             cancellationToken.ThrowIfCancellationRequested();
             count++;
 
-            bool hit;
-            try { hit = await match(node, model, document).ConfigureAwait(false); }
+            bool hit; TextSpan span; string kind;
+            try
+            {
+                var result = await match(node, model, document).ConfigureAwait(false);
+                hit = TryClassifyResult(TargetKind.SyntaxNode, result, node.SyntaxTree, node.Span, node.Kind().ToString(), out span, out kind);
+            }
             catch (Exception ex) { fail(ex); continue; }
 
-            if (hit) emit(QueryHit.Create(document, text, node.Span, node.Kind().ToString(), TargetKind.SyntaxNode));
+            if (hit) emit(QueryHit.Create(document, text, span, kind, TargetKind.SyntaxNode));
         }
 
         return count;
@@ -207,11 +219,15 @@ internal static class QueryEngine
             cancellationToken.ThrowIfCancellationRequested();
             count++;
 
-            bool hit;
-            try { hit = await match(token, model, document).ConfigureAwait(false); }
+            bool hit; TextSpan span; string kind;
+            try
+            {
+                var result = await match(token, model, document).ConfigureAwait(false);
+                hit = TryClassifyResult(TargetKind.SyntaxToken, result, token.SyntaxTree, token.Span, token.Kind().ToString(), out span, out kind);
+            }
             catch (Exception ex) { fail(ex); continue; }
 
-            if (hit) emit(QueryHit.Create(document, text, token.Span, token.Kind().ToString(), TargetKind.SyntaxToken));
+            if (hit) emit(QueryHit.Create(document, text, span, kind, TargetKind.SyntaxToken));
         }
 
         return count;
@@ -243,14 +259,58 @@ internal static class QueryEngine
 
                 foreach (var child in operation.ChildOperations) stack.Push(child);
 
-                bool hit;
-                try { hit = await match(operation, model, document).ConfigureAwait(false); }
+                bool hit; TextSpan span; string kind;
+                try
+                {
+                    var result = await match(operation, model, document).ConfigureAwait(false);
+                    hit = TryClassifyResult(TargetKind.Operation, result, operation.Syntax.SyntaxTree, operation.Syntax.Span, operation.Kind.ToString(), out span, out kind);
+                }
                 catch (Exception ex) { fail(ex); continue; }
 
-                if (hit) emit(QueryHit.Create(document, text, operation.Syntax.Span, operation.Kind.ToString(), TargetKind.Operation));
+                if (hit) emit(QueryHit.Create(document, text, span, kind, TargetKind.Operation));
             }
         }
 
         return count;
+    }
+
+    /// <summary>
+    /// Interprets a predicate's <c>object</c> return (null/bool as a match, or a node/token/operation
+    /// to report a different hit location). A returned value must belong to <paramref name="tree"/>
+    /// or this throws, rather than risk a bogus span that later mismatches during Replace.
+    /// </summary>
+    private static bool TryClassifyResult(TargetKind target, object result, SyntaxTree tree, TextSpan defaultSpan, string defaultKind, out TextSpan span, out string kind)
+    {
+        switch (result)
+        {
+            case null:
+                span = default;
+                kind = null;
+                return false;
+            case bool matched:
+                span = defaultSpan;
+                kind = defaultKind;
+                return matched;
+            case SyntaxNode node when target == TargetKind.SyntaxNode:
+                if (node.SyntaxTree != tree)
+                    throw new InvalidOperationException("The query returned a SyntaxNode that is not part of the tree being searched - only a node obtained from 'n' (or one of its descendants) can be returned as a result.");
+                span = node.Span;
+                kind = node.Kind().ToString();
+                return true;
+            case SyntaxToken token when target == TargetKind.SyntaxToken:
+                if (token.SyntaxTree != tree)
+                    throw new InvalidOperationException("The query returned a SyntaxToken that is not part of the tree being searched - only a token obtained from 't' (or a sibling/descendant token) can be returned as a result.");
+                span = token.Span;
+                kind = token.Kind().ToString();
+                return true;
+            case IOperation operation when target == TargetKind.Operation:
+                if (operation.Syntax.SyntaxTree != tree)
+                    throw new InvalidOperationException("The query returned an IOperation that is not part of the tree being searched - only an operation obtained from 'op' (or one of its descendants) can be returned as a result.");
+                span = operation.Syntax.Span;
+                kind = operation.Kind.ToString();
+                return true;
+            default:
+                throw new InvalidOperationException($"The query returned {result.GetType().Name}, which is not valid for a {target} search; expected bool, {PredicateTemplate.ParameterType(target)}, or null.");
+        }
     }
 }

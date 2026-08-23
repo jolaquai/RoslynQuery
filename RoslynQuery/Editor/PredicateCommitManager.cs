@@ -21,12 +21,7 @@ internal sealed class PredicateCommitManagerProvider : IAsyncCompletionCommitMan
         textView.Properties.GetOrCreateSingletonProperty(() => new PredicateCommitManager());
 }
 
-/// <summary>
-/// Exists to declare the commit characters and nothing else. <c>IAsyncCompletionSession.ShouldCommit</c>
-/// answers from the union over the registered managers, so with none of them present no typed
-/// character can ever commit an item. <see cref="TryCommit"/> declines on purpose: the session's own
-/// commit replaces the applicable span, which is right now that the span is kept in sync.
-/// </summary>
+/// <summary>Declares the commit characters and performs the commit itself, rather than risk a real-C#-editor commit manager grabbing it and replacing the wrong span.</summary>
 internal sealed class PredicateCommitManager : IAsyncCompletionCommitManager
 {
     // Roslyn's C# set without the space. In a one-line predicate box, committing on a space is
@@ -39,6 +34,20 @@ internal sealed class PredicateCommitManager : IAsyncCompletionCommitManager
 
     public bool ShouldCommitCompletion(IAsyncCompletionSession session, SnapshotPoint location, char typedChar, CancellationToken token) => true;
 
-    public VsData.CommitResult TryCommit(IAsyncCompletionSession session, ITextBuffer buffer, VsData.CompletionItem item, char typedChar, CancellationToken token) =>
-        VsData.CommitResult.Unhandled;
+    public VsData.CommitResult TryCommit(IAsyncCompletionSession session, ITextBuffer buffer, VsData.CompletionItem item, char typedChar, CancellationToken token)
+    {
+        // session.ApplicableToSpan was observed widened here, eating the character that triggered the
+        // session - recomputed from the live caret instead of trusted.
+        var snapshot = buffer.CurrentSnapshot;
+        var span = PredicateWord.At(snapshot, session.TextView.Caret.Position.BufferPosition.Position);
+        var text = typedChar is '\0' or '\t' or '\n' ? item.InsertText : item.InsertText + typedChar;
+
+        using (var edit = buffer.CreateEdit())
+        {
+            edit.Replace(span, text);
+            edit.Apply();
+        }
+
+        return new VsData.CommitResult(true, VsData.CommitBehavior.SuppressFurtherTypeCharCommandHandlers);
+    }
 }

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -9,46 +11,50 @@ using System.Windows.Input;
 using System.Windows.Threading;
 
 using Microsoft.CodeAnalysis;
+using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.LanguageServices;
 using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.TextManager.Interop;
 using Microsoft.VisualStudio.Threading;
 
 using RoslynQuery.Editor;
 using RoslynQuery.Navigation;
 using RoslynQuery.Query;
+using RoslynQuery.Replace;
 
 namespace RoslynQuery.ToolWindow;
 
 public partial class QueryToolWindowControl : UserControl
 {
-    private sealed class Choice<T>
+    private sealed class Choice<T>(string display, T value)
     {
-        public Choice(string display, T value)
-        {
-            Display = display;
-            Value = value;
-        }
-
-        public string Display { get; }
-        public T Value { get; }
+        public string Display { get; } = display;
+        public T Value { get; } = value;
 
         public override string ToString() => Display;
     }
 
-    private readonly ObservableCollection<QueryHit> _hits = new ObservableCollection<QueryHit>();
-    private readonly ObservableCollection<CachedPredicateItem> _cachedPredicates = new ObservableCollection<CachedPredicateItem>();
+    internal const string DefaultQueryBoxContent = """
+        // n.IsKind(SyntaxKind.IfStatement) is the equivalent expression form; block form lets you
+        // use statements or control flow constructs:
+        if (n is IfStatementSyntax iss && iss.Statement is BlockSyntax b)
+            return b.Statements.Count == 1;
+        return false;
+        """;
+    private readonly ObservableCollection<QueryHit> _hits = [];
+    private readonly ObservableCollection<CachedPredicateItem> _cachedPredicates = [];
+    private readonly ObservableCollection<ReplacementItem> _replacements = [];
 
     private IComponentModel _componentModel;
     private VisualStudioWorkspace _workspace;
-    private IPredicateInput _input;
+    private IPredicateInput _searchInput;
+    private IPredicateInput _replacementInput;
     private CancellationTokenSource _cancellation;
     private bool _initialized;
     private double _sidebarWidth = 220;
 
-    // Weak: a Solution roots its compilations, and pinning the snapshot a run used would keep the
-    // whole thing alive for as long as the results are on screen. If it is gone, spans are used
-    // as recorded, which is only wrong if the user edited since the run.
+    // Weak: a Solution roots its compilations, and the results can stay on screen for a while.
     private WeakReference<Solution> _ranAgainst;
 
     public QueryToolWindowControl()
@@ -57,12 +63,13 @@ public partial class QueryToolWindowControl : UserControl
 
         Results.ItemsSource = _hits;
         CachedPredicates.ItemsSource = _cachedPredicates;
+        ReplaceResults.ItemsSource = _replacements;
         Loaded += OnLoaded;
     }
 
     private TargetKind CurrentTarget => ((Choice<TargetKind>)TargetCombo.SelectedItem)?.Value ?? TargetKind.SyntaxNode;
 
-    private ScopeKind CurrentScope => ((Choice<ScopeKind>)ScopeCombo.SelectedItem)?.Value ?? ScopeKind.Document;
+    private ScopeKind CurrentScope => ((Choice<ScopeKind>)ScopeCombo.SelectedItem)?.Value ?? ScopeKind.Solution;
 
     private int CurrentCap => ((Choice<int>)CapCombo.SelectedItem)?.Value ?? 5000;
 
@@ -103,38 +110,53 @@ public partial class QueryToolWindowControl : UserControl
         _componentModel = Package.GetGlobalService(typeof(SComponentModel)) as IComponentModel;
         _workspace = _componentModel?.GetService<VisualStudioWorkspace>();
 
-        _input = PredicateInputFactory.Create(_componentModel, out var diagnostic);
-        PredicateHost.Content = _input.Element;
-        _input.Target = CurrentTarget;
-        _input.Text = "n.IsKind(SyntaxKind.IfStatement)";
-        _input.SubmitRequested += (s, args) => Run();
+        _searchInput = PredicateInputFactory.Create(_componentModel, out var diagnostic);
+        PredicateHost.Content = _searchInput.Element;
+        _searchInput.Target = CurrentTarget;
+        _searchInput.Text = DefaultQueryBoxContent;
+        // Switches tabs first: running against stale Replace previews from a since-changed query is
+        // exactly the confusion this is meant to avoid, and Run() itself clears them either way.
+        _searchInput.SubmitRequested += (s, args) =>
+        {
+            MainTabs.SelectedIndex = 0;
+            Run();
+        };
+
+        _replacementInput = PredicateInputFactory.Create(_componentModel, out var replacementDiagnostic);
+        ReplacementHost.Content = _replacementInput.Element;
+        _replacementInput.Target = CurrentTarget;
+        _replacementInput.SubmitRequested += (s, args) => GeneratePreview();
 
         UpdateSignature();
+        UpdateReplaceSignature();
+        UpdateReplaceAvailability();
 
         if (_workspace is null) SetError("No Roslyn workspace is available. Open a solution and reopen this window.");
         else if (diagnostic != null) SetError(diagnostic);
+        else if (replacementDiagnostic != null) SetError(replacementDiagnostic);
 
-        StatusText.Text = "Enter runs, Shift+Enter is a newline";
+        StatusText.Text = "Ctrl+Enter runs, Enter/Shift+Enter is a newline";
 
         // The compiler cache is process-lifetime and static, so a reopened or second tool window
         // instance can have entries in it before this instance ever runs anything itself.
         RefreshCachedPredicates();
 
-        // Nothing in the window is focusable-by-default in a useful place, so without this the
-        // first keystroke goes to whatever the shell last focused. Input priority: the host has to
-        // finish arranging before the view can take focus.
+        // Input priority: the host has to finish arranging before the view can take focus.
 #pragma warning disable VSTHRD001, VSTHRD110
-        Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => _input.FocusInput()));
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => _searchInput.FocusInput()));
 #pragma warning restore VSTHRD001, VSTHRD110
     }
 
     private void OnTargetChanged(object sender, SelectionChangedEventArgs e)
     {
         // Populating the combos in OnLoaded raises SelectionChanged before the input exists.
-        if (_input is null) return;
+        if (_searchInput is null) return;
 
-        _input.Target = CurrentTarget;
+        _searchInput.Target = CurrentTarget;
+        _replacementInput.Target = CurrentTarget;
         UpdateSignature();
+        UpdateReplaceSignature();
+        UpdateReplaceAvailability();
     }
 
     private void OnRunClick(object sender, RoutedEventArgs e)
@@ -143,13 +165,45 @@ public partial class QueryToolWindowControl : UserControl
         Run();
     }
 
-    private void OnStopClick(object sender, RoutedEventArgs e) => _cancellation?.Cancel();
+    private void OnStopClick(object sender, RoutedEventArgs e)
+    {
+        _cancellation?.Cancel();
+
+        // Stop doubles as "dismiss": Run/GeneratePreview only clear stale previews when they start a
+        // new run, so previews left over from editing the box without re-running need this too.
+        _replacements.Clear();
+        ApplySelectedButton.IsEnabled = false;
+        ReplaceStatusText.Text = string.Empty;
+    }
 
     private void OnResultDoubleClick(object sender, MouseButtonEventArgs e)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        if (!(Results.SelectedItem is QueryHit hit) || _workspace is null) return;
+        if (Results.SelectedItem is not QueryHit hit || _workspace is null) return;
+        NavigateTo(hit.DocumentId, hit.Span);
+    }
+
+    private void OnReplaceResultDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        if (ReplaceResults.SelectedItem is not ReplacementItem item || _workspace is null) return;
+        NavigateTo(item.Hit.DocumentId, item.Hit.Span);
+    }
+
+    private void OnReplaceResultsPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Space) return;
+        if (ReplaceResults.SelectedItem is not ReplacementItem item || item.Warning is not null) return;
+
+        item.Included = !item.Included;
+        e.Handled = true;
+    }
+
+    private void NavigateTo(DocumentId documentId, Microsoft.CodeAnalysis.Text.TextSpan span)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
 
         // VSSDK007: a WPF event handler has nothing to await into; FileAndForget is the terminus.
 #pragma warning disable VSSDK007
@@ -160,7 +214,7 @@ public partial class QueryToolWindowControl : UserControl
 
             await TaskScheduler.Default;
             var target = await SpanMapper
-                .ResolveAsync(ranAgainst, _workspace.CurrentSolution, hit.DocumentId, hit.Span, CancellationToken.None)
+                .ResolveAsync(ranAgainst, _workspace.CurrentSolution, documentId, span, CancellationToken.None)
                 .ConfigureAwait(false);
 
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -173,14 +227,11 @@ public partial class QueryToolWindowControl : UserControl
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        if (!(CachedPredicates.SelectedItem is CachedPredicateItem item)) return;
+        if (CachedPredicates.SelectedItem is not CachedPredicateItem item) return;
 
-        // TargetCombo is populated in OnLoaded in TargetKind declaration order, so the index and
-        // the enum value coincide - no lookup needed. Scope is deliberately left as the user has
-        // it: it has nothing to do with which predicate is running.
         // Pretty, not Display: the latter is truncated for the list and would restore a fragment.
         TargetCombo.SelectedIndex = (int)item.Kind;
-        _input.Text = item.Pretty;
+        _searchInput.Text = item.Pretty;
         Run();
     }
 
@@ -222,10 +273,27 @@ public partial class QueryToolWindowControl : UserControl
 
     private void UpdateSignature() => SignatureText.Text = PredicateTemplate.Signature(CurrentTarget);
 
+    private void UpdateReplaceSignature() =>
+        ReplaceSignatureText.Text = CurrentTarget == TargetKind.Operation ? string.Empty : ReplaceTemplate.Signature(CurrentTarget);
+
+    /// <summary>IOperation matches have nothing to be structurally replaced with - see ReplaceTemplate's own guard.</summary>
+    private void UpdateReplaceAvailability()
+    {
+        var unavailable = CurrentTarget == TargetKind.Operation;
+        ReplaceUnavailableText.Visibility = unavailable ? Visibility.Visible : Visibility.Collapsed;
+        ReplaceBody.Visibility = unavailable ? Visibility.Collapsed : Visibility.Visible;
+    }
+
     private void SetError(string message)
     {
         ErrorText.Text = message ?? string.Empty;
         ErrorText.Visibility = string.IsNullOrEmpty(message) ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void SetReplaceError(string message)
+    {
+        ReplaceErrorText.Text = message ?? string.Empty;
+        ReplaceErrorText.Visibility = string.IsNullOrEmpty(message) ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void Run()
@@ -244,15 +312,19 @@ public partial class QueryToolWindowControl : UserControl
 
         var target = CurrentTarget;
         var scope = CurrentScope;
-        var expression = _input.Text;
+        var expression = _searchInput.Text;
         var includeGenerated = GeneratedCheckBox.IsChecked == true;
         var cap = CurrentCap;
 
         _hits.Clear();
+        _replacements.Clear();
+        ApplySelectedButton.IsEnabled = false;
         SetError(null);
         StatusText.Text = "Running...";
         StopButton.IsEnabled = true;
+        ReplaceStopButton.IsEnabled = true;
         RunButton.IsEnabled = false;
+        GeneratePreviewButton.IsEnabled = false;
 
 #pragma warning disable VSSDK007
         ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
@@ -276,7 +348,9 @@ public partial class QueryToolWindowControl : UserControl
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 StopButton.IsEnabled = false;
+                ReplaceStopButton.IsEnabled = false;
                 RunButton.IsEnabled = true;
+                GeneratePreviewButton.IsEnabled = true;
                 RefreshCachedPredicates();
                 if (ReferenceEquals(_cancellation, cancellation)) _cancellation = null;
                 cancellation.Dispose();
@@ -344,5 +418,237 @@ public partial class QueryToolWindowControl : UserControl
             PredicateCompiler.TotalEmittedBytes / 1024.0);
 
         if (outcome.Errors > 0) SetError(string.Format("{0:N0} predicate error{1}. First: {2}", outcome.Errors, outcome.Errors == 1 ? string.Empty : "s", outcome.FirstError));
+    }
+
+    private void OnGeneratePreviewClick(object sender, RoutedEventArgs e)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        GeneratePreview();
+    }
+
+    private void OnSelectAllClick(object sender, RoutedEventArgs e)
+    {
+        // Warned rows are skipped, or this would re-check a row Apply skips anyway.
+        foreach (var item in _replacements)
+        {
+            if (item.Warning is null) item.Included = true;
+        }
+    }
+
+    private void OnSelectNoneClick(object sender, RoutedEventArgs e)
+    {
+        foreach (var item in _replacements) item.Included = false;
+    }
+
+    private void GeneratePreview()
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        if (_workspace is null)
+        {
+            SetReplaceError("No Roslyn workspace is available. Open a solution and reopen this window.");
+            return;
+        }
+        if (CurrentTarget == TargetKind.Operation)
+        {
+            SetReplaceError("Replace isn't available for IOperation matches.");
+            return;
+        }
+
+        _cancellation?.Cancel();
+        var cancellation = new CancellationTokenSource();
+        _cancellation = cancellation;
+
+        var target = CurrentTarget;
+        var scope = CurrentScope;
+        var findExpression = _searchInput.Text;
+        var replacementExpression = _replacementInput.Text;
+        var includeGenerated = GeneratedCheckBox.IsChecked == true;
+        var cap = CurrentCap;
+
+        _hits.Clear();
+        _replacements.Clear();
+        SetError(null);
+        SetReplaceError(null);
+        StatusText.Text = "Running...";
+        ReplaceStatusText.Text = "Generating...";
+        StopButton.IsEnabled = true;
+        ReplaceStopButton.IsEnabled = true;
+        RunButton.IsEnabled = false;
+        GeneratePreviewButton.IsEnabled = false;
+        ApplySelectedButton.IsEnabled = false;
+
+#pragma warning disable VSSDK007
+        ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+        {
+            try
+            {
+                await RunCoreAsync(target, scope, findExpression, includeGenerated, cap, cancellation.Token);
+                if (_hits.Count == 0)
+                {
+                    ReplaceStatusText.Text = "No matches.";
+                    return;
+                }
+
+                Solution ranAgainst = null;
+                _ranAgainst?.TryGetTarget(out ranAgainst);
+                if (ranAgainst is null)
+                {
+                    SetReplaceError("The search snapshot is gone; try again.");
+                    return;
+                }
+
+                await GeneratePreviewCoreAsync(ranAgainst, [.. _hits], target, replacementExpression, cancellation.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                ReplaceStatusText.Text = "Cancelled.";
+            }
+            catch (Exception ex)
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                ReplaceStatusText.Text = "Failed.";
+                SetReplaceError(ex.GetType().Name + ": " + ex.Message);
+            }
+            finally
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                StopButton.IsEnabled = false;
+                ReplaceStopButton.IsEnabled = false;
+                RunButton.IsEnabled = true;
+                GeneratePreviewButton.IsEnabled = true;
+                RefreshCachedPredicates();
+                if (ReferenceEquals(_cancellation, cancellation)) _cancellation = null;
+                cancellation.Dispose();
+            }
+        }).FileAndForget("vs/roslynquery/replacepreview");
+#pragma warning restore VSSDK007
+    }
+
+    private async Task GeneratePreviewCoreAsync(Solution ranAgainst, QueryHit[] hits, TargetKind target, string replacementExpression, CancellationToken cancellationToken)
+    {
+        await TaskScheduler.Default;
+
+        Delegate replace;
+        try
+        {
+            replace = ReplaceCompiler.Compile(target, replacementExpression);
+        }
+        catch (PredicateCompilationException ex)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            ReplaceStatusText.Text = "The replacement did not compile.";
+            SetReplaceError(ex.Message);
+            return;
+        }
+
+        var items = await ReplaceEngine.GenerateAsync(ranAgainst, hits, target, replace, cancellationToken).ConfigureAwait(false);
+        ReplaceEngine.MarkConflicts(items);
+
+        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+        foreach (var item in items)
+        {
+            item.PropertyChanged += OnReplacementItemPropertyChanged;
+            _replacements.Add(item);
+        }
+
+        UpdateReplaceSelectionStatus();
+    }
+
+    // Keeps the "N previewed, M selected" count live against every source of a checkbox change:
+    // an individual click, and Select All/None (which set Included in a loop rather than per-click).
+    private void OnReplacementItemPropertyChanged(object sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ReplacementItem.Included)) UpdateReplaceSelectionStatus();
+    }
+
+    private void UpdateReplaceSelectionStatus()
+    {
+        var included = _replacements.Count(i => i.Included);
+        ReplaceStatusText.Text = string.Format(
+            "{0:N0} match{1} previewed, {2:N0} selected", _replacements.Count, _replacements.Count == 1 ? string.Empty : "es", included);
+        ApplySelectedButton.IsEnabled = included > 0;
+    }
+
+    private void OnApplySelectedClick(object sender, RoutedEventArgs e)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        ApplySelected();
+    }
+
+    private void ApplySelected()
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        if (_workspace is null)
+        {
+            SetReplaceError("No Roslyn workspace is available.");
+            return;
+        }
+
+        Solution ranAgainst = null;
+        _ranAgainst?.TryGetTarget(out ranAgainst);
+
+        var items = _replacements.ToArray();
+        ApplySelectedButton.IsEnabled = false;
+        GeneratePreviewButton.IsEnabled = false;
+        SetReplaceError(null);
+        ReplaceStatusText.Text = "Applying...";
+
+        // Multiple files can change in one Apply; a linked undo transaction makes that one Ctrl+Z
+        // instead of one per file. Best-effort: an unavailable service just means per-file undo.
+        var undoScope = GlobalUndoScope.Open(ServiceProvider.GlobalProvider, _componentModel, "Replace");
+
+#pragma warning disable VSSDK007
+        ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+        {
+            var committed = false;
+            try
+            {
+                await ApplySelectedCoreAsync(ranAgainst, items, undoScope);
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                undoScope?.Commit();
+                committed = true;
+            }
+            catch (Exception ex)
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                ReplaceStatusText.Text = "Failed.";
+                SetReplaceError(ex.GetType().Name + ": " + ex.Message);
+            }
+            finally
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                // Only reached uncommitted when Apply threw, where Dispose aborts the transaction
+                // and rolls the partially applied files back together.
+                if (!committed) undoScope?.Dispose();
+                GeneratePreviewButton.IsEnabled = true;
+            }
+        }).FileAndForget("vs/roslynquery/replaceapply");
+#pragma warning restore VSSDK007
+    }
+
+    private async Task ApplySelectedCoreAsync(Solution ranAgainst, ReplacementItem[] items, GlobalUndoScope undoScope)
+    {
+        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+        var workspace = _workspace;
+        System.Action<DocumentId> enroll = undoScope is null ? null : id => undoScope.AddDocument(workspace, id);
+
+        var outcome = await ChangeApplier.ApplyAsync(workspace, ranAgainst, items, enroll, CancellationToken.None).ConfigureAwait(true);
+
+        ReplaceStatusText.Text = string.Format("{0:N0} applied, {1:N0} skipped.", outcome.Applied, outcome.Skipped);
+        if (outcome.Warnings.Count > 0)
+            SetReplaceError(outcome.Warnings[0] + (outcome.Warnings.Count > 1 ? $" (+{outcome.Warnings.Count - 1} more)" : string.Empty));
+
+        if (outcome.Applied > 0)
+        {
+            // Cleared: the apply moved past the snapshot these spans were resolved against.
+            _replacements.Clear();
+            _hits.Clear();
+            ApplySelectedButton.IsEnabled = false;
+        }
     }
 }

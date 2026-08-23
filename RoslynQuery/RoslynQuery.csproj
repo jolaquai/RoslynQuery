@@ -12,7 +12,7 @@
 
     <!-- Single source of truth for the extension version: the VSIX manifest is stamped from this
          via |%CurrentProject%;GetVsixVersion| and release.yml derives the release tag from it. -->
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
 
     <VSSDKBuildToolsAutoSetup>true</VSSDKBuildToolsAutoSetup>
     <GeneratePkgDefFile>true</GeneratePkgDefFile>
@@ -22,6 +22,7 @@
          Microsoft.CodeAnalysis.* to 4.14.0. We compile against 5.6.0 on purpose; devenv redirects
          every one of these to its own 5.7.0.0 at runtime, so the constraint is moot. -->
     <NoWarn>$(NoWarn);NU1608</NoWarn>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <Target Name="GetVsixVersion" Returns="$(Version)" />

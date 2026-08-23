@@ -16,6 +16,28 @@
           <ButtonText>Roslyn Query</ButtonText>
         </Strings>
       </Button>
+
+      <!-- View > Other Windows > Reference Graph -->
+      <Button guid="guidRoslynQueryCmdSet" id="cmdidShowReferenceGraphToolWindow" priority="0x0101" type="Button">
+        <Parent guid="guidSHLMainMenu" id="IDG_VS_WNDO_OTRWNDWS1" />
+        <Icon guid="ImageCatalogGuid" id="CallHierarchy" />
+        <CommandFlag>IconIsMoniker</CommandFlag>
+        <Strings>
+          <ButtonText>Reference Graph</ButtonText>
+        </Strings>
+      </Button>
+
+      <!-- Editor context menu, in the group Go To Definition and Find All References live in. -->
+      <Button guid="guidRoslynQueryCmdSet" id="cmdidViewReferenceGraph" priority="0x0800" type="Button">
+        <Parent guid="guidSHLMainMenu" id="IDG_VS_CODEWIN_NAVIGATETOLOCATION" />
+        <Icon guid="ImageCatalogGuid" id="CallHierarchy" />
+        <CommandFlag>IconIsMoniker</CommandFlag>
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <CommandFlag>DefaultDisabled</CommandFlag>
+        <Strings>
+          <ButtonText>View Reference Graph</ButtonText>
+        </Strings>
+      </Button>
     </Buttons>
   </Commands>
 
@@ -23,6 +45,8 @@
     <GuidSymbol name="guidRoslynQueryPackage" value="{943e02ac-bfd8-4648-9948-4b7d144f6a2d}" />
     <GuidSymbol name="guidRoslynQueryCmdSet" value="{7acc99ae-d964-461e-94d9-9ef567e60889}">
       <IDSymbol name="cmdidShowQueryToolWindow" value="0x0100" />
+      <IDSymbol name="cmdidShowReferenceGraphToolWindow" value="0x0101" />
+      <IDSymbol name="cmdidViewReferenceGraph" value="0x0102" />
     </GuidSymbol>
   </Symbols>
 

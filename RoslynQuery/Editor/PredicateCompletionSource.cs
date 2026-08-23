@@ -52,8 +52,10 @@ internal sealed class PredicateCompletionSource : IAsyncCompletionSource
     {
         var snapshot = triggerLocation.Snapshot;
 
+        // Exclusive, not just Providing: another generic-code source pulled in via our "code" base
+        // content type was observed unioning in a wider ApplicableToSpan that ate a typed '.'.
         return new VsData.CompletionStartData(
-            VsData.CompletionParticipation.ProvidesItems,
+            VsData.CompletionParticipation.ExclusivelyProvidesItems,
             new SnapshotSpan(snapshot, PredicateWord.At(snapshot, triggerLocation.Position)));
     }
 
@@ -64,7 +66,7 @@ internal sealed class PredicateCompletionSource : IAsyncCompletionSource
         // Scaffolding has to match the mode the text will actually compile in, or a statement body
         // gets completed against "return <statements>;" and binds nothing.
         var text = triggerLocation.Snapshot.GetText();
-        var source = PredicateTemplate.Build(target, PredicateCompiler.CompletionMode(text), text, out var offset);
+        var source = PredicateTemplate.Build(target, ExpressionSupport.CompletionMode(text), text, out var offset);
 
         var document = PredicateDocumentFactory.Create(source);
         if (document is null) return Empty;

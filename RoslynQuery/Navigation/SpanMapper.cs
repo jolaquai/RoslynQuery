@@ -55,13 +55,12 @@ internal static class SpanMapper
         };
     }
 
-    private static async Task<TextSpan> MapForwardAsync(Document original, Document current, TextSpan span, CancellationToken cancellationToken)
+    /// <summary>Also used directly by <see cref="RoslynQuery.Replace.ChangeApplier"/>, which needs the mapped span itself rather than a caret position.</summary>
+    internal static async Task<TextSpan> MapForwardAsync(Document original, Document current, TextSpan span, CancellationToken cancellationToken)
     {
         var start = span.Start;
         var end = span.End;
 
-        // Change spans are in the original document's coordinates, so applying them in order and
-        // accumulating the delta is enough; no tracking spans and no open buffer required.
         foreach (var change in (await current.GetTextChangesAsync(original, cancellationToken).ConfigureAwait(false)).OrderBy(c => c.Span.Start))
         {
             if (change.Span.Start > end) break;

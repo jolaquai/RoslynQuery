@@ -1,6 +1,5 @@
 using System;
 using System.Linq;
-using System.Reflection;
 using System.Threading.Tasks;
 
 using Microsoft.CodeAnalysis;
@@ -14,15 +13,9 @@ using Xunit;
 
 namespace RoslynQuery.Tests;
 
-// Normalize is private (it's a cache-key implementation detail, not part of PredicateCompiler's
-// internal surface), so it's exercised via reflection rather than InternalsVisibleTo.
 public class PredicateCompilerNormalizeTests
 {
-    private static readonly MethodInfo NormalizeMethod =
-        typeof(PredicateCompiler).GetMethod("Normalize", BindingFlags.NonPublic | BindingFlags.Static)
-        ?? throw new InvalidOperationException("PredicateCompiler.Normalize not found - has it been renamed?");
-
-    private static string Normalize(string expression) => (string)NormalizeMethod.Invoke(null, new object[] { expression });
+    private static string Normalize(string expression) => ExpressionSupport.Normalize(expression);
 
     [Theory]
     [InlineData(null)]
@@ -208,6 +201,6 @@ public class PredicateCompilerCachingTests
 
         var del = (NodeMatch)PredicateCompiler.Compile(TargetKind.SyntaxNode, overFormatted);
 
-        Assert.True(await del(node, semanticModel, document));
+        Assert.Equal(true, await del(node, semanticModel, document));
     }
 }

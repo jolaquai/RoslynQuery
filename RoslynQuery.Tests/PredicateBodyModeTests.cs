@@ -25,7 +25,7 @@ public class PredicateModeDetectionTests
     [InlineData("n.ChildNodes().Any(c => { return c != null; })")]
     [InlineData("n.DescendantNodes().Where(x => { if (x == null) return false; return true; }).Any()")]
     public void DetectMode_Expressions(string text) =>
-        Assert.Equal(PredicateMode.Expression, PredicateCompiler.DetectMode(text));
+        Assert.Equal(PredicateMode.Expression, ExpressionSupport.DetectMode(text));
 
     [Theory]
     [InlineData("return true;")]
@@ -37,14 +37,14 @@ public class PredicateModeDetectionTests
     // No return token anywhere, but still a body.
     [InlineData("throw new Exception();")]
     public void DetectMode_Bodies(string text) =>
-        Assert.Equal(PredicateMode.Body, PredicateCompiler.DetectMode(text));
+        Assert.Equal(PredicateMode.Body, ExpressionSupport.DetectMode(text));
 
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
     public void DetectMode_Empty_IsExpression(string text) =>
-        Assert.Equal(PredicateMode.Expression, PredicateCompiler.DetectMode(text));
+        Assert.Equal(PredicateMode.Expression, ExpressionSupport.DetectMode(text));
 }
 
 // CompletionMode exists because DetectMode answers "not a complete expression" with Body, and text
@@ -63,14 +63,14 @@ public class PredicateCompletionModeTests
     [InlineData("n.Parent.")]
     [InlineData("n is object &&")]
     public void CompletionMode_PartiallyTypedExpression_IsExpression(string text) =>
-        Assert.Equal(PredicateMode.Expression, PredicateCompiler.CompletionMode(text));
+        Assert.Equal(PredicateMode.Expression, ExpressionSupport.CompletionMode(text));
 
     [Theory]
     [InlineData("n != null")]
     [InlineData("n.IsKind(SyntaxKind.IfStatement)")]
     [InlineData("n.ChildNodes().Any(c => { return c != null; })")]
     public void CompletionMode_CompleteExpression_IsExpression(string text) =>
-        Assert.Equal(PredicateMode.Expression, PredicateCompiler.CompletionMode(text));
+        Assert.Equal(PredicateMode.Expression, ExpressionSupport.CompletionMode(text));
 
     [Theory]
     [InlineData("return true;")]
@@ -78,31 +78,31 @@ public class PredicateCompletionModeTests
     [InlineData("if (n == null) return false; return true;")]
     [InlineData("throw new Exception();")]
     public void CompletionMode_RealBody_IsBody(string text) =>
-        Assert.Equal(PredicateMode.Body, PredicateCompiler.CompletionMode(text));
+        Assert.Equal(PredicateMode.Body, ExpressionSupport.CompletionMode(text));
 
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
     public void CompletionMode_Empty_IsExpression(string text) =>
-        Assert.Equal(PredicateMode.Expression, PredicateCompiler.CompletionMode(text));
+        Assert.Equal(PredicateMode.Expression, ExpressionSupport.CompletionMode(text));
 
     [Theory]
     [InlineData("n != null")]
     [InlineData("return true;")]
     [InlineData("var x = 1; return x > 0;")]
     public void CompletionMode_AgreesWithDetectMode_OnceTextIsComplete(string text) =>
-        Assert.Equal(PredicateCompiler.DetectMode(text), PredicateCompiler.CompletionMode(text));
+        Assert.Equal(ExpressionSupport.DetectMode(text), ExpressionSupport.CompletionMode(text));
 }
 
 public class PredicateTemplateBodyModeTests
 {
-    public static TheoryData<int> AllKinds => new TheoryData<int>
-    {
+    public static TheoryData<int> AllKinds =>
+    [
         (int)TargetKind.SyntaxNode,
         (int)TargetKind.SyntaxToken,
         (int)TargetKind.Operation,
-    };
+    ];
 
     [Theory]
     [MemberData(nameof(AllKinds))]
@@ -199,7 +199,7 @@ return count > 0;";
 
         var match = (NodeMatch)PredicateCompiler.Compile(TargetKind.SyntaxNode, body);
 
-        Assert.True(await match(node, model, doc));
+        Assert.Equal(true, await match(node, model, doc));
     }
 
     [Fact]
@@ -211,7 +211,7 @@ return count > 0;";
 
         var match = (NodeMatch)PredicateCompiler.Compile(TargetKind.SyntaxNode, body);
 
-        Assert.True(await match(node, model, doc));
+        Assert.Equal(true, await match(node, model, doc));
     }
 
     [Fact]
@@ -221,7 +221,7 @@ return count > 0;";
 
         var match = (NodeMatch)PredicateCompiler.Compile(TargetKind.SyntaxNode, "var x = 1;\r\nreturn x < 0;");
 
-        Assert.False(await match(node, model, doc));
+        Assert.Equal(false, await match(node, model, doc));
     }
 
     [Fact]
@@ -233,7 +233,7 @@ return count > 0;";
         // compile because an expression is not a statement.
         var match = (NodeMatch)PredicateCompiler.Compile(TargetKind.SyntaxNode, "n.ChildNodes().Any(c => { return c != null; })");
 
-        Assert.True(await match(node, model, doc));
+        Assert.Equal(true, await match(node, model, doc));
     }
 
     [Fact]

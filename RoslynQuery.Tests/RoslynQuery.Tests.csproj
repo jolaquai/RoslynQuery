@@ -19,6 +19,12 @@
   <ItemGroup>
     <PackageReference Include="xunit.v3" Version="4.0.0" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.6.0" />
+
+    <!-- RoslynQuery.csproj pulls the VS SDK with ExcludeAssets="runtime" so the VSIX never ships
+         devenv's own assemblies. The moniker converters still have to run in-process here, so the
+         two the tests actually touch are referenced directly, with runtime assets. -->
+    <PackageReference Include="Microsoft.VisualStudio.ImageCatalog" Version="17.14.40260" />
+    <PackageReference Include="Microsoft.VisualStudio.Imaging.Interop.14.0.DesignTime" Version="17.14.40254" />
   </ItemGroup>
 
   <ItemGroup>

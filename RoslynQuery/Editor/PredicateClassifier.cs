@@ -24,10 +24,7 @@ internal sealed class PredicateClassifierProvider : IClassifierProvider
         textBuffer.Properties.GetOrCreateSingletonProperty(() => new PredicateClassifier(Registry));
 }
 
-/// <summary>
-/// Lexical only. Semantic colors would need a bound compilation per keystroke, which is not worth
-/// a one-line input box; the completion list is where the semantic work pays off.
-/// </summary>
+/// <summary>Lexical classification only.</summary>
 internal sealed class PredicateClassifier : IClassifier
 {
     private readonly IClassificationType _keyword;

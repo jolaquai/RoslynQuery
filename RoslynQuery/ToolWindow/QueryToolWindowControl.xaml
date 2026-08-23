@@ -13,6 +13,8 @@
 
     <UserControl.Resources>
         <local:TargetMonikerConverter x:Key="TargetMoniker" />
+        <local:NullToVisibilityConverter x:Key="NullToVisibility" />
+        <local:NullToBooleanConverter x:Key="NullToEnabled" />
 
         <Style x:Key="Caption" TargetType="TextBlock">
             <Setter Property="VerticalAlignment" Value="Center" />
@@ -50,6 +52,60 @@
                                         Value="{DynamicResource {x:Static vsshell:VsBrushes.AccentBorderKey}}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Flat, underline-indicator tabs instead of the default Windows tab chrome. -->
+        <Style x:Key="FlatTabItem" TargetType="TabItem">
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="Chrome" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True"
+                                Background="Transparent" BorderThickness="0,0,0,2" BorderBrush="Transparent">
+                            <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background"
+                                        Value="{DynamicResource {x:Static vsshell:VsBrushes.AccentMediumKey}}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush"
+                                        Value="{DynamicResource {x:Static vsshell:VsBrushes.AccentBorderKey}}" />
+                                <Setter Property="Foreground"
+                                        Value="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="FlatTabControl" TargetType="TabControl">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0" BorderThickness="0,0,0,1"
+                                    BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarBorderKey}}">
+                                <TabPanel IsItemsHost="True" Panel.ZIndex="1" />
+                            </Border>
+
+                            <ContentPresenter Grid.Row="1" Margin="0,7,0,0" ContentSource="SelectedContent" />
+                        </Grid>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -96,6 +152,39 @@
                 </StackPanel>
             </Grid>
         </DataTemplate>
+
+        <DataTemplate x:Key="ReplacementTemplate">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- A row with a Warning can never actually apply, so its box stays unchecked and
+                     un-clickable rather than let the user re-check it only to have Apply silently
+                     skip it again. -->
+                <CheckBox Grid.Column="0" Margin="0,2,8,0" VerticalAlignment="Top"
+                          IsChecked="{Binding Included, Mode=TwoWay}"
+                          IsEnabled="{Binding Warning, Converter={StaticResource NullToEnabled}}" />
+
+                <StackPanel Grid.Column="1">
+                    <TextBlock Text="{Binding Before}" FontFamily="Consolas" TextTrimming="CharacterEllipsis"
+                               TextDecorations="Strikethrough"
+                               Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" />
+                    <TextBlock Text="{Binding After}" FontFamily="Consolas" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}" />
+                    <TextBlock Margin="0,1,0,0" TextTrimming="CharacterEllipsis">
+                        <Run Text="{Binding Hit.Kind, Mode=OneWay}"
+                             Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" />
+                        <Run Text="{Binding Hit.Location, Mode=OneWay}"
+                             Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ControlLinkTextKey}}" />
+                    </TextBlock>
+                    <TextBlock Text="{Binding Warning}" Margin="0,1,0,0" TextWrapping="Wrap"
+                               Visibility="{Binding Warning, Converter={StaticResource NullToVisibility}}"
+                               Foreground="#FFE0655F" />
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
     </UserControl.Resources>
 
     <Grid>
@@ -110,10 +199,10 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
+            <!-- Find box: shared by both tabs below, the way a real Find/Replace tool has one "Find what". -->
             <Border Grid.Row="0" MinHeight="24" MaxHeight="120" Padding="6,3" CornerRadius="2"
                     BorderThickness="1"
                     BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.SearchBoxBorderKey}}"
@@ -128,59 +217,159 @@
                 </Grid.ColumnDefinitions>
 
                 <WrapPanel Grid.Column="0" Orientation="Horizontal">
-                    <TextBlock Text="target" Style="{StaticResource Caption}" />
+                    <TextBlock Text="Target" Style="{StaticResource Caption}" Margin="0,0,5,3" />
                     <ComboBox x:Name="TargetCombo" MinWidth="104" Margin="0,0,14,3" VerticalAlignment="Center"
                               Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}"
                               SelectionChanged="OnTargetChanged" />
 
-                    <TextBlock Text="scope" Style="{StaticResource Caption}" />
+                    <TextBlock Text="Scope" Style="{StaticResource Caption}" Margin="0,0,5,3" />
                     <ComboBox x:Name="ScopeCombo" MinWidth="132" Margin="0,0,14,3" VerticalAlignment="Center"
                               Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}" />
 
-                    <TextBlock Text="cap" Style="{StaticResource Caption}" />
+                    <TextBlock Text="Cap" Style="{StaticResource Caption}" Margin="0,0,5,3" />
                     <ComboBox x:Name="CapCombo" MinWidth="76" Margin="0,0,14,3" VerticalAlignment="Center"
                               Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}" />
 
-                    <CheckBox x:Name="GeneratedCheckBox" Content="generated" VerticalAlignment="Center" Margin="0,0,14,3"
+                    <CheckBox x:Name="GeneratedCheckBox" Content="Generated" VerticalAlignment="Center" Margin="0,0,14,3"
                               Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogCheckBoxStyleKey}}"
                               ToolTip="Include .g.cs / .designer.cs and source generated documents." />
                 </WrapPanel>
 
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
-                    <Button x:Name="RunButton" Content="Run" MinWidth="62" Margin="0,0,6,0" Padding="8,2"
-                            Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
-                            Click="OnRunClick" />
-                    <Button x:Name="StopButton" Content="Stop" MinWidth="62" Padding="8,2" IsEnabled="False"
-                            Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
-                            Click="OnStopClick" />
-                    <Button x:Name="SidebarToggleButton" Content="History &lt;" MinWidth="48" Margin="6,0,0,0" Padding="8,2"
-                            Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
-                            Click="OnToggleSidebarClick" ToolTip="Toggle the query history sidebar" />
-                </StackPanel>
+                <Button x:Name="SidebarToggleButton" Grid.Column="1" Content="History &lt;" MinWidth="48" Padding="8,2"
+                        VerticalAlignment="Top"
+                        Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
+                        Click="OnToggleSidebarClick" ToolTip="Toggle the query history sidebar" />
             </Grid>
 
-            <Grid Grid.Row="2" Margin="0,7,0,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+            <!-- Describes the Find box above, so it stays visible on both tabs rather than living inside Search's own content. -->
+            <TextBlock x:Name="SignatureText" Grid.Row="2" Margin="0,4,0,0" FontFamily="Consolas" Style="{StaticResource Meta}" />
 
-                <TextBlock x:Name="SignatureText" Grid.Column="0" FontFamily="Consolas" Style="{StaticResource Meta}" />
-                <TextBlock x:Name="StatusText" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource Meta}" />
-            </Grid>
+            <TabControl x:Name="MainTabs" Grid.Row="3" Margin="0,7,0,0" Style="{StaticResource FlatTabControl}">
+                <TabItem Header="Search" Style="{StaticResource FlatTabItem}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
 
-            <TextBlock x:Name="ErrorText" Grid.Row="3" Margin="0,6,0,0" TextWrapping="Wrap"
-                       Visibility="Collapsed" Foreground="#FFE0655F" />
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button x:Name="RunButton" Content="Run" MinWidth="62" Margin="0,0,6,0" Padding="8,2"
+                                    Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
+                                    Click="OnRunClick" />
+                            <Button x:Name="StopButton" Content="Stop" MinWidth="62" Padding="8,2" IsEnabled="False"
+                                    Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
+                                    Click="OnStopClick" />
+                        </StackPanel>
 
-            <ListBox x:Name="Results" Grid.Row="4" Margin="0,8,0,0"
-                     BorderThickness="0" Background="Transparent"
-                     HorizontalContentAlignment="Stretch"
-                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                     VirtualizingStackPanel.IsVirtualizing="True"
-                     VirtualizingStackPanel.VirtualizationMode="Recycling"
-                     ItemContainerStyle="{StaticResource ResultRow}"
-                     ItemTemplate="{StaticResource ResultTemplate}"
-                     MouseDoubleClick="OnResultDoubleClick" />
+                        <Grid Grid.Row="1" Margin="0,4,0,0">
+                            <TextBlock x:Name="StatusText" Style="{StaticResource Meta}" />
+                        </Grid>
+
+                        <!-- Its own row rather than overlaid on StatusText's via a guessed pixel margin: an
+                             exception message can wrap to several lines, and a fixed offset only clears a
+                             single line of StatusText before the two visually run together. -->
+                        <TextBlock x:Name="ErrorText" Grid.Row="2" Margin="0,4,0,0" TextWrapping="Wrap"
+                                   Visibility="Collapsed" Foreground="#FFE0655F" />
+
+                        <ListBox x:Name="Results" Grid.Row="3" Margin="0,8,0,0"
+                                 BorderThickness="0" Background="Transparent"
+                                 HorizontalContentAlignment="Stretch"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 VirtualizingStackPanel.IsVirtualizing="True"
+                                 VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                 ItemContainerStyle="{StaticResource ResultRow}"
+                                 ItemTemplate="{StaticResource ResultTemplate}"
+                                 MouseDoubleClick="OnResultDoubleClick" />
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="Replace" Style="{StaticResource FlatTabItem}">
+                    <Grid>
+                        <TextBlock x:Name="ReplaceUnavailableText" TextWrapping="Wrap" Visibility="Collapsed"
+                                   Text="Replace isn't available for IOperation matches. Switch Target to SyntaxNode or SyntaxToken."
+                                   Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" />
+
+                        <Grid x:Name="ReplaceBody">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <!-- Replace-with box: what each match found by the Find box above is replaced with. -->
+                            <Border Grid.Row="0" MinHeight="24" MaxHeight="120" Padding="6,3" CornerRadius="2"
+                                    BorderThickness="1"
+                                    BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.SearchBoxBorderKey}}"
+                                    Background="{DynamicResource {x:Static vsshell:VsBrushes.SearchBoxBackgroundKey}}">
+                                <ContentControl x:Name="ReplacementHost" />
+                            </Border>
+
+                            <Grid Grid.Row="1" Margin="0,7,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0" Text="Replacement: a string, a SyntaxNode/SyntaxToken, or null to skip a match."
+                                           Style="{StaticResource Caption}" VerticalAlignment="Center" TextWrapping="Wrap" />
+
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <Button x:Name="GeneratePreviewButton" Content="Generate Previews" MinWidth="62" Margin="0,0,6,0" Padding="8,2"
+                                            Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
+                                            Click="OnGeneratePreviewClick" />
+                                    <!-- Generate Previews re-runs the shared Find query, so it needs the same Stop the Search tab has -
+                                         one that's actually reachable without switching tabs mid-run. -->
+                                    <Button x:Name="ReplaceStopButton" Content="Stop" MinWidth="62" Margin="0,0,6,0" Padding="8,2" IsEnabled="False"
+                                            Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
+                                            Click="OnStopClick" />
+                                    <Button x:Name="ApplySelectedButton" Content="Apply Selected" MinWidth="62" Padding="8,2" IsEnabled="False"
+                                            Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
+                                            Click="OnApplySelectedClick" />
+                                </StackPanel>
+                            </Grid>
+
+                            <Grid Grid.Row="2" Margin="0,7,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock x:Name="ReplaceSignatureText" Grid.Column="0" FontFamily="Consolas" Style="{StaticResource Meta}" />
+
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <Button x:Name="SelectAllButton" Content="All" MinWidth="36" Margin="12,0,4,0" Padding="6,1"
+                                            Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
+                                            Click="OnSelectAllClick" ToolTip="Select all previewed replacements" />
+                                    <Button x:Name="SelectNoneButton" Content="None" MinWidth="36" Padding="6,1"
+                                            Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
+                                            Click="OnSelectNoneClick" ToolTip="Deselect all previewed replacements" />
+                                    <TextBlock x:Name="ReplaceStatusText" Margin="12,0,0,0" Style="{StaticResource Meta}" />
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Its own row rather than overlaid on the signature/status row via a guessed
+                                 pixel margin - see the identical fix on Search's ErrorText. -->
+                            <TextBlock x:Name="ReplaceErrorText" Grid.Row="3" Margin="0,4,0,0" TextWrapping="Wrap"
+                                       Visibility="Collapsed" Foreground="#FFE0655F" />
+
+                            <ListBox x:Name="ReplaceResults" Grid.Row="4" Margin="0,8,0,0"
+                                     BorderThickness="0" Background="Transparent"
+                                     HorizontalContentAlignment="Stretch"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     VirtualizingStackPanel.IsVirtualizing="True"
+                                     VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                     ItemContainerStyle="{StaticResource ResultRow}"
+                                     ItemTemplate="{StaticResource ReplacementTemplate}"
+                                     MouseDoubleClick="OnReplaceResultDoubleClick"
+                                     PreviewKeyDown="OnReplaceResultsPreviewKeyDown" />
+                        </Grid>
+                    </Grid>
+                </TabItem>
+            </TabControl>
         </Grid>
 
         <GridSplitter x:Name="SidebarSplitter" Grid.Column="1" Width="4" HorizontalAlignment="Stretch"

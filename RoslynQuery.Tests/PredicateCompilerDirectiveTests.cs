@@ -1,5 +1,4 @@
 using System;
-using System.Reflection;
 
 using RoslynQuery.Query;
 
@@ -14,11 +13,7 @@ namespace RoslynQuery.Tests;
 [Collection(PredicateCompilerCacheCollection.Name)]
 public class PredicateCompilerDirectiveTests
 {
-    private static readonly MethodInfo NormalizeMethod =
-        typeof(PredicateCompiler).GetMethod("Normalize", BindingFlags.NonPublic | BindingFlags.Static)
-        ?? throw new InvalidOperationException("PredicateCompiler.Normalize not found - has it been renamed?");
-
-    private static string Normalize(string expression) => (string)NormalizeMethod.Invoke(null, new object[] { expression });
+    private static string Normalize(string expression) => ExpressionSupport.Normalize(expression);
 
     private const string ConditionalExpression = "#if DEBUG\r\ntrue\r\n#else\r\nfalse\r\n#endif";
 

@@ -17,7 +17,8 @@ internal static class PredicateTemplate
 
     public static readonly CSharpParseOptions ParseOptions = new CSharpParseOptions(LanguageVersion.Preview, documentationMode: Microsoft.CodeAnalysis.DocumentationMode.None);
 
-    private const string Usings = """
+    /// <summary>Shared with <see cref="RoslynQuery.Replace.ReplaceTemplate"/>: both wrappers need the same imports.</summary>
+    public const string Usings = """
         using System;
         using System.Collections.Generic;
         using System.Collections.Immutable;
@@ -49,7 +50,7 @@ internal static class PredicateTemplate
         _ => throw new ArgumentOutOfRangeException(nameof(kind))
     };
 
-    public static string Signature(TargetKind kind) => $"async ValueTask<bool> ({ParameterType(kind)} {ParameterName(kind)}, SemanticModel model, Document doc)";
+    public static string Signature(TargetKind kind) => $"async ValueTask<object> ({ParameterType(kind)} {ParameterName(kind)}, SemanticModel model, Document doc)";
 
     /// <summary>Returns the full source and the offset at which <paramref name="expression"/> starts.</summary>
     public static string Build(TargetKind kind, string expression, out int expressionOffset) =>
@@ -71,7 +72,7 @@ internal static class PredicateTemplate
             itw.WriteLine(ClassName);
             using (itw.Scope())
             {
-                itw.Write("public static async ValueTask<bool> ");
+                itw.Write("public static async ValueTask<object> ");
                 itw.Write(MethodName);
                 itw.Write("(");
                 itw.Write(ParameterType(kind));
@@ -80,25 +81,21 @@ internal static class PredicateTemplate
                 itw.Write(", SemanticModel model, Document doc)");
                 using (itw.Scope())
                 {
-                    // Write() before capturing the offset either way: IndentedTextWriter emits the
-                    // pending indent on the next write, so the offset would otherwise land on the
-                    // indent rather than on the user's first character.
-                    itw.Write(mode == PredicateMode.Body ? string.Empty : "return ");
+                    // Write() before capturing the offset: IndentedTextWriter emits the pending indent
+                    // on the next write, so the offset would otherwise land on the indent.
+                    itw.Write(mode == PredicateMode.Body ? string.Empty : "return (object)(");
                     itw.Flush();
                     sw.Flush();
                     textOffset = sw.GetStringBuilder().Length;
 
                     if (mode == PredicateMode.Body)
                     {
-                        // Emitted verbatim: only the first line picks up the indent, which is
-                        // cosmetic, and keeping the rest byte-identical is what lets Describe map a
-                        // diagnostic back to the line and column the user actually typed.
                         itw.WriteLine(string.IsNullOrWhiteSpace(text) ? "return true;" : text);
                     }
                     else
                     {
                         itw.WriteLine(string.IsNullOrWhiteSpace(text) ? "true" : text);
-                        itw.WriteLine(';');
+                        itw.WriteLine(");");
                     }
                 }
             }

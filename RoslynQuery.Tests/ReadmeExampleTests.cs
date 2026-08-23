@@ -42,5 +42,5 @@ public class ReadmeExampleTests
     [InlineData("(await doc.GetSyntaxRootAsync()).DescendantNodes().Count() > 500", (int)PredicateMode.Expression)]
     [InlineData("var m = n as MethodDeclarationSyntax;\r\nif (m is null) return false;\r\nreturn m.Body?.Statements.Count > 20;", (int)PredicateMode.Body)]
     public void Examples_DetectTheDocumentedMode(string text, int expectedMode) =>
-        Assert.Equal((PredicateMode)expectedMode, PredicateCompiler.DetectMode(text));
+        Assert.Equal((PredicateMode)expectedMode, ExpressionSupport.DetectMode(text));
 }
