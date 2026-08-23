@@ -87,8 +87,8 @@ n is IdentifierNameSyntax id && model.GetSymbolInfo(id).Symbol is IMethodSymbol 
 
 | Key                   | Effect                                                             |
 | --------------------- | ------------------------------------------------------------------ |
-| Enter                 | run the query (or commit the completion item, if the list is open) |
-| Shift+Enter           | newline in the predicate                                           |
+| Ctrl+Enter             | run (Search in the Find box, Generate Previews in the Replace box), or commit the completion item if the list is open |
+| Enter / Shift+Enter    | newline in the box                                                |
 | Ctrl+Space            | invoke completion                                                  |
 | Up / Down             | move through the completion list, otherwise move the caret         |
 | Tab                   | commit the completion item, otherwise leave the box                |
@@ -106,7 +106,7 @@ The commit characters are Roslyn's C# set without the space, so `n.IsK` + `(` co
 gives you `n.IsKind(`, but a space just types a space. Nothing commits while the selection is soft,
 which is what the list shows right after a bare Ctrl+Space.
 
-Every run is explicit: Enter or the Run button. There is no run-as-you-type mode, on purpose. Each
+Every run is explicit: Ctrl+Enter or the Run button. There is no run-as-you-type mode, on purpose. Each
 distinct expression leaks a small assembly for the session (see below), and a debounced re-run turns
 that into one leak per pause in your typing.
 
@@ -142,8 +142,11 @@ not the underlying leak.
 The **Replace** tab sits next to Search and shares its Find box, Target, Scope and Cap - there is
 one query, and Replace runs it itself rather than requiring a prior Search run.
 
-Type a **replacement** below the Find box and press **Generate Previews** (or Enter in the
-replacement box, the same way Enter in the Find box runs Search). It returns one of:
+Type a **replacement** below the Find box and press **Generate Previews** (or Ctrl+Enter in the
+replacement box, the same way Ctrl+Enter in the Find box runs Search). Generate Previews re-runs the
+Find query itself first, so there is no need to switch to Search and run it separately - and
+switching tabs to run Search directly clears any previews still on screen, so they never go stale
+against a changed query. It returns one of:
 
 | Return                     | Effect                                             |
 | --------------------------- | --------------------------------------------------- |
@@ -164,17 +167,22 @@ IOperation.
 
 Each previewed match gets a checkbox, checked by default. Two matches whose spans overlap can't both
 apply; the later one is unchecked automatically with a warning explaining why. **All** / **None**
-toggle every checkbox at once.
+toggle every checkbox at once. Re-checking a flagged match doesn't force it through: Apply Selected
+re-validates every match against the live solution regardless of how its checkbox got checked, and a
+still-genuine conflict or stale span is skipped again, just silently rather than with an updated
+warning label on that row.
 
-**Apply Selected** writes the checked replacements back to the workspace in one pass, wrapped in a
-single linked undo transaction - even a change that touches several files is one Ctrl+Z. Spans are
+**Apply Selected** writes the checked replacements back to the workspace in one pass. Spans are
 re-resolved against the live solution at apply time, so an edit made between preview and apply
 doesn't silently land in the wrong place; anything that no longer resolves is skipped and reported
-rather than applied somewhere wrong.
+rather than applied somewhere wrong. The apply is wrapped in VS's linked undo transaction API, which
+is meant to make a multi-file change one Ctrl+Z; in practice this currently only reliably batches
+edits within a single file, so a change spanning several files still needs one Ctrl+Z per file. This
+is a known gap, not intended behavior.
 
-A `SyntaxNode` / `SyntaxToken` replacement is normalized but not reformatted against its
-surroundings, so indentation can need a manual cleanup pass after a structural replace. A `string`
-replacement has no such issue, since it is spliced in exactly as written.
+Structural (`SyntaxNode` / `SyntaxToken`) replacements are reformatted against their surroundings at
+apply time, so indentation comes out matching the rest of the file even when the replacement text
+itself was flush-left or otherwise unindented.
 
 ## Reference Graph
 
