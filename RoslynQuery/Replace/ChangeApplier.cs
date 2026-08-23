@@ -170,11 +170,30 @@ internal static class ChangeApplier
                 enrollDocument(id);
         }
 
-        if (!workspace.TryApplyChanges(solution))
+        // Rebase onto the freshest CurrentSolution rather than the snapshot captured at the top:
+        // background work (IntelliSense, other edits, project reloads) can advance CurrentSolution
+        // during the awaits above, and TryApplyChanges silently rejects a solution diffed against a
+        // stale baseline instead of throwing.
+        var latest = workspace.CurrentSolution;
+        foreach (var id in changedDocuments)
+        {
+            var finalText = await solution.GetDocument(id).GetTextAsync(cancellationToken).ConfigureAwait(true);
+            latest = latest.WithDocumentText(id, finalText);
+        }
+
+        var diagnostics = new List<string>();
+        bool applied;
+        using (workspace.RegisterWorkspaceFailedHandler(e => diagnostics.Add(e.Diagnostic.Message)))
+        {
+            applied = workspace.TryApplyChanges(latest);
+        }
+
+        if (!applied)
         {
             outcome.Skipped += outcome.Applied;
             outcome.Applied = 0;
-            warnings.Add("The workspace rejected the change set.");
+            var detail = diagnostics.Count > 0 ? string.Join("; ", diagnostics) : "no diagnostic reported";
+            warnings.Add($"The workspace rejected the change set ({detail}).");
         }
 
         return outcome;
