@@ -224,7 +224,8 @@ Right-click a method, constructor, property, field, event or type in the editor 
 **View Reference Graph**, or open the window empty from `View > Other Windows > Reference Graph`.
 
 Each invocation adds a root at the top of the list rather than replacing what is there, so the
-window keeps a history; **Clear** empties it. Every root has two branches:
+window keeps a history; **Clear** empties it, and Del removes just the selected root. Every root
+has two branches:
 
 | Branch                | What is under it                       |
 | --------------------- | -------------------------------------- |
@@ -259,10 +260,14 @@ The **Filter** button opens a checkbox flyout, one box per kind of reference:
 | Writes          | An assignment target, an `out`/`ref` argument, `++`/`--`, `+=` on events                     |
 | Constructions   | `new T(...)`, a `this()`/`base()` initializer, an attribute                                  |
 | Type references | A parameter or return type, a base type, a cast, `typeof`, a type argument, a `catch` clause |
+| Doc comments    | A `cref` inside a `<see>`/`<seealso>`/etc. XML doc comment                                    |
 
-Invocations, reads, writes and constructions start on; type references start off, because on a type
-root they otherwise swamp everything else. Ticking or unticking a box re-reads every expanded row
-immediately, as does **Refresh** and changing the scope. **Stop** cancels whatever is in flight.
+Invocations, reads, writes and constructions start on; type references and doc comments start off,
+since a cref is documentation rather than a real code path and a type root's type references
+otherwise swamp everything else. Ticking or unticking a box re-reads every expanded row
+immediately, as does **Refresh** and changing the scope. **Stop** cancels whatever is in flight and
+clears every expanded row, since a cancelled fetch may have left them stale; expand a row again to
+re-read it.
 
 A compound assignment is both a read and a write, and is counted under each. Any single branch stops
 at 200 rows, with the remainder collapsed into one `N more...` row.
