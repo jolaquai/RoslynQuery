@@ -119,4 +119,52 @@ public class ReferenceGraphRefreshTests
 
         Assert.Same(row, Assert.Single(ReferenceGraphNode.ShallowestExpanded(nodes)));
     }
+
+    [Fact]
+    public void ResetToUnloaded_ReplacesChildrenWithThePlaceholderAndClearsLoadedAndExpanded()
+    {
+        var parent = new ReferenceGraphNode("row", default, SymbolGlyph.Method, ReferenceDirection.Incoming);
+        parent.SetChildren([ReferenceGraphNode.CreateMessage("a row", parent)]);
+        parent.IsExpanded = true;
+
+        parent.ResetToUnloaded();
+
+        Assert.False(parent.IsLoaded);
+        Assert.False(parent.IsExpanded);
+        Assert.Equal(ReferenceGraphNode.SearchingText, Assert.Single(parent.Children).DisplayText);
+    }
+
+    [Fact]
+    public async Task ShallowestLoaded_ReturnsALoadedRowEvenWhenCollapsed()
+    {
+        var root = await RootAsync();
+
+        var branch = root.Children[0];
+        branch.SetChildren([ReferenceGraphNode.CreateMessage("a row", branch)]);
+        branch.IsExpanded = false;
+
+        Assert.Same(branch, Assert.Single(ReferenceGraphNode.ShallowestLoaded([root])));
+    }
+
+    [Fact]
+    public async Task ShallowestLoaded_SkipsAnUnloadedRow()
+    {
+        var root = await RootAsync();
+
+        Assert.Empty(ReferenceGraphNode.ShallowestLoaded([root]));
+    }
+
+    [Fact]
+    public async Task ShallowestLoaded_StopsAtTheOutermostLoadedRow()
+    {
+        var root = await RootAsync();
+
+        var branch = root.Children[0];
+        var child = new ReferenceGraphNode("child", branch.Identity, SymbolGlyph.Method, ReferenceDirection.Incoming, parent: branch);
+        branch.SetChildren([child]);
+
+        child.SetChildren([ReferenceGraphNode.CreateMessage("grandchild", child)]);
+
+        Assert.Same(branch, Assert.Single(ReferenceGraphNode.ShallowestLoaded([root])));
+    }
 }

@@ -96,7 +96,10 @@
                             <CheckBox x:Name="ConstructionCheck" Content="Constructions" IsChecked="True" Margin="0,0,0,4"
                                       Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogCheckBoxStyleKey}}"
                                       Checked="OnFilterChanged" Unchecked="OnFilterChanged" />
-                            <CheckBox x:Name="TypeReferenceCheck" Content="Type references" IsChecked="False"
+                            <CheckBox x:Name="TypeReferenceCheck" Content="Type references" IsChecked="False" Margin="0,0,0,4"
+                                      Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogCheckBoxStyleKey}}"
+                                      Checked="OnFilterChanged" Unchecked="OnFilterChanged" />
+                            <CheckBox x:Name="DocumentationCheck" Content="Doc comments (cref)" IsChecked="False"
                                       Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogCheckBoxStyleKey}}"
                                       Checked="OnFilterChanged" Unchecked="OnFilterChanged" />
                         </StackPanel>
@@ -110,7 +113,7 @@
                         Click="OnRefreshClick" ToolTip="Re-read every expanded row against the current solution." />
                 <Button x:Name="StopButton" Content="Stop" MinWidth="62" Margin="0,0,6,0" Padding="8,2" IsEnabled="False"
                         Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
-                        Click="OnStopClick" />
+                        Click="OnStopClick" ToolTip="Cancels in-flight fetches and clears every expanded row, which may now be stale." />
                 <Button x:Name="ClearButton" Content="Clear" MinWidth="62" Padding="8,2"
                         Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
                         Click="OnClearClick" ToolTip="Drop every root in the list." />

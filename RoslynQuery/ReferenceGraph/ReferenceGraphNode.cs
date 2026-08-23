@@ -23,7 +23,8 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
         ReferenceUsageKind.Read,
         ReferenceUsageKind.Write,
         ReferenceUsageKind.Construction,
-        ReferenceUsageKind.TypeReference
+        ReferenceUsageKind.TypeReference,
+        ReferenceUsageKind.Documentation
     ];
 
     private string _displayText;
@@ -123,6 +124,28 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
         }
     }
 
+    public static IEnumerable<ReferenceGraphNode> ShallowestLoaded(IEnumerable<ReferenceGraphNode> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.IsExpandable && node.IsLoaded)
+            {
+                yield return node;
+                continue;
+            }
+
+            foreach (var descendant in ShallowestLoaded(node.Children)) yield return descendant;
+        }
+    }
+
+    public void ResetToUnloaded()
+    {
+        Children.Clear();
+        Children.Add(CreateMessage(SearchingText, this));
+        IsLoaded = false;
+        IsExpanded = false;
+    }
+
     /// <summary>Includes this node itself, since a direct self-reference is also recursion.</summary>
     public bool HasAncestor(SymbolIdentity identity)
     {
@@ -218,6 +241,7 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
             case ReferenceUsageKind.Write: return "write";
             case ReferenceUsageKind.Construction: return "construction";
             case ReferenceUsageKind.TypeReference: return "type reference";
+            case ReferenceUsageKind.Documentation: return "doc reference";
             default: return "reference";
         }
     }

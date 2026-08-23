@@ -69,7 +69,8 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         | Flag(ReadCheck, ReferenceUsageKind.Read)
         | Flag(WriteCheck, ReferenceUsageKind.Write)
         | Flag(ConstructionCheck, ReferenceUsageKind.Construction)
-        | Flag(TypeReferenceCheck, ReferenceUsageKind.TypeReference);
+        | Flag(TypeReferenceCheck, ReferenceUsageKind.TypeReference)
+        | Flag(DocumentationCheck, ReferenceUsageKind.Documentation);
 
     private static ReferenceUsageKind Flag(CheckBox box, ReferenceUsageKind kind) =>
         box.IsChecked == true ? kind : ReferenceUsageKind.None;
@@ -120,7 +121,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
 
         _roots.Insert(0, root);
         SetError(null);
-        StatusText.Text = $"Rooted at {root.DisplayText}.";
+        StatusText.Text = $"Added root '{root.DisplayText}'.";
     }
 
     internal void SetErrorMessage(string message)
@@ -175,6 +176,16 @@ public partial class ReferenceGraphToolWindowControl : UserControl
     private void OnTreeKeyDown(object sender, KeyEventArgs e)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
+
+        if (e.Key == Key.Delete)
+        {
+            if (Tree.SelectedItem is ReferenceGraphNode root && root.Parent is null && _roots.Remove(root))
+            {
+                e.Handled = true;
+                StatusText.Text = $"Dropped root '{root.DisplayText}'.";
+            }
+            return;
+        }
 
         if (e.Key != Key.Enter || _workspace is null) return;
         if (Tree.SelectedItem is not ReferenceGraphNode node || node.DocumentId is null) return;
@@ -236,15 +247,24 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         RefreshExpanded();
     }
 
-    private void OnStopClick(object sender, RoutedEventArgs e) => _cancellation?.Cancel();
+    private void OnStopClick(object sender, RoutedEventArgs e)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        _cancellation?.Cancel();
+
+        foreach (var node in ReferenceGraphNode.ShallowestLoaded(_roots).ToList()) node.ResetToUnloaded();
+        StatusText.Text = "Stopped. Expanded rows were cleared; expand them again to re-read.";
+    }
 
     private void OnClearClick(object sender, RoutedEventArgs e)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
+        var count = _roots.Count;
         _roots.Clear();
         SetError(null);
-        StatusText.Text = "Cleared.";
+        StatusText.Text = $"Dropped {count} root{(count == 1 ? "" : "s")}.";
     }
 
     private void RefreshExpanded()
