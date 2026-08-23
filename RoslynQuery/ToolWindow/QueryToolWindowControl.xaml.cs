@@ -47,7 +47,7 @@ public partial class QueryToolWindowControl : UserControl
     private IComponentModel _componentModel;
     private VisualStudioWorkspace _workspace;
     private IPredicateInput _searchInput;
-    private IPredicateInput _replaceInput;
+    private IPredicateInput _replacementInput;
     private CancellationTokenSource _cancellation;
     private bool _initialized;
     private double _sidebarWidth = 220;
@@ -55,7 +55,8 @@ public partial class QueryToolWindowControl : UserControl
     // Weak: a Solution roots its compilations, and pinning the snapshot a run used would keep the
     // whole thing alive for as long as the results are on screen. If it is gone, spans are used
     // as recorded, which is only wrong if the user edited since the run. Replace reuses this same
-    // snapshot - it resolves hits from the Search tab, it does not run its own query.
+    // snapshot and the same _hits: Generate Previews re-runs the shared Find query itself, it does
+    // not require a prior Search-tab run.
     private WeakReference<Solution> _ranAgainst;
 
     public QueryToolWindowControl()
@@ -117,10 +118,10 @@ public partial class QueryToolWindowControl : UserControl
         _searchInput.Text = "n.IsKind(SyntaxKind.IfStatement)";
         _searchInput.SubmitRequested += (s, args) => Run();
 
-        _replaceInput = PredicateInputFactory.Create(_componentModel, out var replaceDiagnostic);
-        ReplacePredicateHost.Content = _replaceInput.Element;
-        _replaceInput.Target = CurrentTarget;
-        _replaceInput.SubmitRequested += (s, args) => GeneratePreview();
+        _replacementInput = PredicateInputFactory.Create(_componentModel, out var replacementDiagnostic);
+        ReplacementHost.Content = _replacementInput.Element;
+        _replacementInput.Target = CurrentTarget;
+        _replacementInput.SubmitRequested += (s, args) => GeneratePreview();
 
         UpdateSignature();
         UpdateReplaceSignature();
@@ -128,7 +129,7 @@ public partial class QueryToolWindowControl : UserControl
 
         if (_workspace is null) SetError("No Roslyn workspace is available. Open a solution and reopen this window.");
         else if (diagnostic != null) SetError(diagnostic);
-        else if (replaceDiagnostic != null) SetError(replaceDiagnostic);
+        else if (replacementDiagnostic != null) SetError(replacementDiagnostic);
 
         StatusText.Text = "Enter runs, Shift+Enter is a newline";
 
@@ -150,7 +151,7 @@ public partial class QueryToolWindowControl : UserControl
         if (_searchInput is null) return;
 
         _searchInput.Target = CurrentTarget;
-        _replaceInput.Target = CurrentTarget;
+        _replacementInput.Target = CurrentTarget;
         UpdateSignature();
         UpdateReplaceSignature();
         UpdateReplaceAvailability();
@@ -305,6 +306,7 @@ public partial class QueryToolWindowControl : UserControl
         StatusText.Text = "Running...";
         StopButton.IsEnabled = true;
         RunButton.IsEnabled = false;
+        GeneratePreviewButton.IsEnabled = false;
 
 #pragma warning disable VSSDK007
         ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
@@ -329,6 +331,7 @@ public partial class QueryToolWindowControl : UserControl
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 StopButton.IsEnabled = false;
                 RunButton.IsEnabled = true;
+                GeneratePreviewButton.IsEnabled = true;
                 RefreshCachedPredicates();
                 if (ReferenceEquals(_cancellation, cancellation)) _cancellation = null;
                 cancellation.Dispose();
@@ -414,6 +417,11 @@ public partial class QueryToolWindowControl : UserControl
         foreach (var item in _replacements) item.Included = false;
     }
 
+    /// <summary>
+    /// Re-runs the shared Find query and generates a replacement preview per hit in one action - a
+    /// user reaching for Replace should not first have to go run Search. Shares the Stop button and
+    /// cancellation with Run(), since this does everything Run() does plus the replacement step.
+    /// </summary>
     private void GeneratePreview()
     {
         ThreadHelper.ThrowIfNotOnUIThread();
@@ -428,36 +436,55 @@ public partial class QueryToolWindowControl : UserControl
             SetReplaceError("Replace isn't available for IOperation matches.");
             return;
         }
-        if (_hits.Count == 0)
-        {
-            SetReplaceError("Run a Search query first.");
-            return;
-        }
 
-        Solution ranAgainst = null;
-        _ranAgainst?.TryGetTarget(out ranAgainst);
-        if (ranAgainst is null)
-        {
-            SetReplaceError("The search snapshot is gone; re-run Search.");
-            return;
-        }
+        _cancellation?.Cancel();
+        var cancellation = new CancellationTokenSource();
+        _cancellation = cancellation;
 
         var target = CurrentTarget;
-        var expression = _replaceInput.Text;
-        var hits = _hits.ToArray();
+        var scope = CurrentScope;
+        var findExpression = _searchInput.Text;
+        var replacementExpression = _replacementInput.Text;
+        var includeGenerated = GeneratedCheckBox.IsChecked == true;
+        var cap = CurrentCap;
 
+        _hits.Clear();
         _replacements.Clear();
+        SetError(null);
         SetReplaceError(null);
+        StatusText.Text = "Running...";
         ReplaceStatusText.Text = "Generating...";
-        ApplySelectedButton.IsEnabled = false;
+        StopButton.IsEnabled = true;
+        RunButton.IsEnabled = false;
         GeneratePreviewButton.IsEnabled = false;
+        ApplySelectedButton.IsEnabled = false;
 
 #pragma warning disable VSSDK007
         ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
         {
             try
             {
-                await GeneratePreviewCoreAsync(ranAgainst, hits, target, expression);
+                await RunCoreAsync(target, scope, findExpression, includeGenerated, cap, cancellation.Token);
+                if (_hits.Count == 0)
+                {
+                    ReplaceStatusText.Text = "No matches.";
+                    return;
+                }
+
+                Solution ranAgainst = null;
+                _ranAgainst?.TryGetTarget(out ranAgainst);
+                if (ranAgainst is null)
+                {
+                    SetReplaceError("The search snapshot is gone; try again.");
+                    return;
+                }
+
+                await GeneratePreviewCoreAsync(ranAgainst, _hits.ToArray(), target, replacementExpression);
+            }
+            catch (OperationCanceledException)
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                ReplaceStatusText.Text = "Cancelled.";
             }
             catch (Exception ex)
             {
@@ -468,25 +495,30 @@ public partial class QueryToolWindowControl : UserControl
             finally
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                StopButton.IsEnabled = false;
+                RunButton.IsEnabled = true;
                 GeneratePreviewButton.IsEnabled = true;
+                RefreshCachedPredicates();
+                if (ReferenceEquals(_cancellation, cancellation)) _cancellation = null;
+                cancellation.Dispose();
             }
         }).FileAndForget("vs/roslynquery/replacepreview");
 #pragma warning restore VSSDK007
     }
 
-    private async Task GeneratePreviewCoreAsync(Solution ranAgainst, QueryHit[] hits, TargetKind target, string expression)
+    private async Task GeneratePreviewCoreAsync(Solution ranAgainst, QueryHit[] hits, TargetKind target, string replacementExpression)
     {
         await TaskScheduler.Default;
 
         Delegate replace;
         try
         {
-            replace = ReplaceCompiler.Compile(target, expression);
+            replace = ReplaceCompiler.Compile(target, replacementExpression);
         }
         catch (PredicateCompilationException ex)
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-            ReplaceStatusText.Text = "The transform did not compile.";
+            ReplaceStatusText.Text = "The replacement did not compile.";
             SetReplaceError(ex.Message);
             return;
         }

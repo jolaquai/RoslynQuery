@@ -56,6 +56,60 @@
             </Setter>
         </Style>
 
+        <!-- Flat, underline-indicator tabs instead of the default Windows tab chrome. -->
+        <Style x:Key="FlatTabItem" TargetType="TabItem">
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="Chrome" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True"
+                                Background="Transparent" BorderThickness="0,0,0,2" BorderBrush="Transparent">
+                            <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background"
+                                        Value="{DynamicResource {x:Static vsshell:VsBrushes.AccentMediumKey}}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush"
+                                        Value="{DynamicResource {x:Static vsshell:VsBrushes.AccentBorderKey}}" />
+                                <Setter Property="Foreground"
+                                        Value="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="FlatTabControl" TargetType="TabControl">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0" BorderThickness="0,0,0,1"
+                                    BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarBorderKey}}">
+                                <TabPanel IsItemsHost="True" Panel.ZIndex="1" />
+                            </Border>
+
+                            <ContentPresenter Grid.Row="1" Margin="0,7,0,0" ContentSource="SelectedContent" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <DataTemplate x:Key="ResultTemplate">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -135,117 +189,118 @@
             <ColumnDefinition x:Name="SidebarColumn" Width="220" MinWidth="140" />
         </Grid.ColumnDefinitions>
 
-        <TabControl Grid.Column="0" Margin="8,8,8,0" Background="Transparent" BorderThickness="0">
-            <TabItem Header="Search">
-                <Grid Margin="0,6,0,0">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
+        <Grid Grid.Column="0" Margin="8,8,8,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
 
-                    <Border Grid.Row="0" MinHeight="24" MaxHeight="120" Padding="6,3" CornerRadius="2"
-                            BorderThickness="1"
-                            BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.SearchBoxBorderKey}}"
-                            Background="{DynamicResource {x:Static vsshell:VsBrushes.SearchBoxBackgroundKey}}">
-                        <ContentControl x:Name="PredicateHost" />
-                    </Border>
+            <!-- Find box: shared by both tabs below, the way a real Find/Replace tool has one "Find what". -->
+            <Border Grid.Row="0" MinHeight="24" MaxHeight="120" Padding="6,3" CornerRadius="2"
+                    BorderThickness="1"
+                    BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.SearchBoxBorderKey}}"
+                    Background="{DynamicResource {x:Static vsshell:VsBrushes.SearchBoxBackgroundKey}}">
+                <ContentControl x:Name="PredicateHost" />
+            </Border>
 
-                    <Grid Grid.Row="1" Margin="0,7,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
+            <Grid Grid.Row="1" Margin="0,7,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
 
-                        <WrapPanel Grid.Column="0" Orientation="Horizontal">
-                            <TextBlock Text="Target" Style="{StaticResource Caption}" Margin="0,0,5,3" />
-                            <ComboBox x:Name="TargetCombo" MinWidth="104" Margin="0,0,14,3" VerticalAlignment="Center"
-                                      Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}"
-                                      SelectionChanged="OnTargetChanged" />
+                <WrapPanel Grid.Column="0" Orientation="Horizontal">
+                    <TextBlock Text="Target" Style="{StaticResource Caption}" Margin="0,0,5,3" />
+                    <ComboBox x:Name="TargetCombo" MinWidth="104" Margin="0,0,14,3" VerticalAlignment="Center"
+                              Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}"
+                              SelectionChanged="OnTargetChanged" />
 
-                            <TextBlock Text="Scope" Style="{StaticResource Caption}" Margin="0,0,5,3" />
-                            <ComboBox x:Name="ScopeCombo" MinWidth="132" Margin="0,0,14,3" VerticalAlignment="Center"
-                                      Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}" />
+                    <TextBlock Text="Scope" Style="{StaticResource Caption}" Margin="0,0,5,3" />
+                    <ComboBox x:Name="ScopeCombo" MinWidth="132" Margin="0,0,14,3" VerticalAlignment="Center"
+                              Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}" />
 
-                            <TextBlock Text="Cap" Style="{StaticResource Caption}" Margin="0,0,5,3" />
-                            <ComboBox x:Name="CapCombo" MinWidth="76" Margin="0,0,14,3" VerticalAlignment="Center"
-                                      Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}" />
+                    <TextBlock Text="Cap" Style="{StaticResource Caption}" Margin="0,0,5,3" />
+                    <ComboBox x:Name="CapCombo" MinWidth="76" Margin="0,0,14,3" VerticalAlignment="Center"
+                              Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}" />
 
-                            <CheckBox x:Name="GeneratedCheckBox" Content="Generated" VerticalAlignment="Center" Margin="0,0,14,3"
-                                      Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogCheckBoxStyleKey}}"
-                                      ToolTip="Include .g.cs / .designer.cs and source generated documents." />
-                        </WrapPanel>
+                    <CheckBox x:Name="GeneratedCheckBox" Content="Generated" VerticalAlignment="Center" Margin="0,0,14,3"
+                              Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogCheckBoxStyleKey}}"
+                              ToolTip="Include .g.cs / .designer.cs and source generated documents." />
+                </WrapPanel>
 
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
-                            <Button x:Name="RunButton" Content="Run" MinWidth="62" Margin="0,0,6,0" Padding="8,2"
-                                    Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
-                                    Click="OnRunClick" />
-                            <Button x:Name="StopButton" Content="Stop" MinWidth="62" Padding="8,2" IsEnabled="False"
-                                    Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
-                                    Click="OnStopClick" />
-                            <Button x:Name="SidebarToggleButton" Content="History &lt;" MinWidth="48" Margin="6,0,0,0" Padding="8,2"
-                                    Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
-                                    Click="OnToggleSidebarClick" ToolTip="Toggle the query history sidebar" />
-                        </StackPanel>
+                <Button x:Name="SidebarToggleButton" Grid.Column="1" Content="History &lt;" MinWidth="48" Padding="8,2"
+                        VerticalAlignment="Top"
+                        Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
+                        Click="OnToggleSidebarClick" ToolTip="Toggle the query history sidebar" />
+            </Grid>
+
+            <TabControl Grid.Row="2" Margin="0,7,0,0" Style="{StaticResource FlatTabControl}">
+                <TabItem Header="Search" Style="{StaticResource FlatTabItem}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock x:Name="SignatureText" Grid.Column="0" FontFamily="Consolas" Style="{StaticResource Meta}" />
+
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button x:Name="RunButton" Content="Run" MinWidth="62" Margin="0,0,6,0" Padding="8,2"
+                                        Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
+                                        Click="OnRunClick" />
+                                <Button x:Name="StopButton" Content="Stop" MinWidth="62" Padding="8,2" IsEnabled="False"
+                                        Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
+                                        Click="OnStopClick" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid Grid.Row="1" Margin="0,4,0,0">
+                            <TextBlock x:Name="StatusText" Style="{StaticResource Meta}" />
+                        </Grid>
+
+                        <TextBlock x:Name="ErrorText" Grid.Row="1" Margin="0,24,0,0" TextWrapping="Wrap"
+                                   Visibility="Collapsed" Foreground="#FFE0655F" />
+
+                        <ListBox x:Name="Results" Grid.Row="2" Margin="0,8,0,0"
+                                 BorderThickness="0" Background="Transparent"
+                                 HorizontalContentAlignment="Stretch"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 VirtualizingStackPanel.IsVirtualizing="True"
+                                 VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                 ItemContainerStyle="{StaticResource ResultRow}"
+                                 ItemTemplate="{StaticResource ResultTemplate}"
+                                 MouseDoubleClick="OnResultDoubleClick" />
                     </Grid>
+                </TabItem>
 
-                    <Grid Grid.Row="2" Margin="0,7,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
+                <TabItem Header="Replace" Style="{StaticResource FlatTabItem}">
+                    <Grid>
+                        <TextBlock x:Name="ReplaceUnavailableText" TextWrapping="Wrap" Visibility="Collapsed"
+                                   Text="Replace isn't available for IOperation matches. Switch Target to SyntaxNode or SyntaxToken."
+                                   Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" />
 
-                        <TextBlock x:Name="SignatureText" Grid.Column="0" FontFamily="Consolas" Style="{StaticResource Meta}" />
-                        <TextBlock x:Name="StatusText" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource Meta}" />
-                    </Grid>
-
-                    <TextBlock x:Name="ErrorText" Grid.Row="3" Margin="0,6,0,0" TextWrapping="Wrap"
-                               Visibility="Collapsed" Foreground="#FFE0655F" />
-
-                    <ListBox x:Name="Results" Grid.Row="4" Margin="0,8,0,0"
-                             BorderThickness="0" Background="Transparent"
-                             HorizontalContentAlignment="Stretch"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             VirtualizingStackPanel.IsVirtualizing="True"
-                             VirtualizingStackPanel.VirtualizationMode="Recycling"
-                             ItemContainerStyle="{StaticResource ResultRow}"
-                             ItemTemplate="{StaticResource ResultTemplate}"
-                             MouseDoubleClick="OnResultDoubleClick" />
-                </Grid>
-            </TabItem>
-
-            <TabItem Header="Replace">
-                <Grid Margin="0,6,0,0">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-
-                    <TextBlock x:Name="ReplaceUnavailableText" Grid.Row="0" Grid.RowSpan="5"
-                               TextWrapping="Wrap" Visibility="Collapsed"
-                               Text="Replace isn't available for IOperation matches. Switch Target to SyntaxNode or SyntaxToken on the Search tab."
-                               Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" />
-
-                    <Border x:Name="ReplaceBody" Grid.Row="0" Grid.RowSpan="5">
-                        <Grid>
+                        <Grid x:Name="ReplaceBody">
                             <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
 
+                            <!-- Replace-with box: what each match found by the Find box above is replaced with. -->
                             <Border Grid.Row="0" MinHeight="24" MaxHeight="120" Padding="6,3" CornerRadius="2"
                                     BorderThickness="1"
                                     BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.SearchBoxBorderKey}}"
                                     Background="{DynamicResource {x:Static vsshell:VsBrushes.SearchBoxBackgroundKey}}">
-                                <ContentControl x:Name="ReplacePredicateHost" />
+                                <ContentControl x:Name="ReplacementHost" />
                             </Border>
 
                             <Grid Grid.Row="1" Margin="0,7,0,0">
@@ -254,10 +309,10 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
-                                <TextBlock Grid.Column="0" Text="Transform: return a string, a SyntaxNode/SyntaxToken, or null to skip."
+                                <TextBlock Grid.Column="0" Text="Replacement: a string, a SyntaxNode/SyntaxToken, or null to skip a match."
                                            Style="{StaticResource Caption}" VerticalAlignment="Center" TextWrapping="Wrap" />
 
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
                                     <Button x:Name="GeneratePreviewButton" Content="Generate Previews" MinWidth="62" Margin="0,0,6,0" Padding="8,2"
                                             Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
                                             Click="OnGeneratePreviewClick" />
@@ -286,10 +341,10 @@
                                 </StackPanel>
                             </Grid>
 
-                            <TextBlock x:Name="ReplaceErrorText" Grid.Row="3" Margin="0,6,0,0" TextWrapping="Wrap"
+                            <TextBlock x:Name="ReplaceErrorText" Grid.Row="2" Margin="0,28,0,0" TextWrapping="Wrap"
                                        Visibility="Collapsed" Foreground="#FFE0655F" />
 
-                            <ListBox x:Name="ReplaceResults" Grid.Row="4" Margin="0,8,0,0"
+                            <ListBox x:Name="ReplaceResults" Grid.Row="3" Margin="0,8,0,0"
                                      BorderThickness="0" Background="Transparent"
                                      HorizontalContentAlignment="Stretch"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -299,10 +354,10 @@
                                      ItemTemplate="{StaticResource ReplacementTemplate}"
                                      MouseDoubleClick="OnReplaceResultDoubleClick" />
                         </Grid>
-                    </Border>
-                </Grid>
-            </TabItem>
-        </TabControl>
+                    </Grid>
+                </TabItem>
+            </TabControl>
+        </Grid>
 
         <GridSplitter x:Name="SidebarSplitter" Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
                       VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext"
