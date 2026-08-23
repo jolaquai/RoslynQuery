@@ -34,6 +34,16 @@ public partial class QueryToolWindowControl : UserControl
         public override string ToString() => Display;
     }
 
+    // Comment, not code: block form can't sit alongside the expression form it's illustrating in one
+    // compiled body, and the expression form's own semicolon-free single line would otherwise be a
+    // dangling statement missing its terminator (CS1002).
+    internal const string DefaultQueryBoxContent = """
+        // n.IsKind(SyntaxKind.IfStatement) is the equivalent expression form; block form lets you
+        // use statements or control flow constructs:
+        if (n is IfStatementSyntax iss && iss.Statement is BlockSyntax b)
+            return b.Statements.Count == 1;
+        return false;
+        """;
     private readonly ObservableCollection<QueryHit> _hits = [];
     private readonly ObservableCollection<CachedPredicateItem> _cachedPredicates = [];
     private readonly ObservableCollection<ReplacementItem> _replacements = [];
@@ -109,7 +119,7 @@ public partial class QueryToolWindowControl : UserControl
         _searchInput = PredicateInputFactory.Create(_componentModel, out var diagnostic);
         PredicateHost.Content = _searchInput.Element;
         _searchInput.Target = CurrentTarget;
-        _searchInput.Text = "n.IsKind(SyntaxKind.IfStatement)";
+        _searchInput.Text = DefaultQueryBoxContent;
         _searchInput.SubmitRequested += (s, args) => Run();
 
         _replacementInput = PredicateInputFactory.Create(_componentModel, out var replacementDiagnostic);
