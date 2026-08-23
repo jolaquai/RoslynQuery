@@ -1,3 +1,5 @@
+using System.Linq;
+
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -13,6 +15,8 @@ internal static class ReferenceUsageClassifier
     public static ReferenceUsageKind Classify(SyntaxNode occurrence, ISymbol target)
     {
         if (occurrence is null) return ReferenceUsageKind.Read;
+
+        if (occurrence.Ancestors().OfType<CrefSyntax>().Any()) return ReferenceUsageKind.Documentation;
 
         // `this()`/`base()` bind at the keyword, so there is no name node to climb from.
         if (occurrence is ConstructorInitializerSyntax || occurrence.Parent is ConstructorInitializerSyntax)

@@ -74,10 +74,10 @@ internal static class SymbolResolver
     /// <summary>A caret parked immediately after an identifier still counts as being on it.</summary>
     private static SyntaxToken FindToken(SyntaxNode root, int position)
     {
-        var token = root.FindToken(position);
+        var token = root.FindToken(position, findInsideTrivia: true);
         if (token.IsKind(SyntaxKind.IdentifierToken) || position <= 0) return token;
 
-        var previous = root.FindToken(position - 1);
+        var previous = root.FindToken(position - 1, findInsideTrivia: true);
         return previous.IsKind(SyntaxKind.IdentifierToken) && previous.Span.End == position ? previous : token;
     }
 

@@ -49,6 +49,9 @@ public class ReferenceUsageClassifierTests
             public void MethodGroup() { Action a = Helper; }
             public void ObjectInitializer() { var f = new Foo { Value = 2 }; }
             public void Qualified(Foo other) { other.Value = 3; }
+
+            /// <summary>See <see cref="Helper"/>.</summary>
+            public void Documented() { }
         }
 
         class Bar : Foo { }
@@ -169,5 +172,15 @@ public class ReferenceUsageClassifierTests
         var baseType = root.DescendantNodes().OfType<SimpleBaseTypeSyntax>().Single().Type;
 
         Assert.Equal(ReferenceUsageKind.TypeReference, ReferenceUsageClassifier.Classify(baseType, model.GetSymbolInfo(baseType, TestContext.Current.CancellationToken).Symbol));
+    }
+
+    [Fact]
+    public async Task Classify_CrefInDocComment_IsDocumentation()
+    {
+        var (model, root) = await CompileAsync();
+
+        var cref = root.DescendantNodes(descendIntoTrivia: true).OfType<NameMemberCrefSyntax>().Single();
+
+        Assert.Equal(ReferenceUsageKind.Documentation, ReferenceUsageClassifier.Classify(cref.Name, model.GetSymbolInfo(cref, TestContext.Current.CancellationToken).Symbol));
     }
 }

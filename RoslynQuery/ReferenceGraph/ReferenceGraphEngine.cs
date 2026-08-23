@@ -59,7 +59,7 @@ internal static class ReferenceGraphEngine
                 }
 
                 var span = location.Location.SourceSpan;
-                var occurrence = root.FindNode(span, getInnermostNodeForTie: true);
+                var occurrence = root.FindNode(span, findInsideTrivia: true, getInnermostNodeForTie: true);
 
                 var kind = ReferenceUsageClassifier.Classify(occurrence, reference.Definition);
                 if ((kind & filter) == ReferenceUsageKind.None) continue;
@@ -200,9 +200,10 @@ internal static class ReferenceGraphEngine
     private static ISymbol EnclosingDeclaration(
         SemanticModel model, SyntaxNode occurrence, int position, CancellationToken cancellationToken)
     {
-        for (var node = occurrence; node != null; node = node.Parent)
+        // AncestorsAndSelf, not a raw Parent walk: a cref occurrence sits in structured trivia, whose
+        // root node's Parent is null - only Ancestors bridges back out to the declaration it decorates.
+        foreach (var node in occurrence.AncestorsAndSelf())
         {
-            // A field's symbol hangs off the declarator, not off the FieldDeclaration above it.
             if (!(node is MemberDeclarationSyntax || node is AccessorDeclarationSyntax || node is VariableDeclaratorSyntax))
                 continue;
 

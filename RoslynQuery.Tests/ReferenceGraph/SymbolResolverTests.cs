@@ -113,6 +113,16 @@ public class SymbolResolverTests
         Assert.Null(await ResolveAsync("class C { void M() { void $$Inner() { } Inner(); } }"));
 
     [Fact]
+    public async Task Resolve_OnCrefInDocComment_ReturnsTheCrefTargetNotTheEnclosingMember()
+    {
+        var symbol = await ResolveAsync(
+            "class C { /// <summary>See <see cref=\"$$Target\"/>.</summary>\r\n void Above() { } void Target() { } }");
+
+        Assert.Equal(SymbolKind.Method, symbol.Kind);
+        Assert.Equal("Target", symbol.Name);
+    }
+
+    [Fact]
     public async Task Resolve_WithNoActiveContext_ReturnsNull()
     {
         var solution = TestSolutions.Create(("Foo.cs", "class C { }"));

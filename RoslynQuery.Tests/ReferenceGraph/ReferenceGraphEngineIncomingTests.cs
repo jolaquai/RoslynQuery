@@ -148,6 +148,49 @@ public class ReferenceGraphEngineIncomingTests
     private const int MaxPlusFive = ReferenceGraphEngine.MaxNodes + 5;
 
     [Fact]
+    public async Task Incoming_ACrefInADocComment_IsExcludedByDefault()
+    {
+        var solution = TestSolutions.Create(
+            ("A.cs", """
+                class Owner
+                {
+                    public void Target() { }
+
+                    /// <summary>See <see cref="Target"/>.</summary>
+                    public void Documented() { }
+                }
+                """));
+
+        var nodes = await ReferenceGraphEngine.FindIncomingAsync(
+            await SymbolAsync(solution, "Owner", "Target"), solution, null, All, null, TestContext.Current.CancellationToken);
+
+        Assert.Empty(nodes);
+    }
+
+    [Fact]
+    public async Task Incoming_ACrefInADocComment_IsClassifiedAsDocumentationWhenIncludedInTheFilter()
+    {
+        var solution = TestSolutions.Create(
+            ("A.cs", """
+                class Owner
+                {
+                    public void Target() { }
+
+                    /// <summary>See <see cref="Target"/>.</summary>
+                    public void Documented() { }
+                }
+                """));
+
+        var nodes = await ReferenceGraphEngine.FindIncomingAsync(
+            await SymbolAsync(solution, "Owner", "Target"), solution, null,
+            ReferenceUsageKind.Documentation, null, TestContext.Current.CancellationToken);
+
+        var node = Assert.Single(nodes);
+        Assert.Contains("Documented", node.DisplayText);
+        Assert.Equal(ReferenceUsageKind.Documentation, Assert.Single(node.Locations).Kind);
+    }
+
+    [Fact]
     public async Task Incoming_WithNoReferences_ProducesNoNodes()
     {
         var solution = TestSolutions.Create(("A.cs", "class Owner { public void Lonely() { } }"));

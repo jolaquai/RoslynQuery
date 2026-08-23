@@ -14,5 +14,6 @@ internal enum ReferenceUsageKind
     Read = 2,
     Write = 4,
     Construction = 8,
-    TypeReference = 16
+    TypeReference = 16,
+    Documentation = 32
 }
