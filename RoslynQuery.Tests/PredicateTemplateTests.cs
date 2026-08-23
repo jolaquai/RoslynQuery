@@ -39,9 +39,9 @@ public class PredicateTemplateParameterTests
         Assert.Throws<ArgumentOutOfRangeException>(() => PredicateTemplate.ParameterType((TargetKind)(-1)));
 
     [Theory]
-    [InlineData((int)TargetKind.SyntaxNode, "async ValueTask<bool> (SyntaxNode n, SemanticModel model, Document doc)")]
-    [InlineData((int)TargetKind.SyntaxToken, "async ValueTask<bool> (SyntaxToken t, SemanticModel model, Document doc)")]
-    [InlineData((int)TargetKind.Operation, "async ValueTask<bool> (IOperation op, SemanticModel model, Document doc)")]
+    [InlineData((int)TargetKind.SyntaxNode, "async ValueTask<object> (SyntaxNode n, SemanticModel model, Document doc)")]
+    [InlineData((int)TargetKind.SyntaxToken, "async ValueTask<object> (SyntaxToken t, SemanticModel model, Document doc)")]
+    [InlineData((int)TargetKind.Operation, "async ValueTask<object> (IOperation op, SemanticModel model, Document doc)")]
     public void Signature_ReturnsExpected(int kind, string expected) =>
         Assert.Equal(expected, PredicateTemplate.Signature((TargetKind)kind));
 }
@@ -64,7 +64,7 @@ public class PredicateTemplateBuildTests
 
         Assert.Contains($"public static class {PredicateTemplate.ClassName}", source);
         Assert.Contains(
-            $"public static async ValueTask<bool> {PredicateTemplate.MethodName}({PredicateTemplate.ParameterType(kind)} {PredicateTemplate.ParameterName(kind)}, SemanticModel model, Document doc)",
+            $"public static async ValueTask<object> {PredicateTemplate.MethodName}({PredicateTemplate.ParameterType(kind)} {PredicateTemplate.ParameterName(kind)}, SemanticModel model, Document doc)",
             source);
     }
 
@@ -114,7 +114,7 @@ public class PredicateTemplateBuildTests
         const string expression = "true";
         var source = PredicateTemplate.Build((TargetKind)kindValue, expression, out var offset);
 
-        Assert.EndsWith("return ", source.Substring(0, offset));
+        Assert.EndsWith("return (object)(", source.Substring(0, offset));
     }
 
     [Theory]
@@ -125,7 +125,7 @@ public class PredicateTemplateBuildTests
         var source = PredicateTemplate.Build((TargetKind)kindValue, expression, out var offset);
 
         var afterExpression = source.Substring(offset + expression.Length).TrimStart();
-        Assert.StartsWith(";", afterExpression);
+        Assert.StartsWith(");", afterExpression);
     }
 
     [Theory]

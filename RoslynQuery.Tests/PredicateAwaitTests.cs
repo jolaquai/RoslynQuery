@@ -12,7 +12,7 @@ using Xunit;
 
 namespace RoslynQuery.Tests;
 
-// Predicates are emitted as `async ValueTask<bool>`, so a predicate may await. These cover the
+// Predicates are emitted as `async ValueTask<object>`, so a predicate may await. These cover the
 // capability itself: that awaiting compiles, that a genuinely asynchronous predicate still yields
 // the right answer, and that the ordinary non-awaiting predicate stays synchronous.
 [Collection(PredicateCompilerCacheCollection.Name)]
@@ -47,7 +47,7 @@ public class PredicateAwaitTests
 
         var match = (NodeMatch)PredicateCompiler.Compile(TargetKind.SyntaxNode, "(await doc.GetSyntaxRootAsync()) != null");
 
-        Assert.True(await match(node, model, doc));
+        Assert.Equal(true, await match(node, model, doc));
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public class PredicateAwaitTests
             TargetKind.SyntaxNode,
             "var root = await doc.GetSyntaxRootAsync();\r\nreturn root.DescendantNodes().Any();");
 
-        Assert.True(await match(node, model, doc));
+        Assert.Equal(true, await match(node, model, doc));
     }
 
     [Fact]
@@ -72,8 +72,8 @@ public class PredicateAwaitTests
         var yes = (NodeMatch)PredicateCompiler.Compile(TargetKind.SyntaxNode, "await Task.Yield();\r\nreturn n != null;");
         var no = (NodeMatch)PredicateCompiler.Compile(TargetKind.SyntaxNode, "await Task.Yield();\r\nreturn n == null;");
 
-        Assert.True(await yes(node, model, doc));
-        Assert.False(await no(node, model, doc));
+        Assert.Equal(true, await yes(node, model, doc));
+        Assert.Equal(false, await no(node, model, doc));
     }
 
     [Fact]
@@ -89,7 +89,7 @@ public class PredicateAwaitTests
         var pending = match(node, model, doc);
 
         Assert.True(pending.IsCompletedSuccessfully);
-        Assert.True(await pending);
+        Assert.Equal(true, await pending);
     }
 
     [Fact]

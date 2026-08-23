@@ -50,7 +50,7 @@ internal static class PredicateTemplate
         _ => throw new ArgumentOutOfRangeException(nameof(kind))
     };
 
-    public static string Signature(TargetKind kind) => $"async ValueTask<bool> ({ParameterType(kind)} {ParameterName(kind)}, SemanticModel model, Document doc)";
+    public static string Signature(TargetKind kind) => $"async ValueTask<object> ({ParameterType(kind)} {ParameterName(kind)}, SemanticModel model, Document doc)";
 
     /// <summary>Returns the full source and the offset at which <paramref name="expression"/> starts.</summary>
     public static string Build(TargetKind kind, string expression, out int expressionOffset) =>
@@ -72,7 +72,7 @@ internal static class PredicateTemplate
             itw.WriteLine(ClassName);
             using (itw.Scope())
             {
-                itw.Write("public static async ValueTask<bool> ");
+                itw.Write("public static async ValueTask<object> ");
                 itw.Write(MethodName);
                 itw.Write("(");
                 itw.Write(ParameterType(kind));
@@ -84,7 +84,7 @@ internal static class PredicateTemplate
                     // Write() before capturing the offset either way: IndentedTextWriter emits the
                     // pending indent on the next write, so the offset would otherwise land on the
                     // indent rather than on the user's first character.
-                    itw.Write(mode == PredicateMode.Body ? string.Empty : "return ");
+                    itw.Write(mode == PredicateMode.Body ? string.Empty : "return (object)(");
                     itw.Flush();
                     sw.Flush();
                     textOffset = sw.GetStringBuilder().Length;
@@ -93,13 +93,19 @@ internal static class PredicateTemplate
                     {
                         // Emitted verbatim: only the first line picks up the indent, which is
                         // cosmetic, and keeping the rest byte-identical is what lets Describe map a
-                        // diagnostic back to the line and column the user actually typed.
+                        // diagnostic back to the line and column the user actually typed. The user
+                        // writes their own "return ...;" statements against the declared object
+                        // return type - a bool, a SyntaxNode/SyntaxToken/IOperation matching the
+                        // Target (used as the hit's result), or null to skip.
                         itw.WriteLine(string.IsNullOrWhiteSpace(text) ? "return true;" : text);
                     }
                     else
                     {
+                        // Parenthesized cast: boxes a bare bool uniformly with a reference-typed
+                        // SyntaxNode/IOperation or the value-type SyntaxToken, whatever the
+                        // expression's static type turns out to be.
                         itw.WriteLine(string.IsNullOrWhiteSpace(text) ? "true" : text);
-                        itw.WriteLine(';');
+                        itw.WriteLine(");");
                     }
                 }
             }

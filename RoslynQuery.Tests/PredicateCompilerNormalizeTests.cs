@@ -201,6 +201,6 @@ public class PredicateCompilerCachingTests
 
         var del = (NodeMatch)PredicateCompiler.Compile(TargetKind.SyntaxNode, overFormatted);
 
-        Assert.True(await del(node, semanticModel, document));
+        Assert.Equal(true, await del(node, semanticModel, document));
     }
 }
