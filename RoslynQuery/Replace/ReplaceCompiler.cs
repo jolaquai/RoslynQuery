@@ -84,7 +84,7 @@ internal static class ReplaceCompiler
             ExpressionSupport.References,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optimizationLevel: OptimizationLevel.Release, allowUnsafe: true));
 
-        using (var stream = new MemoryStream())
+        using (var stream = new ArrayPoolMemoryStream())
         {
             var result = compilation.Emit(stream);
             if (!result.Success)

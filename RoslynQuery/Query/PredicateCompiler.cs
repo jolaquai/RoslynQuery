@@ -25,11 +25,9 @@ internal delegate ValueTask<object> NodeMatch(SyntaxNode n, SemanticModel model,
 internal delegate ValueTask<object> TokenMatch(SyntaxToken t, SemanticModel model, Document doc);
 internal delegate ValueTask<object> OperationMatch(IOperation op, SemanticModel model, Document doc);
 
-internal sealed class PredicateCompilationException : Exception
+internal sealed class PredicateCompilationException(string message, ImmutableArray<Diagnostic> diagnostics) : Exception(message)
 {
-    public PredicateCompilationException(string message, ImmutableArray<Diagnostic> diagnostics) : base(message) => Diagnostics = diagnostics;
-
-    public ImmutableArray<Diagnostic> Diagnostics { get; }
+    public ImmutableArray<Diagnostic> Diagnostics { get; } = diagnostics;
 }
 
 /// <summary>
@@ -114,7 +112,7 @@ internal static class PredicateCompiler
             ExpressionSupport.References,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optimizationLevel: OptimizationLevel.Release, allowUnsafe: true));
 
-        using (var stream = new MemoryStream())
+        using (var stream = new ArrayPoolMemoryStream())
         {
             var result = compilation.Emit(stream);
             if (!result.Success)
