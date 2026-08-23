@@ -8,12 +8,7 @@ using System.Threading;
 
 namespace RoslynQuery;
 
-/// <summary>
-/// Implements a <see cref="Stream"/> whose backing memory is source from an <see cref="ArrayPool{T}"/>.
-/// </summary>
-/// <remarks>
-/// This is by no means meant to replace an implementation such as <see href="https://github.com/microsoft/Microsoft.IO.RecyclableMemoryStream"/>. This type's design is much simpler.
-/// </remarks>
+/// <summary>A simple <see cref="Stream"/> whose backing memory is sourced from an <see cref="ArrayPool{T}"/>.</summary>
 public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
 {
     private readonly ArrayPool<byte> _pool;

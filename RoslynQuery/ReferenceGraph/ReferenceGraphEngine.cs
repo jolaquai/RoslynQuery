@@ -88,11 +88,7 @@ internal static class ReferenceGraphEngine
         return groups.Build(ReferenceDirection.Incoming, parent);
     }
 
-    /// <summary>
-    /// What <paramref name="root"/> itself references. Unlike the incoming path this never leaves the
-    /// root's own declarations, so there is no scope to honour: a member's outgoing set is whatever is
-    /// written inside it, and a type's is whatever is written inside its members and its base list.
-    /// </summary>
+    /// <summary>What <paramref name="root"/> itself references, scoped to its own declarations, members, and base list.</summary>
     public static async Task<IReadOnlyList<ReferenceGraphNode>> FindOutgoingAsync(
         ISymbol root,
         Solution solution,
@@ -200,13 +196,7 @@ internal static class ReferenceGraphEngine
         return references.Where(r => seen.Add((r.SyntaxTree, r.Span))).ToList();
     }
 
-    /// <summary>
-    /// The declaration an occurrence belongs to. Walks syntax rather than calling
-    /// <c>GetEnclosingSymbol</c> first, because the binder's answer for anything outside a body -
-    /// a parameter's type, a return type, an attribute - is the containing type, not the member the
-    /// user is looking at. Lambdas and local functions are stepped over on the way up, since neither
-    /// is a declaration the graph can show a row for.
-    /// </summary>
+    /// <summary>The declaration an occurrence belongs to. Walks syntax before <c>GetEnclosingSymbol</c> because the binder's answer outside a body is the containing type, not the member.</summary>
     private static ISymbol EnclosingDeclaration(
         SemanticModel model, SyntaxNode occurrence, int position, CancellationToken cancellationToken)
     {
@@ -253,9 +243,7 @@ internal static class ReferenceGraphEngine
                 _ordered.Add(group);
             }
 
-            // One physical occurrence, one entry. SymbolFinder reports a span once per project the
-            // file is compiled into, so without this a multi-targeted project counted every
-            // reference once per target framework.
+            // One physical occurrence, one entry - SymbolFinder reports a span once per project the file is compiled into.
             var key = (location.FilePath, location.Span);
 
             if (group.Seen.TryGetValue(key, out var existing))
@@ -307,13 +295,7 @@ internal static class ReferenceGraphEngine
             return nodes;
         }
 
-        /// <summary>
-        /// <c>SymbolFinder</c> searches documents in parallel, so the order incoming groups were first
-        /// seen in is whatever the scheduler happened to do - it changes between two runs over an
-        /// unchanged solution. Incoming rows are therefore sorted by name; outgoing rows keep insertion
-        /// order, which is already deterministic and is the order they appear in the source.
-        /// Sorting happens before the cap, or which rows survive it would be arbitrary too.
-        /// </summary>
+        /// <summary>Incoming rows sort by name - <c>SymbolFinder</c>'s parallel search makes first-seen order nondeterministic. Outgoing rows keep insertion (source) order.</summary>
         private List<Group> Order(ReferenceDirection direction)
         {
             if (direction != ReferenceDirection.Incoming) return _ordered;
@@ -334,10 +316,6 @@ internal static class ReferenceGraphEngine
             return byFile != 0 ? byFile : x.Span.Start.CompareTo(y.Span.Start);
         }
 
-        /// <summary>
-        /// Collapses the shapes that share one identity: an extension method called in reduced form,
-        /// and a constructed generic, both belong on the row of the thing they were built from.
-        /// </summary>
         private static ISymbol NormalizeTarget(ISymbol symbol)
         {
             if (symbol is IMethodSymbol method && method.ReducedFrom != null) symbol = method.ReducedFrom;

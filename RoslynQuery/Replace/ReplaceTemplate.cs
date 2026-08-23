@@ -8,12 +8,7 @@ using RoslynQuery.Query;
 
 namespace RoslynQuery.Replace;
 
-/// <summary>
-/// Builds the compilable wrapper around a user's replacement transform. Mirrors
-/// <see cref="PredicateTemplate"/>, but the generated method returns <c>object</c> rather than
-/// <c>bool</c>: the caller branches on the runtime type of the result (<c>string</c>, or a
-/// <c>SyntaxNode</c>/<c>SyntaxToken</c> for a structural replacement; <c>null</c> skips the hit).
-/// </summary>
+/// <summary>Builds the compilable wrapper around a user's replacement transform. Mirrors <see cref="PredicateTemplate"/>.</summary>
 internal static class ReplaceTemplate
 {
     public const string ClassName = "RoslynQueryReplace";
@@ -59,9 +54,8 @@ internal static class ReplaceTemplate
                 itw.Write(", SemanticModel model, Document doc)");
                 using (itw.Scope())
                 {
-                    // Write() before capturing the offset either way: IndentedTextWriter emits the
-                    // pending indent on the next write, so the offset would otherwise land on the
-                    // indent rather than on the user's first character.
+                    // Write() before capturing the offset: IndentedTextWriter emits the pending indent
+                    // on the next write, so the offset would otherwise land on the indent.
                     itw.Write(mode == PredicateMode.Body ? string.Empty : "return (object)(");
                     itw.Flush();
                     sw.Flush();
@@ -69,17 +63,10 @@ internal static class ReplaceTemplate
 
                     if (mode == PredicateMode.Body)
                     {
-                        // Emitted verbatim: only the first line picks up the indent, which is
-                        // cosmetic, and keeping the rest byte-identical is what lets Describe map a
-                        // diagnostic back to the line and column the user actually typed. The user
-                        // writes their own "return ...;" statements against the declared object
-                        // return type - a string, a SyntaxNode/SyntaxToken, or null to skip the hit.
                         itw.WriteLine(string.IsNullOrWhiteSpace(text) ? "return null;" : text);
                     }
                     else
                     {
-                        // Parenthesized cast: boxes a bare string, SyntaxNode, or the value-type
-                        // SyntaxToken uniformly, whatever the expression's static type turns out to be.
                         itw.WriteLine(string.IsNullOrWhiteSpace(text) ? "null" : text);
                         itw.WriteLine(");");
                     }

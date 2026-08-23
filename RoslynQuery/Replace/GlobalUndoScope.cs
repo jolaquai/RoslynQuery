@@ -14,14 +14,7 @@ using IServiceProvider = System.IServiceProvider;
 
 namespace RoslynQuery.Replace;
 
-/// <summary>
-/// Groups a multi-file Apply into one Ctrl+Z. Mirrors Roslyn's
-/// <c>GlobalUndoServiceFactory.WorkspaceUndoTransaction</c>, whose <c>IGlobalUndoService</c> is
-/// internal to Microsoft.CodeAnalysis.EditorFeatures and therefore unreachable from here.
-/// Opening the linked undo is not enough on its own: a buffer only joins the linked group if it is
-/// touched through the editor while the transaction is open, so every document about to change has
-/// to be enrolled via <see cref="AddDocument"/> first. Main thread only.
-/// </summary>
+/// <summary>Groups a multi-file Apply into one Ctrl+Z. Every changed document must be enrolled via <see cref="AddDocument"/> before the edit, or it won't join the linked undo group. Main thread only.</summary>
 internal sealed class GlobalUndoScope : IDisposable
 {
     private sealed class NoOpUndoPrimitive : ITextUndoPrimitive
@@ -79,9 +72,6 @@ internal sealed class GlobalUndoScope : IDisposable
         return new GlobalUndoScope(serviceProvider, undoManager, registry, adapters, description);
     }
 
-    /// <summary>
-    /// Enrols one document's buffer in the open linked undo. Must run before the edit lands.
-    /// </summary>
     public void AddDocument(Workspace workspace, DocumentId id)
     {
         ThreadHelper.ThrowIfNotOnUIThread();

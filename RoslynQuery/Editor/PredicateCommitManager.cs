@@ -21,15 +21,7 @@ internal sealed class PredicateCommitManagerProvider : IAsyncCompletionCommitMan
         textView.Properties.GetOrCreateSingletonProperty(() => new PredicateCommitManager());
 }
 
-/// <summary>
-/// Declares the commit characters and performs the commit itself. <c>IAsyncCompletionSession.ShouldCommit</c>
-/// answers from the union over the registered managers, so with none of them present no typed
-/// character can ever commit an item. <see cref="TryCommit"/> does the edit by hand - our content
-/// type's base definition is "code", which also pulls in whatever generic-code commit managers the
-/// real C# editor exports, and leaving the commit to "the" default let one of those grab it and
-/// replace the wrong span, dropping the typed character (a '.' committing to "SyntaxFactoryAccessorList"
-/// instead of "SyntaxFactory.AccessorList"). Owning the edit outright removes that ambiguity.
-/// </summary>
+/// <summary>Declares the commit characters and performs the commit itself, rather than risk a real-C#-editor commit manager grabbing it and replacing the wrong span.</summary>
 internal sealed class PredicateCommitManager : IAsyncCompletionCommitManager
 {
     // Roslyn's C# set without the space. In a one-line predicate box, committing on a space is
@@ -44,12 +36,8 @@ internal sealed class PredicateCommitManager : IAsyncCompletionCommitManager
 
     public VsData.CommitResult TryCommit(IAsyncCompletionSession session, ITextBuffer buffer, VsData.CompletionItem item, char typedChar, CancellationToken token)
     {
-        // session.ApplicableToSpan is not trustworthy here - something (likely another source pulled
-        // in via our content type's "code" base) has been observed widening it to swallow the
-        // character that triggered the session, e.g. eating the '.' in "SyntaxFactory.AccessorList".
-        // PredicateWord.At against the live caret is the same computation the source used to open the
-        // session in the first place, so recomputing it here is self-consistent regardless of what the
-        // platform did to the tracked span in between.
+        // session.ApplicableToSpan was observed widened here, eating the character that triggered the
+        // session - recomputed from the live caret instead of trusted.
         var snapshot = buffer.CurrentSnapshot;
         var span = PredicateWord.At(snapshot, session.TextView.Caret.Position.BufferPosition.Position);
         var text = typedChar is '\0' or '\t' or '\n' ? item.InsertText : item.InsertText + typedChar;

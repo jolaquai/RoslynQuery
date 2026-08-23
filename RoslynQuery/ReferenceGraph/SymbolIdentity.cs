@@ -7,12 +7,7 @@ using Microsoft.CodeAnalysis;
 
 namespace RoslynQuery.ReferenceGraph;
 
-/// <summary>
-/// A symbol reference that survives a compilation snapshot: the declaring project plus the symbol's
-/// documentation-comment declaration id. <c>SymbolKey</c> would be the natural choice but it is
-/// internal to Microsoft.CodeAnalysis.Workspaces, and reaching into it by reflection would break the
-/// moment devenv redirects Roslyn to its own build.
-/// </summary>
+/// <summary>A symbol reference that survives a compilation snapshot. Not <c>SymbolKey</c>, which is internal to Microsoft.CodeAnalysis.Workspaces.</summary>
 internal readonly struct SymbolIdentity : IEquatable<SymbolIdentity>
 {
     public SymbolIdentity(ProjectId projectId, string declarationId)
@@ -26,10 +21,6 @@ internal readonly struct SymbolIdentity : IEquatable<SymbolIdentity>
 
     public bool IsEmpty => DeclarationId is null;
 
-    /// <summary>
-    /// Prefers the project the symbol is actually declared in, so the same symbol reached from two
-    /// different projects still compares equal.
-    /// </summary>
     public static SymbolIdentity Create(ISymbol symbol, Solution solution, ProjectId fallbackProjectId)
     {
         if (symbol is null) return default;
@@ -60,13 +51,7 @@ internal readonly struct SymbolIdentity : IEquatable<SymbolIdentity>
         return tree is null ? null : solution.GetDocument(tree)?.Project.Id;
     }
 
-    /// <summary>
-    /// Compares on the declaration id alone. <see cref="ProjectId"/> is carried for resolution, not
-    /// for identity: a multi-targeted project is several Roslyn projects over one set of files, and
-    /// including the project here made every symbol in one show up as one row per target framework.
-    /// The cost is that the same declaration id in two genuinely unrelated assemblies shares a row,
-    /// which is both rarer and far less noisy than the duplication it replaces.
-    /// </summary>
+    /// <summary>Compares on the declaration id alone - including <see cref="ProjectId"/> made a multi-targeted project show one row per target framework.</summary>
     public bool Equals(SymbolIdentity other) => DeclarationId == other.DeclarationId;
 
     public override bool Equals(object obj) => obj is SymbolIdentity other && Equals(other);

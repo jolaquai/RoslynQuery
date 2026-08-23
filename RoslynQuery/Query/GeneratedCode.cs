@@ -8,12 +8,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace RoslynQuery.Query;
 
-/// <summary>
-/// Roslyn's own test (<c>GeneratedCodeUtilities</c>) is internal, so this reproduces the three
-/// signals it uses - the file name, an auto-generated header comment, and <c>GeneratedCodeAttribute</c>
-/// on every top-level type - plus a path test, which is what catches <c>obj\*.AssemblyInfo.cs</c>.
-/// Split by cost: the name and path tests run before a document is opened, the rest need the tree.
-/// </summary>
+/// <summary>Roslyn's own <c>GeneratedCodeUtilities</c> is internal, so this reimplements its signals.</summary>
 internal static class GeneratedCode
 {
     private static readonly string[] Suffixes =

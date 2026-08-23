@@ -29,10 +29,7 @@ internal readonly struct ScopeUnit
     public Document Document { get; }
     public TextSpan? Restriction { get; }
 
-    /// <summary>
-    /// Whether the scan should still drop this document if the tree says it is generated. Only the
-    /// wide scopes set it: a document the user pointed the caret at gets scanned whatever it is.
-    /// </summary>
+    /// <summary>Whether the scan should still drop this document if the tree says it is generated.</summary>
     public bool FilterGenerated { get; }
 }
 

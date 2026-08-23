@@ -35,9 +35,6 @@ public partial class QueryToolWindowControl : UserControl
         public override string ToString() => Display;
     }
 
-    // Comment, not code: block form can't sit alongside the expression form it's illustrating in one
-    // compiled body, and the expression form's own semicolon-free single line would otherwise be a
-    // dangling statement missing its terminator (CS1002).
     internal const string DefaultQueryBoxContent = """
         // n.IsKind(SyntaxKind.IfStatement) is the equivalent expression form; block form lets you
         // use statements or control flow constructs:
@@ -57,11 +54,7 @@ public partial class QueryToolWindowControl : UserControl
     private bool _initialized;
     private double _sidebarWidth = 220;
 
-    // Weak: a Solution roots its compilations, and pinning the snapshot a run used would keep the
-    // whole thing alive for as long as the results are on screen. If it is gone, spans are used
-    // as recorded, which is only wrong if the user edited since the run. Replace reuses this same
-    // snapshot and the same _hits: Generate Previews re-runs the shared Find query itself, it does
-    // not require a prior Search-tab run.
+    // Weak: a Solution roots its compilations, and the results can stay on screen for a while.
     private WeakReference<Solution> _ranAgainst;
 
     public QueryToolWindowControl()
@@ -148,9 +141,7 @@ public partial class QueryToolWindowControl : UserControl
         // instance can have entries in it before this instance ever runs anything itself.
         RefreshCachedPredicates();
 
-        // Nothing in the window is focusable-by-default in a useful place, so without this the
-        // first keystroke goes to whatever the shell last focused. Input priority: the host has to
-        // finish arranging before the view can take focus.
+        // Input priority: the host has to finish arranging before the view can take focus.
 #pragma warning disable VSTHRD001, VSTHRD110
         Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => _searchInput.FocusInput()));
 #pragma warning restore VSTHRD001, VSTHRD110
@@ -238,9 +229,6 @@ public partial class QueryToolWindowControl : UserControl
 
         if (CachedPredicates.SelectedItem is not CachedPredicateItem item) return;
 
-        // TargetCombo is populated in OnLoaded in TargetKind declaration order, so the index and
-        // the enum value coincide - no lookup needed. Scope is deliberately left as the user has
-        // it: it has nothing to do with which predicate is running.
         // Pretty, not Display: the latter is truncated for the list and would restore a fragment.
         TargetCombo.SelectedIndex = (int)item.Kind;
         _searchInput.Text = item.Pretty;
@@ -440,9 +428,7 @@ public partial class QueryToolWindowControl : UserControl
 
     private void OnSelectAllClick(object sender, RoutedEventArgs e)
     {
-        // Warned rows keep their box disabled and unchecked in the DataTemplate; setting Included
-        // from code here would silently override that and re-introduce the "checked, but Apply skips
-        // it anyway" case this is meant to prevent.
+        // Warned rows are skipped, or this would re-check a row Apply skips anyway.
         foreach (var item in _replacements)
         {
             if (item.Warning is null) item.Included = true;
@@ -454,11 +440,6 @@ public partial class QueryToolWindowControl : UserControl
         foreach (var item in _replacements) item.Included = false;
     }
 
-    /// <summary>
-    /// Re-runs the shared Find query and generates a replacement preview per hit in one action - a
-    /// user reaching for Replace should not first have to go run Search. Shares the Stop button and
-    /// cancellation with Run(), since this does everything Run() does plus the replacement step.
-    /// </summary>
     private void GeneratePreview()
     {
         ThreadHelper.ThrowIfNotOnUIThread();
@@ -651,8 +632,6 @@ public partial class QueryToolWindowControl : UserControl
 
     private async Task ApplySelectedCoreAsync(Solution ranAgainst, ReplacementItem[] items, GlobalUndoScope undoScope)
     {
-        // Stays on the UI thread throughout: TryApplyChanges touches live text buffers, and the
-        // span-remap/diff work ahead of it is cheap next to a Search scan.
         await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
         var workspace = _workspace;
@@ -666,9 +645,7 @@ public partial class QueryToolWindowControl : UserControl
 
         if (outcome.Applied > 0)
         {
-            // Every remaining span in _hits/_replacements is only as good as the snapshot it was
-            // resolved against, which the apply just moved past - clearing avoids showing results
-            // that would silently resolve to the wrong place if acted on again.
+            // Cleared: the apply moved past the snapshot these spans were resolved against.
             _replacements.Clear();
             _hits.Clear();
             ApplySelectedButton.IsEnabled = false;

@@ -81,9 +81,8 @@ internal static class PredicateTemplate
                 itw.Write(", SemanticModel model, Document doc)");
                 using (itw.Scope())
                 {
-                    // Write() before capturing the offset either way: IndentedTextWriter emits the
-                    // pending indent on the next write, so the offset would otherwise land on the
-                    // indent rather than on the user's first character.
+                    // Write() before capturing the offset: IndentedTextWriter emits the pending indent
+                    // on the next write, so the offset would otherwise land on the indent.
                     itw.Write(mode == PredicateMode.Body ? string.Empty : "return (object)(");
                     itw.Flush();
                     sw.Flush();
@@ -91,19 +90,10 @@ internal static class PredicateTemplate
 
                     if (mode == PredicateMode.Body)
                     {
-                        // Emitted verbatim: only the first line picks up the indent, which is
-                        // cosmetic, and keeping the rest byte-identical is what lets Describe map a
-                        // diagnostic back to the line and column the user actually typed. The user
-                        // writes their own "return ...;" statements against the declared object
-                        // return type - a bool, a SyntaxNode/SyntaxToken/IOperation matching the
-                        // Target (used as the hit's result), or null to skip.
                         itw.WriteLine(string.IsNullOrWhiteSpace(text) ? "return true;" : text);
                     }
                     else
                     {
-                        // Parenthesized cast: boxes a bare bool uniformly with a reference-typed
-                        // SyntaxNode/IOperation or the value-type SyntaxToken, whatever the
-                        // expression's static type turns out to be.
                         itw.WriteLine(string.IsNullOrWhiteSpace(text) ? "true" : text);
                         itw.WriteLine(");");
                     }

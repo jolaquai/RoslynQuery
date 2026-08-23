@@ -109,11 +109,6 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
             parent: parent, expandable: false)
         { IsMessage = true };
 
-    /// <summary>
-    /// The rows a refresh has to re-read: the shallowest fetchable, expanded, already-loaded row on
-    /// each path. Their children are replaced wholesale, so re-reading anything below one of them
-    /// would be work thrown away.
-    /// </summary>
     public static IEnumerable<ReferenceGraphNode> ShallowestExpanded(IEnumerable<ReferenceGraphNode> nodes)
     {
         foreach (var node in nodes)
@@ -128,10 +123,7 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
         }
     }
 
-    /// <summary>
-    /// Walks the parent chain, this node included: a node's own symbol turning up again below it is
-    /// exactly the self-recursion the graph has to stop at.
-    /// </summary>
+    /// <summary>Includes this node itself, since a direct self-reference is also recursion.</summary>
     public bool HasAncestor(SymbolIdentity identity)
     {
         if (identity.IsEmpty) return false;
@@ -142,12 +134,6 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
         return false;
     }
 
-    /// <summary>
-    /// Drops the seeded placeholder and takes the fetched rows in one shot. A row backed by more than
-    /// one occurrence gets a "Locations" branch in front of them, so a row reading "4 reads" can be
-    /// opened to reach all four rather than only the first. One occurrence needs no branch: the row
-    /// itself already navigates to it.
-    /// </summary>
     public void SetChildren(IEnumerable<ReferenceGraphNode> children)
     {
         Children.Clear();
@@ -170,12 +156,7 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
         return branch;
     }
 
-    /// <summary>
-    /// A root and its two branches. The root is deliberately not <see cref="IsExpandable"/>: its
-    /// children are these branches and nothing else. Marked expandable it looked to the refresh walk
-    /// like an ordinary fetchable row, and re-expanding it replaced both branches with a plain
-    /// incoming result - which is what changing the filter used to do to the whole tree.
-    /// </summary>
+    /// <summary>A root and its two branches; not <see cref="IsExpandable"/>, or the refresh walk would re-fetch it and overwrite both branches.</summary>
     public static ReferenceGraphNode CreateRoot(string displayText, string symbolName, SymbolIdentity identity, SymbolGlyph glyph)
     {
         var root = new ReferenceGraphNode(displayText, identity, glyph, ReferenceDirection.Incoming, expandable: false);

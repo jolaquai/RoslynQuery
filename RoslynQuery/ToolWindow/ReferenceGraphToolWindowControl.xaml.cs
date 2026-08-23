@@ -51,8 +51,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
     // populating it, and that must not count as the user changing anything.
     private bool _ready;
 
-    // Weak for the same reason QueryToolWindowControl's is: a Solution roots its compilations, and
-    // the tree can sit on screen for hours. If it is gone, spans are used as recorded.
+    // Weak: a Solution roots its compilations, and the tree can sit on screen for hours.
     private WeakReference<Solution> _ranAgainst;
 
     public ReferenceGraphToolWindowControl()
@@ -99,10 +98,6 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         _ready = true;
     }
 
-    /// <summary>
-    /// Puts a new root at the top of the list. Every invocation adds one rather than replacing what
-    /// is there, so the window keeps a history the Clear button empties.
-    /// </summary>
     internal void AddRoot(ISymbol symbol, Solution solution)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
@@ -145,12 +140,9 @@ public partial class ReferenceGraphToolWindowControl : UserControl
     }
 
     /// <summary>
-    /// Double-click navigates, and must not also open or close the row.
-    /// <c>TreeViewItem.OnMouseLeftButtonDown</c> is what toggles <c>IsExpanded</c>, and it only does so
-    /// when the event reaches it unhandled - so this hooks the tunnelling
-    /// <c>PreviewMouseLeftButtonDown</c> on the TreeView, which runs before any item sees anything.
-    /// Handling <c>MouseDoubleClick</c> was tried first and was too late in the chain.
-    /// The <c>IsExpanded</c> restore afterwards is a belt-and-braces no-op when that works.
+    /// Double-click navigates without toggling the row. Handling <c>MouseDoubleClick</c> was tried
+    /// first and was too late to stop <c>TreeViewItem.OnMouseLeftButtonDown</c>'s own toggle; this
+    /// hooks the tunnelling <c>PreviewMouseLeftButtonDown</c> instead, which runs first.
     /// </summary>
     private void OnTreePreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -180,10 +172,6 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         Navigate(node);
     }
 
-    /// <summary>
-    /// Enter navigates from the selected row, the same as double-clicking it. A row with nowhere to
-    /// go is left unhandled, so Enter keeps whatever the TreeView would otherwise do with it.
-    /// </summary>
     private void OnTreeKeyDown(object sender, KeyEventArgs e)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
@@ -354,11 +342,6 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         node.SetChildren(children);
     }
 
-    /// <summary>
-    /// The documents an incoming search may look at. Anchored on the symbol's own declaration rather
-    /// than on the caret, so expanding a row means the same thing however long the window has been open.
-    /// Null is the whole solution.
-    /// </summary>
     private static IImmutableSet<Document> DocumentsFor(ISymbol symbol, Solution solution, ScopeKind scope)
     {
         if (scope == ScopeKind.Solution) return null;
@@ -372,11 +355,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         return document.Project.Documents.ToImmutableHashSet();
     }
 
-    /// <summary>
-    /// One token source for the whole window, per the same idiom as <c>QueryToolWindowControl</c>.
-    /// Not disposed on replacement: expansions already holding the old token would see
-    /// <see cref="ObjectDisposedException"/> instead of a clean cancellation.
-    /// </summary>
+    /// <summary>Not disposed on replacement, or expansions already holding the old token would see <see cref="ObjectDisposedException"/> instead of a clean cancellation.</summary>
     private CancellationTokenSource SharedCancellation()
     {
         if (_cancellation is null || _cancellation.IsCancellationRequested)

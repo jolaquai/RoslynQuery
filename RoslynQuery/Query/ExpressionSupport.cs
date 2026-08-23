@@ -51,11 +51,7 @@ internal static class ExpressionSupport
         foreach (var assembly in roslyn)
             Add(assembly);
 
-        // Roslyn is compiled against netstandard2.0, so its public surface reaches System.Object and
-        // System.Enum through the facade: without it even `n.IsKind(SyntaxKind.X)` fails CS0012.
-        // Assembly.Load("netstandard") cannot get it, because .NET Framework never probes the GAC
-        // for a partial name. Roslyn's own reference list carries the full display names, which do
-        // bind, and it stays correct if Roslyn's facade set ever changes.
+        // Loaded by full display name, not Assembly.Load("netstandard") - .NET Framework won't GAC-probe a partial name, and without the facade even IsKind() fails CS0012.
         foreach (var name in roslyn.SelectMany(assembly => assembly.GetReferencedAssemblies()))
         {
             try
@@ -66,12 +62,7 @@ internal static class ExpressionSupport
         return builder.ToImmutable();
     }
 
-    /// <summary>
-    /// Re-lexes the expression and rejoins its tokens with the minimum whitespace that still
-    /// tokenizes the same way, dropping comments and all original trivia in the process. Two
-    /// expressions that differ only in formatting collapse to the same cache key instead of each
-    /// leaking their own compiled assembly. Falls back to the raw text if lexing itself throws.
-    /// </summary>
+    /// <summary>Cache-key normalization: formatting-only differences collapse to the same key instead of each leaking their own compiled assembly.</summary>
     public static string Normalize(string expression)
     {
         if (string.IsNullOrWhiteSpace(expression))
@@ -108,10 +99,7 @@ internal static class ExpressionSupport
         }
     }
 
-    // Conservative: a space is inserted whenever omitting it could re-tokenize the boundary into
-    // something else (identifier/keyword/number runs merging, or operator runs like "- -" -> "--",
-    // "= =" -> "==" merging). Never omits a space that safety requires; may keep one that isn't
-    // strictly necessary (e.g. around punctuation), which only costs a byte, never correctness.
+    // Conservative: only ever inserts a space where omitting it could re-tokenize the boundary (e.g. "- -" -> "--").
     private static bool NeedsSpaceBetween(string previous, string next)
     {
         var a = previous[previous.Length - 1];
@@ -123,20 +111,7 @@ internal static class ExpressionSupport
         return (IsIdentChar(a) && IsIdentChar(b)) || (IsOpChar(a) && IsOpChar(b));
     }
 
-    /// <summary>
-    /// Cache-key normalization for a full method body. Where <see cref="Normalize"/> drops a
-    /// separator whenever <see cref="NeedsSpaceBetween"/> judges the boundary safe, this always
-    /// emits exactly one separator between adjacent tokens. That is a weaker minification but a
-    /// stronger guarantee: adding whitespace between two tokens can never merge or split them, so
-    /// the result provably re-lexes to the input's token stream without relying on any adjacency
-    /// heuristic being correct for whatever a body happens to contain.
-    /// </summary>
-    /// <remarks>
-    /// Every gap collapses to a single space, line breaks included, so reformatting a body cannot
-    /// leak a second assembly: "var x = 1;\nreturn x;" and "var x = 1; return x;" are one entry.
-    /// Comments are dropped for the same reason. This is a cache key and nothing else - what gets
-    /// compiled is the text as typed, so diagnostics still point at the real line and column.
-    /// </remarks>
+    /// <summary>Cache-key normalization for a full method body; reformatting or a comment-only edit is one cache entry.</summary>
     public static string NormalizeBody(string body)
     {
         if (string.IsNullOrWhiteSpace(body))
@@ -172,13 +147,6 @@ internal static class ExpressionSupport
     }
 
     /// <summary>The text of the first real preprocessor directive in <paramref name="text"/>, or null if it has none.</summary>
-    /// <remarks>
-    /// Lexer-based rather than textual, because the answer decides whether input is rejected: a
-    /// "#if" inside a string literal is part of a token, and one inside a comment is comment
-    /// trivia. Neither is a directive and neither is reported here - only trivia the lexer itself
-    /// classified as a directive counts. The '#' pre-check keeps the ordinary case to one scan
-    /// with no lexing at all.
-    /// </remarks>
     public static string FindDirective(string text)
     {
         if (string.IsNullOrEmpty(text) || text.IndexOf('#') < 0)
@@ -218,15 +186,7 @@ internal static class ExpressionSupport
         return newline < 0 ? trimmed : trimmed.Substring(0, newline);
     }
 
-    /// <summary>
-    /// Whether <paramref name="text"/> is a single complete expression or a statement body.
-    /// </summary>
-    /// <remarks>
-    /// Asks the parser rather than scanning for a "return" token, which gets both directions wrong:
-    /// a lambda block body puts a return inside what is still one expression
-    /// ("xs.Any(c => { return c != null; })"), and a body that throws has no return at all. The
-    /// answer is unambiguous by construction, since expression is tested first.
-    /// </remarks>
+    /// <summary>Whether <paramref name="text"/> is a single complete expression or a statement body.</summary>
     public static PredicateMode DetectMode(string text)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -238,16 +198,7 @@ internal static class ExpressionSupport
         return complete ? PredicateMode.Expression : PredicateMode.Body;
     }
 
-    /// <summary>
-    /// The mode completions should be scaffolded in, for text that is still being typed.
-    /// </summary>
-    /// <remarks>
-    /// <see cref="DetectMode"/> is right for compiling finished text but wrong here: it answers
-    /// "not a complete expression" with Body, and text mid-token is never a complete expression, so
-    /// every keystroke of an expression predicate would scaffold as a statement body and complete
-    /// against the wrong context. Body is therefore only assumed when the text actually parses as
-    /// statements; anything still broken is treated as an expression in progress.
-    /// </remarks>
+    /// <summary>The mode completions should be scaffolded in, for text that is still being typed.</summary>
     public static PredicateMode CompletionMode(string text)
     {
         if (DetectMode(text) == PredicateMode.Expression)

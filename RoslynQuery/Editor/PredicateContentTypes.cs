@@ -20,11 +20,7 @@ internal static class PredicateContentTypes
 #pragma warning restore 649
 }
 
-/// <summary>
-/// The completion applicable-to span, in exactly one place. The source computes it when a session
-/// starts and the input has to keep it in sync for as long as that session lives; the two drifting
-/// apart is what made a commit eat the text in front of the word.
-/// </summary>
+/// <summary>The completion applicable-to span, in exactly one place - the source and input drifting out of sync here is what previously made a commit eat the text in front of the word.</summary>
 internal static class PredicateWord
 {
     public static bool IsIdentifierChar(char c) => char.IsLetterOrDigit(c) || c == '_';

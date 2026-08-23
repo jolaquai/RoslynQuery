@@ -29,16 +29,7 @@ internal sealed class CachedPredicateItem
     /// <summary>The cache key text exactly as <see cref="PredicateCompiler"/> stores it.</summary>
     public string Text { get; }
 
-    /// <summary>
-    /// <see cref="Text"/> re-formatted for human eyes, and what gets restored into the input box.
-    /// </summary>
-    /// <remarks>
-    /// The cache key is minified by a normalizer that emits a separator between every pair of
-    /// tokens, so a body reads "await Task . Yield ( ) ;". Round-tripping it through the parser
-    /// puts real C# formatting back. Safe to restore from, because re-normalizing this only differs
-    /// from the key by whitespace and so lands on the same entry. Lazy: the list is virtualized, so
-    /// only the rows actually realized pay for the parse.
-    /// </remarks>
+    /// <summary><see cref="Text"/> re-formatted for human eyes, and what gets restored into the input box.</summary>
     public string Pretty => _pretty ??= Format(Text, Mode);
 
     public string Display => Pretty.Length > MaxDisplayLength ? Pretty.Substring(0, MaxDisplayLength) + "..." : Pretty;
@@ -58,9 +49,6 @@ internal sealed class CachedPredicateItem
                 var block = SyntaxFactory.ParseStatement("{" + text + "}", options: PredicateTemplate.ParseOptions) as BlockSyntax;
                 if (block is null || block.ContainsDiagnostics) return text;
 
-                // Each statement is normalized as its own root rather than reading them back out of
-                // a normalized block, which would carry the block's one level of indentation onto
-                // every line after the braces are dropped.
                 return string.Join(
                     Environment.NewLine,
                     block.Statements.Select(statement => statement.NormalizeWhitespace().ToFullString().Trim()));

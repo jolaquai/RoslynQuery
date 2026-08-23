@@ -22,13 +22,10 @@ namespace RoslynQuery;
 [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
 [InstalledProductRegistration("#110", "#112", "0.3.0")]
 [ProvideMenuResource("Menus.ctmenu", 1)]
-// Docked with the Error List by default: the results grid wants the same horizontal space.
 [ProvideToolWindow(typeof(QueryToolWindow), Style = VsDockStyle.Tabbed, Window = "{D78612C7-9962-4B83-95D9-268046DAD23A}")]
 [ProvideToolWindow(typeof(ReferenceGraphToolWindow), Style = VsDockStyle.Tabbed, Window = "{D78612C7-9962-4B83-95D9-268046DAD23A}")]
-// "View Reference Graph" is a DefaultDisabled command, so it stays greyed out until this package is
-// loaded and its BeforeQueryStatus can run - and nothing else loads the package until one of its
-// windows is opened. An active C# editor is the narrowest trigger that covers every case where the
-// command is meant to be usable.
+// Without this, "View Reference Graph" stays greyed out until a window is opened by hand: nothing
+// else loads the package, so its BeforeQueryStatus never runs.
 [ProvideAutoLoad(CSharpEditorContextGuidString, PackageAutoLoadFlags.BackgroundLoad)]
 [ProvideUIContextRule(
     CSharpEditorContextGuidString,
@@ -73,10 +70,6 @@ public sealed class RoslynQueryPackage : AsyncPackage
         await ShowReferenceGraphWindowAsync();
     }).FileAndForget("vs/roslynquery/showreferencegraph");
 
-    /// <summary>
-    /// Cheap and synchronous on purpose: this runs every time the editor's context menu opens, so it
-    /// only asks whether there is an active C# view, never what the caret is actually sitting on.
-    /// </summary>
     private void OnViewReferenceGraphQueryStatus(object sender, EventArgs e)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
@@ -107,7 +100,6 @@ public sealed class RoslynQueryPackage : AsyncPackage
 
         var solution = workspace.CurrentSolution;
 
-        // Binding the caret's symbol is semantic work; it does not belong on the UI thread.
         await TaskScheduler.Default;
         var symbol = await SymbolResolver.ResolveAtCaretAsync(solution, active, DisposalToken).ConfigureAwait(false);
 

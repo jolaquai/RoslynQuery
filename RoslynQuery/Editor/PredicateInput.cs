@@ -47,14 +47,7 @@ internal static class PredicateInputFactory
     }
 }
 
-/// <summary>
-/// A real WPF editor view over a private content type. The view is not an IVsTextView, so VS's
-/// command routing never reaches it: <c>WpfTextView</c> is a bare <c>ContentControl</c> with no
-/// <c>OnKeyDown</c> and no <c>OnTextInput</c> of its own, because in a real editor every keystroke
-/// arrives as a command through the adapter's IOleCommandTarget. Both the keyboard map and the
-/// completion session therefore have to be driven by hand, against <see cref="IEditorOperations"/>;
-/// that is still far less machinery than hosting an HWND editor inside a tool window.
-/// </summary>
+/// <summary>A real WPF editor view over a private content type; not an IVsTextView, so keyboard input and completion are driven by hand via <see cref="IEditorOperations"/>.</summary>
 internal sealed class PredicateEditorInput : IPredicateInput
 {
     private readonly ITextBuffer _buffer;
@@ -82,10 +75,8 @@ internal sealed class PredicateEditorInput : IPredicateInput
         // Without a registered history the operations run untracked and Ctrl+Z has nothing to undo.
         _undo = undoRegistry?.RegisterHistory(_buffer);
 
-        // Zoomable is deliberately absent: it's what makes the host compose a zoom-control margin at
-        // all, and DefaultTextViewHostOptions.ZoomControlId/HorizontalScrollBarId being false is not
-        // enough on its own to keep that margin's row from rendering as an empty strip under a
-        // one-line input box.
+        // Zoomable deliberately absent: with it, the zoom-control margin renders as an empty strip
+        // under the box even with ZoomControlId/HorizontalScrollBarId set to false.
         var roles = editorFactory.CreateTextViewRoleSet(
             PredefinedTextViewRoles.Editable,
             PredefinedTextViewRoles.Interactive,
@@ -174,11 +165,8 @@ internal sealed class PredicateEditorInput : IPredicateInput
     {
         try
         {
-            // CompletionTrigger's snapshot parameter is documented as the snapshot BEFORE the edit for
-            // Insertion/Deletion/Backspace - passing the post-edit snapshot there (as this used to)
-            // left the broker unable to tell an edit happened at all, which is what let some other
-            // source's word-span guess for the just-typed character win the union and get committed
-            // instead of ours.
+            // Must be the pre-edit snapshot, or the broker can't tell an edit happened - was observed
+            // letting another source's word-span guess win and get committed instead of ours.
             var trigger = new VsData.CompletionTrigger(reason, beforeSnapshot ?? point.Snapshot, typed);
             var session = _broker.GetSession(_view);
 
@@ -193,9 +181,8 @@ internal sealed class PredicateEditorInput : IPredicateInput
             if (session != null && !session.IsDismissed &&
                 !PredicateWord.At(point.Snapshot, point.Position).Equals(session.ApplicableToSpan.GetSpan(point.Snapshot).Span))
             {
-                // ApplicableToSpan is fixed for the life of a session - IAsyncCompletionSessionOperations
-                // exposes a setter, but VS throws NotSupportedException on the second assignment. A
-                // session opened on `n` that must now cover `n.` has to be re-opened, not re-pointed.
+                // ApplicableToSpan can't be re-pointed after the session opens - VS throws
+                // NotSupportedException on a second assignment - so it's re-opened instead.
                 session.Dismiss();
                 session = null;
             }
@@ -223,10 +210,7 @@ internal sealed class PredicateEditorInput : IPredicateInput
         return behavior;
     }
 
-    /// <summary>
-    /// Commits the selected item when the typed character ends it, the way the editor's own command
-    /// handler would. Returns true when the commit also consumed the character.
-    /// </summary>
+    /// <summary>Returns true when the commit also consumed the character.</summary>
     private bool TryCommitOnTypedChar(char typed)
     {
         try
@@ -290,16 +274,14 @@ internal sealed class PredicateEditorInput : IPredicateInput
 
         switch (e.Key)
         {
-            // Always handled. Left alone, Esc is the shell's "give focus back to the document"
-            // gesture, so dismissing a completion list threw the user out of the tool window.
+            // Always handled: unhandled Esc is the shell's "give focus back to the document" gesture.
             case Key.Escape:
                 if (active) session.Dismiss();
                 e.Handled = true;
                 break;
 
-            // Every caret key must be marked handled even when it does nothing useful: an
-            // unhandled arrow falls through to WPF directional navigation, which is what threw
-            // focus back onto the last combo box.
+            // Every caret key must be marked handled, or an unhandled arrow falls through to WPF
+            // directional navigation and throws focus onto the last combo box.
             case Key.Down:
                 if (active && operations != null) operations.SelectDown();
                 else _operations.MoveLineDown(extend);

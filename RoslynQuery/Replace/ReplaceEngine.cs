@@ -12,12 +12,7 @@ using RoslynQuery.Query;
 
 namespace RoslynQuery.Replace;
 
-/// <summary>
-/// Turns a set of <see cref="QueryHit"/>s from a completed Search run into previewed
-/// <see cref="ReplacementItem"/>s, by re-resolving each hit to a live node/token against the same
-/// solution snapshot the search ran on (<c>QueryHit</c> deliberately holds no live reference of its
-/// own - see its own remarks) and invoking the compiled transform.
-/// </summary>
+/// <summary>Turns a set of <see cref="QueryHit"/>s from a completed Search run into previewed <see cref="ReplacementItem"/>s.</summary>
 internal static class ReplaceEngine
 {
     public static async Task<IReadOnlyList<ReplacementItem>> GenerateAsync(
@@ -49,9 +44,8 @@ internal static class ReplaceEngine
                 ? await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false)
                 : null;
 
-            // Same-span wrapper nesting (an ExpressionStatement around its one expression, say) means
-            // span alone cannot tell two nodes apart; Kind resolves the tie the same way QueryHit
-            // recorded it in the first place (QueryEngine.ScanNodesAsync stamps node.Kind() at the hit).
+            // Span alone can't tell same-span wrapper nesting apart (an ExpressionStatement around its
+            // one expression, say), so Kind resolves the tie.
             var nodeIndex = target == TargetKind.SyntaxNode ? BuildNodeIndex(root) : null;
 
             using (var gate = new SemaphoreSlim(Environment.ProcessorCount))

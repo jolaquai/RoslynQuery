@@ -14,22 +14,13 @@ using RoslynQuery.Query;
 
 namespace RoslynQuery.Replace;
 
-// Same ValueTask rationale as NodeMatch/TokenMatch in PredicateCompiler.cs: previews are generated
-// for every hit in a run, and a Task allocation per hit is not free.
 internal delegate ValueTask<object> NodeReplace(SyntaxNode n, SemanticModel model, Document doc);
 internal delegate ValueTask<object> TokenReplace(SyntaxToken t, SemanticModel model, Document doc);
 
-/// <summary>
-/// Compiles a user's replacement transform the same way <see cref="PredicateCompiler"/> compiles a
-/// predicate - emitted as a static method, delegate bound by reflection, cached by normalized text.
-/// A separate cache from the predicate one: identical text means different things as a bool-typed
-/// match and an object-typed replacement, and the delegate types don't match either.
-/// </summary>
+/// <summary>Compiles a user's replacement transform, cached separately from <see cref="PredicateCompiler"/>'s cache since identical text compiles to a different delegate type here.</summary>
 internal static class ReplaceCompiler
 {
-    // Same net472 caveat as PredicateCompiler: no collectible load context, so every unique
-    // transform leaks its emitted assembly for the process lifetime. This cap only bounds the
-    // dictionary, not the underlying leak.
+    // net472 has no collectible load context: this cap only bounds the dictionary, not the underlying leak.
     private const int MaxCachedExpressions = 512;
     private static readonly ConcurrentDictionary<(TargetKind, PredicateMode, string), Delegate> Cache = new ConcurrentDictionary<(TargetKind, PredicateMode, string), Delegate>();
     private static readonly ConcurrentQueue<(TargetKind, PredicateMode, string)> CacheOrder = new ConcurrentQueue<(TargetKind, PredicateMode, string)>();

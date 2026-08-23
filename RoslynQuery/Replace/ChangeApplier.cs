@@ -18,12 +18,7 @@ internal sealed class ApplyOutcome
     public IReadOnlyList<string> Warnings { get; set; } = System.Array.Empty<string>();
 }
 
-/// <summary>
-/// Writes accepted <see cref="ReplacementItem"/>s back to the workspace. Takes the base
-/// <see cref="Workspace"/> type (not <c>VisualStudioWorkspace</c>) so it can be exercised against an
-/// <see cref="AdhocWorkspace"/> in tests; the tool window passes its real
-/// <c>VisualStudioWorkspace</c>, which is one.
-/// </summary>
+/// <summary>Writes accepted <see cref="ReplacementItem"/>s back to the workspace.</summary>
 internal static class ChangeApplier
 {
     public static Task<ApplyOutcome> ApplyAsync(
@@ -89,14 +84,10 @@ internal static class ChangeApplier
                 remapped.Add((item, span));
             }
 
-            // Overlaps can appear post-remap even when ReplaceEngine.MarkConflicts found none in the
-            // search snapshot: an earlier edit can widen one span into a later one's territory. This
-            // re-checks against the live spans rather than trusting that earlier verdict.
+            // Re-checked against live spans: an earlier edit can widen a span into a later one's
+            // territory post-remap even when ReplaceEngine.MarkConflicts found no conflict earlier.
             remapped.Sort((a, b) => a.Span.Start.CompareTo(b.Span.Start));
 
-            // Tracks where each accepted change lands in the merged text: changes earlier in the sort
-            // shift every span after them by their own length delta, and Formatter needs those final
-            // positions, not the pre-splice ones the spans were recorded at.
             var changes = new List<TextChange>(remapped.Count);
             var newSpans = new List<TextSpan>(remapped.Count);
             var delta = 0;
@@ -112,13 +103,7 @@ internal static class ChangeApplier
 
                 changes.Add(new TextChange(span, item.After));
 
-                // Widened past the replacement's own bounds to swallow the whitespace-only trivia
-                // sitting just outside it: Formatter only reindents trivia whose span falls inside
-                // what it's given, and that trivia - e.g. the newline+indent that used to precede a
-                // now-unwrapped single-statement block's "{" - is pre-existing text the splice left
-                // untouched, not part of item.After. Without this, an embedded statement swapped in
-                // by a replacement never gets reindented relative to the "if"/"while"/etc. it now
-                // hangs off of.
+                // Widened to include leading whitespace so Formatter reindents it too.
                 var leadingWhitespaceStart = span.Start;
                 while (leadingWhitespaceStart > 0 && char.IsWhiteSpace(currentText[leadingWhitespaceStart - 1]))
                     leadingWhitespaceStart--;
@@ -141,10 +126,7 @@ internal static class ChangeApplier
             var newText = currentText.WithChanges(changes);
             var newSolution = solution.WithDocumentText(group.Key, newText);
 
-            // Best-effort: raw text splicing (especially a SyntaxNode/SyntaxToken result's own
-            // formatting) can leave indentation wrong relative to its new surroundings. A formatting
-            // failure must never turn an otherwise-correct apply into a failed one, so fall back to
-            // the unformatted (but still correct) text rather than letting this throw.
+            // A formatting failure must never turn an otherwise-correct apply into a failed one.
             try
             {
                 var formatted = await Formatter.FormatAsync(newSolution.GetDocument(group.Key), newSpans, cancellationToken: cancellationToken)
@@ -170,10 +152,8 @@ internal static class ChangeApplier
                 enrollDocument(id);
         }
 
-        // Rebase onto the freshest CurrentSolution rather than the snapshot captured at the top:
-        // background work (IntelliSense, other edits, project reloads) can advance CurrentSolution
-        // during the awaits above, and TryApplyChanges silently rejects a solution diffed against a
-        // stale baseline instead of throwing.
+        // Rebased onto the freshest CurrentSolution: background work can advance it during the awaits
+        // above, and TryApplyChanges silently rejects a solution diffed against a stale baseline.
         var latest = workspace.CurrentSolution;
         foreach (var id in changedDocuments)
         {

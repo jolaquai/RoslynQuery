@@ -61,8 +61,6 @@ internal static class SpanMapper
         var start = span.Start;
         var end = span.End;
 
-        // Change spans are in the original document's coordinates, so applying them in order and
-        // accumulating the delta is enough; no tracking spans and no open buffer required.
         foreach (var change in (await current.GetTextChangesAsync(original, cancellationToken).ConfigureAwait(false)).OrderBy(c => c.Span.Start))
         {
             if (change.Span.Start > end) break;

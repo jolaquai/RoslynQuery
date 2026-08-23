@@ -14,8 +14,6 @@ namespace RoslynQuery.ReferenceGraph;
 /// <summary>Turns a caret position into the symbol a reference graph can be rooted at.</summary>
 internal static class SymbolResolver
 {
-    // Enough to get from a brace or an operator out to its declaration, not enough to drift from an
-    // argument up into the enclosing call.
     private const int MaxAncestorProbes = 4;
 
     public static async Task<ISymbol> ResolveAtCaretAsync(Solution solution, ActiveContext active, CancellationToken cancellationToken)
@@ -83,8 +81,6 @@ internal static class SymbolResolver
         return previous.IsKind(SyntaxKind.IdentifierToken) && previous.Span.End == position ? previous : token;
     }
 
-    // Duplicated from ScopeResolver rather than widening its private helpers: two lines each, and
-    // this path deliberately rejects non-C# documents differently.
     private static Document FindDocument(Solution solution, string filePath)
     {
         if (string.IsNullOrEmpty(filePath)) return null;

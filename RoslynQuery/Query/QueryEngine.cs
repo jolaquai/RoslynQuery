@@ -45,10 +45,7 @@ internal static class QueryEngine
         var needsModel = target == TargetKind.Operation || MentionsModel.IsMatch(expression ?? string.Empty);
 
         var pending = new List<QueryHit>(BatchSize);
-        // A predicate may report a different node/token/operation than the one it matched on (see
-        // TryClassifyResult) - several distinct matches can then legitimately point at the same
-        // result location (e.g. "every await in this method" all reporting the containing method),
-        // and without this they would show up as that many duplicate rows for one location.
+        // Dedupes matches that report the same result location (see TryClassifyResult).
         var seen = new HashSet<(DocumentId DocumentId, TextSpan Span, string Kind)>();
         var sync = new object();
         var examined = 0;
@@ -278,20 +275,10 @@ internal static class QueryEngine
     }
 
     /// <summary>
-    /// Interprets a predicate's <c>object</c> return: <see langword="null"/> acts as
-    /// <see langword="false"/>; a <see langword="bool"/> is the match as before; a
-    /// SyntaxNode/SyntaxToken/IOperation matching <paramref name="target"/> lets the predicate pick
-    /// a different result location than the parameter it was handed - a Where+Select in one.
+    /// Interprets a predicate's <c>object</c> return (null/bool as a match, or a node/token/operation
+    /// to report a different hit location). A returned value must belong to <paramref name="tree"/>
+    /// or this throws, rather than risk a bogus span that later mismatches during Replace.
     /// </summary>
-    /// <remarks>
-    /// A returned SyntaxNode/SyntaxToken/IOperation must belong to <paramref name="tree"/> - the
-    /// tree actually being searched - or this throws instead of emitting a hit. Without that check a
-    /// predicate could hand back a node built with SyntaxFactory (or lifted from an unrelated
-    /// document), and QueryHit would record a bogus span/kind: navigation would jump nowhere
-    /// meaningful, and if the hit later reached Replace, ReplaceEngine's node/token re-resolution
-    /// (span+kind lookup against the live tree) would silently misfire or "helpfully" match some
-    /// unrelated node that happens to share that span and kind.
-    /// </remarks>
     private static bool TryClassifyResult(TargetKind target, object result, SyntaxTree tree, TextSpan defaultSpan, string defaultKind, out TextSpan span, out string kind)
     {
         switch (result)

@@ -2,10 +2,7 @@ using Microsoft.CodeAnalysis;
 
 namespace RoslynQuery.ReferenceGraph;
 
-/// <summary>
-/// The icon a node shows. Computed once when the node is built so the WPF converter stays a pure
-/// function over an enum and the node never has to hold the symbol it came from.
-/// </summary>
+/// <summary>The icon a node shows.</summary>
 internal enum SymbolGlyph
 {
     Unknown,

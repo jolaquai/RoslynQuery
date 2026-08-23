@@ -25,11 +25,7 @@ internal readonly struct ReferenceLocationInfo
 
     public DocumentId DocumentId { get; }
 
-    /// <summary>
-    /// The physical file, which is what identifies an occurrence. A file compiled into several
-    /// projects - a linked file, or any multi-targeted project - has one
-    /// <see cref="DocumentId"/> per project but is still the one place in the source.
-    /// </summary>
+    /// <summary>The physical file, which is what identifies an occurrence - a multi-targeted project has one <see cref="DocumentId"/> per project for the same file.</summary>
     public string FilePath { get; }
 
     public TextSpan Span { get; }

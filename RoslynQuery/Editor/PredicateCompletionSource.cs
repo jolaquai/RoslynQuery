@@ -52,12 +52,8 @@ internal sealed class PredicateCompletionSource : IAsyncCompletionSource
     {
         var snapshot = triggerLocation.Snapshot;
 
-        // Exclusive, not just Providing: our content type's base definition is "code", which also
-        // pulls in whatever generic-code sources the real C# editor exports for that base. Their
-        // ApplicableToSpan gets unioned into the session's alongside ours - one of them apparently
-        // treats a bare "." as its own one-character word - and the union silently widened the
-        // commit span to eat the dot. Exclusive keeps the session down to sources that opt in the
-        // same way, so nothing else can contribute a span.
+        // Exclusive, not just Providing: another generic-code source pulled in via our "code" base
+        // content type was observed unioning in a wider ApplicableToSpan that ate a typed '.'.
         return new VsData.CompletionStartData(
             VsData.CompletionParticipation.ExclusivelyProvidesItems,
             new SnapshotSpan(snapshot, PredicateWord.At(snapshot, triggerLocation.Position)));
