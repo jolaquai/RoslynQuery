@@ -173,10 +173,9 @@ toggle every checkbox that isn't disabled.
 **Apply Selected** writes the checked replacements back to the workspace in one pass. Spans are
 re-resolved against the live solution at apply time, so an edit made between preview and apply
 doesn't silently land in the wrong place; anything that no longer resolves is skipped and reported
-rather than applied somewhere wrong. The apply is wrapped in VS's linked undo transaction API, which
-is meant to make a multi-file change one Ctrl+Z; in practice this currently only reliably batches
-edits within a single file, so a change spanning several files still needs one Ctrl+Z per file. This
-is a known gap, not intended behavior.
+rather than applied somewhere wrong. The apply is wrapped in VS's linked undo transaction API, and
+every changed document is explicitly enrolled in it before the edit lands, so a change spanning
+several files is one Ctrl+Z.
 
 Structural (`SyntaxNode` / `SyntaxToken`) replacements are reformatted against their surroundings at
 apply time, so indentation comes out matching the rest of the file even when the replacement text
