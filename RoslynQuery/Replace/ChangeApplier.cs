@@ -111,8 +111,26 @@ internal static class ChangeApplier
                 }
 
                 changes.Add(new TextChange(span, item.After));
-                newSpans.Add(new TextSpan(span.Start + delta, item.After.Length));
-                delta += item.After.Length - span.Length;
+
+                // Widened past the replacement's own bounds to swallow the whitespace-only trivia
+                // sitting just outside it: Formatter only reindents trivia whose span falls inside
+                // what it's given, and that trivia - e.g. the newline+indent that used to precede a
+                // now-unwrapped single-statement block's "{" - is pre-existing text the splice left
+                // untouched, not part of item.After. Without this, an embedded statement swapped in
+                // by a replacement never gets reindented relative to the "if"/"while"/etc. it now
+                // hangs off of.
+                var leadingWhitespaceStart = span.Start;
+                while (leadingWhitespaceStart > 0 && char.IsWhiteSpace(currentText[leadingWhitespaceStart - 1]))
+                    leadingWhitespaceStart--;
+
+                var trailingWhitespaceEnd = span.End;
+                while (trailingWhitespaceEnd < currentText.Length && char.IsWhiteSpace(currentText[trailingWhitespaceEnd]))
+                    trailingWhitespaceEnd++;
+
+                var afterDelta = delta + (item.After.Length - span.Length);
+                newSpans.Add(TextSpan.FromBounds(leadingWhitespaceStart + delta, trailingWhitespaceEnd + afterDelta));
+
+                delta = afterDelta;
                 previous = span;
                 outcome.Applied++;
             }

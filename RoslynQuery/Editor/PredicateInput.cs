@@ -162,19 +162,24 @@ internal sealed class PredicateEditorInput : IPredicateInput
         {
             var typed = e.After[change.NewEnd - 1];
             var relevant = char.IsLetterOrDigit(typed) || typed == '_' || typed == '.';
-            Trigger(point, typed, relevant ? VsData.CompletionTriggerReason.Insertion : VsData.CompletionTriggerReason.Deletion);
+            Trigger(point, typed, relevant ? VsData.CompletionTriggerReason.Insertion : VsData.CompletionTriggerReason.Deletion, e.Before);
         }
         else if (change.OldLength > 0 && change.NewLength == 0)
         {
-            Trigger(point, '\0', VsData.CompletionTriggerReason.Backspace);
+            Trigger(point, '\0', VsData.CompletionTriggerReason.Backspace, e.Before);
         }
     }
 
-    private void Trigger(SnapshotPoint point, char typed, VsData.CompletionTriggerReason reason)
+    private void Trigger(SnapshotPoint point, char typed, VsData.CompletionTriggerReason reason, ITextSnapshot beforeSnapshot = null)
     {
         try
         {
-            var trigger = new VsData.CompletionTrigger(reason, point.Snapshot, typed);
+            // CompletionTrigger's snapshot parameter is documented as the snapshot BEFORE the edit for
+            // Insertion/Deletion/Backspace - passing the post-edit snapshot there (as this used to)
+            // left the broker unable to tell an edit happened at all, which is what let some other
+            // source's word-span guess for the just-typed character win the union and get committed
+            // instead of ours.
+            var trigger = new VsData.CompletionTrigger(reason, beforeSnapshot ?? point.Snapshot, typed);
             var session = _broker.GetSession(_view);
 
             // Anything that is not another identifier character ends the word the session was

@@ -225,6 +225,35 @@ public class ChangeApplierTests
     }
 
     [Fact]
+    public async Task ApplyAsync_ReplacementUnwrapsASingleStatementBlock_EmbeddedStatementIsIndented()
+    {
+        // Reproduces unwrapping a single-statement block into a braceless embedded statement, e.g.
+        // "if (cond) { Foo(); }" -> "if (cond) Foo();" - the replaced span is the *block*, so none of
+        // the "if" itself is part of the new text, and the pre-existing whitespace between the if's
+        // condition and the block sits just outside the replacement's own span.
+        var (workspace, docId) = NewDocument(
+            "class C\r\n{\r\n    void M()\r\n    {\r\n        if (Ready())\r\n        {\r\n            DoWork();\r\n        }\r\n    }\r\n}");
+        var document = workspace.CurrentSolution.GetDocument(docId);
+        var root = await document.GetSyntaxRootAsync(TestContext.Current.CancellationToken);
+        var block = root.DescendantNodes().OfType<BlockSyntax>().First(b => b.Parent is IfStatementSyntax);
+        var hit = await HitAtAsync(document, block.Span, block.Kind().ToString());
+
+        var item = new ReplacementItem { Hit = hit, Before = "{ DoWork(); }", After = "DoWork();" };
+        var outcome = await ChangeApplier.ApplyAsync(workspace, workspace.CurrentSolution, [item], TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, outcome.Applied);
+        var lines = (await workspace.CurrentSolution.GetDocument(docId).GetTextAsync(TestContext.Current.CancellationToken))
+            .Lines.Select(l => l.ToString()).ToArray();
+
+        var ifLine = Assert.Single(lines, l => l.TrimStart().StartsWith("if (Ready())"));
+        var doWorkLine = Assert.Single(lines, l => l.TrimStart().StartsWith("DoWork();"));
+
+        var leadingWhitespace = (string line) => line.Substring(0, line.Length - line.TrimStart().Length);
+        Assert.Equal("        ", leadingWhitespace(ifLine));
+        Assert.Equal("            ", leadingWhitespace(doWorkLine));
+    }
+
+    [Fact]
     public async Task ApplyAsync_MultipleDocuments_EnrolsEveryChangedDocumentBeforeApplying()
     {
         var (workspace, aId, bId) = NewTwoDocuments("class A { void M() { int x = 1; } }", "class B { void M() { int y = 2; } }");

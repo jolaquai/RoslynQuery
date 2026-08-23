@@ -22,10 +22,13 @@ internal sealed class PredicateCommitManagerProvider : IAsyncCompletionCommitMan
 }
 
 /// <summary>
-/// Exists to declare the commit characters and nothing else. <c>IAsyncCompletionSession.ShouldCommit</c>
+/// Declares the commit characters and performs the commit itself. <c>IAsyncCompletionSession.ShouldCommit</c>
 /// answers from the union over the registered managers, so with none of them present no typed
-/// character can ever commit an item. <see cref="TryCommit"/> declines on purpose: the session's own
-/// commit replaces the applicable span, which is right now that the span is kept in sync.
+/// character can ever commit an item. <see cref="TryCommit"/> does the edit by hand - our content
+/// type's base definition is "code", which also pulls in whatever generic-code commit managers the
+/// real C# editor exports, and leaving the commit to "the" default let one of those grab it and
+/// replace the wrong span, dropping the typed character (a '.' committing to "SyntaxFactoryAccessorList"
+/// instead of "SyntaxFactory.AccessorList"). Owning the edit outright removes that ambiguity.
 /// </summary>
 internal sealed class PredicateCommitManager : IAsyncCompletionCommitManager
 {
@@ -39,6 +42,24 @@ internal sealed class PredicateCommitManager : IAsyncCompletionCommitManager
 
     public bool ShouldCommitCompletion(IAsyncCompletionSession session, SnapshotPoint location, char typedChar, CancellationToken token) => true;
 
-    public VsData.CommitResult TryCommit(IAsyncCompletionSession session, ITextBuffer buffer, VsData.CompletionItem item, char typedChar, CancellationToken token) =>
-        VsData.CommitResult.Unhandled;
+    public VsData.CommitResult TryCommit(IAsyncCompletionSession session, ITextBuffer buffer, VsData.CompletionItem item, char typedChar, CancellationToken token)
+    {
+        // session.ApplicableToSpan is not trustworthy here - something (likely another source pulled
+        // in via our content type's "code" base) has been observed widening it to swallow the
+        // character that triggered the session, e.g. eating the '.' in "SyntaxFactory.AccessorList".
+        // PredicateWord.At against the live caret is the same computation the source used to open the
+        // session in the first place, so recomputing it here is self-consistent regardless of what the
+        // platform did to the tracked span in between.
+        var snapshot = buffer.CurrentSnapshot;
+        var span = PredicateWord.At(snapshot, session.TextView.Caret.Position.BufferPosition.Position);
+        var text = typedChar is '\0' or '\t' or '\n' ? item.InsertText : item.InsertText + typedChar;
+
+        using (var edit = buffer.CreateEdit())
+        {
+            edit.Replace(span, text);
+            edit.Apply();
+        }
+
+        return new VsData.CommitResult(true, VsData.CommitBehavior.SuppressFurtherTypeCharCommandHandlers);
+    }
 }
