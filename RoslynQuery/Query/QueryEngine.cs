@@ -68,7 +68,7 @@ internal static class QueryEngine
                 {
                     if (pending.Count >= BatchSize || (force && pending.Count > 0))
                     {
-                        batch = new List<QueryHit>(pending);
+                        batch = [.. pending];
                         pending.Clear();
                     }
                 }
