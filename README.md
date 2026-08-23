@@ -3,7 +3,7 @@
 Two Visual Studio tool windows over Roslyn.
 
 **Roslyn Query** runs a C# predicate you write over every `SyntaxNode`, `SyntaxToken` or
-`IOperation` in a scope you pick, and jumps to a double-clicked match.
+`IOperation` in a scope you pick, jumps to a double-clicked match, and can replace what it finds.
 `View > Other Windows > Roslyn Query`.
 
 **Reference Graph** roots a lazily-expandable tree on the member or type at the caret, showing what
@@ -11,6 +11,10 @@ references it and what it references, recursively.
 `View > Other Windows > Reference Graph`, or right-click in the editor.
 
 ## Using it
+
+The window has two tabs, **Search** and **Replace**, sharing one Find box and one set of
+Target/Scope/Cap/Generated settings between them. Search browses and navigates; Replace, described
+below, additionally writes matches back.
 
 Pick a **Target**, pick a **Scope**, type a predicate, press Enter (or Run).
 
@@ -132,6 +136,45 @@ That cache is also the leak referred to above. Every distinct predicate emits an
 .NET Framework has no way to unload one, so it stays for the life of the VS process; the status line
 reports the running count and total size. The cache is capped at 512 entries, which bounds the list,
 not the underlying leak.
+
+## Replace
+
+The **Replace** tab sits next to Search and shares its Find box, Target, Scope and Cap - there is
+one query, and Replace runs it itself rather than requiring a prior Search run.
+
+Type a **replacement** below the Find box and press **Generate Previews** (or Enter in the
+replacement box, the same way Enter in the Find box runs Search). It returns one of:
+
+| Return                     | Effect                                             |
+| --------------------------- | --------------------------------------------------- |
+| `string`                    | Replaces the match's text verbatim.                  |
+| `SyntaxNode` / `SyntaxToken` | Replaces structurally; normalized and re-printed as text. |
+| `null`                      | Skips the match.                                     |
+
+The replacement signature mirrors the predicate's, with an `object` return in place of `bool`:
+
+| Target      | Replacement signature                                                         |
+| ----------- | ------------------------------------------------------------------------------ |
+| SyntaxNode  | `async ValueTask<object> (SyntaxNode n, SemanticModel model, Document doc)`  |
+| SyntaxToken | `async ValueTask<object> (SyntaxToken t, SemanticModel model, Document doc)` |
+
+Replace has no `IOperation` target: an operation is not part of the syntax tree, so there is nothing
+to structurally replace it with. The tab disables itself with an explanation when Target is set to
+IOperation.
+
+Each previewed match gets a checkbox, checked by default. Two matches whose spans overlap can't both
+apply; the later one is unchecked automatically with a warning explaining why. **All** / **None**
+toggle every checkbox at once.
+
+**Apply Selected** writes the checked replacements back to the workspace in one pass, wrapped in a
+single linked undo transaction - even a change that touches several files is one Ctrl+Z. Spans are
+re-resolved against the live solution at apply time, so an edit made between preview and apply
+doesn't silently land in the wrong place; anything that no longer resolves is skipped and reported
+rather than applied somewhere wrong.
+
+A `SyntaxNode` / `SyntaxToken` replacement is normalized but not reformatted against its
+surroundings, so indentation can need a manual cleanup pass after a structural replace. A `string`
+replacement has no such issue, since it is spliced in exactly as written.
 
 ## Reference Graph
 
