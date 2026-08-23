@@ -508,7 +508,7 @@ public partial class QueryToolWindowControl : UserControl
                     return;
                 }
 
-                await GeneratePreviewCoreAsync(ranAgainst, [.. _hits], target, replacementExpression);
+                await GeneratePreviewCoreAsync(ranAgainst, [.. _hits], target, replacementExpression, cancellation.Token);
             }
             catch (OperationCanceledException)
             {
@@ -536,7 +536,7 @@ public partial class QueryToolWindowControl : UserControl
 #pragma warning restore VSSDK007
     }
 
-    private async Task GeneratePreviewCoreAsync(Solution ranAgainst, QueryHit[] hits, TargetKind target, string replacementExpression)
+    private async Task GeneratePreviewCoreAsync(Solution ranAgainst, QueryHit[] hits, TargetKind target, string replacementExpression, CancellationToken cancellationToken)
     {
         await TaskScheduler.Default;
 
@@ -553,7 +553,7 @@ public partial class QueryToolWindowControl : UserControl
             return;
         }
 
-        var items = await ReplaceEngine.GenerateAsync(ranAgainst, hits, target, replace, CancellationToken.None).ConfigureAwait(false);
+        var items = await ReplaceEngine.GenerateAsync(ranAgainst, hits, target, replace, cancellationToken).ConfigureAwait(false);
         ReplaceEngine.MarkConflicts(items);
 
         await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
