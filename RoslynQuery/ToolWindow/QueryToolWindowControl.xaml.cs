@@ -583,15 +583,18 @@ public partial class QueryToolWindowControl : UserControl
 
         // Multiple files can change in one Apply; a linked undo transaction makes that one Ctrl+Z
         // instead of one per file. Best-effort: an unavailable service just means per-file undo.
-        var linkedUndo = Package.GetGlobalService(typeof(SVsLinkedUndoTransactionManager)) as IVsLinkedUndoTransactionManager;
-        var linkedUndoOpen = linkedUndo != null && ErrorHandler.Succeeded(linkedUndo.OpenLinkedUndo((uint)LinkedTransactionFlags2.mdtGlobal, "Replace"));
+        var undoScope = GlobalUndoScope.Open(ServiceProvider.GlobalProvider, _componentModel, "Replace");
 
 #pragma warning disable VSSDK007
         ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
         {
+            var committed = false;
             try
             {
-                await ApplySelectedCoreAsync(ranAgainst, items);
+                await ApplySelectedCoreAsync(ranAgainst, items, undoScope);
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                undoScope?.Commit();
+                committed = true;
             }
             catch (Exception ex)
             {
@@ -602,20 +605,25 @@ public partial class QueryToolWindowControl : UserControl
             finally
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                if (linkedUndoOpen) linkedUndo.CloseLinkedUndo();
+                // Only reached uncommitted when Apply threw, where Dispose aborts the transaction
+                // and rolls the partially applied files back together.
+                if (!committed) undoScope?.Dispose();
                 GeneratePreviewButton.IsEnabled = true;
             }
         }).FileAndForget("vs/roslynquery/replaceapply");
 #pragma warning restore VSSDK007
     }
 
-    private async Task ApplySelectedCoreAsync(Solution ranAgainst, ReplacementItem[] items)
+    private async Task ApplySelectedCoreAsync(Solution ranAgainst, ReplacementItem[] items, GlobalUndoScope undoScope)
     {
         // Stays on the UI thread throughout: TryApplyChanges touches live text buffers, and the
         // span-remap/diff work ahead of it is cheap next to a Search scan.
         await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-        var outcome = await ChangeApplier.ApplyAsync(_workspace, ranAgainst, items, CancellationToken.None).ConfigureAwait(true);
+        var workspace = _workspace;
+        System.Action<DocumentId> enroll = undoScope is null ? null : id => undoScope.AddDocument(workspace, id);
+
+        var outcome = await ChangeApplier.ApplyAsync(workspace, ranAgainst, items, enroll, CancellationToken.None).ConfigureAwait(true);
 
         ReplaceStatusText.Text = string.Format("{0:N0} applied, {1:N0} skipped.", outcome.Applied, outcome.Skipped);
         if (outcome.Warnings.Count > 0)

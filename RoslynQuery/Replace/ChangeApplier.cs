@@ -4,7 +4,6 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.Formatting;
 using Microsoft.CodeAnalysis.Text;
 
 using RoslynQuery.Navigation;
@@ -26,8 +25,18 @@ internal sealed class ApplyOutcome
 /// </summary>
 internal static class ChangeApplier
 {
-    public static async Task<ApplyOutcome> ApplyAsync(
+    public static Task<ApplyOutcome> ApplyAsync(
         Workspace workspace, Solution ranAgainst, IReadOnlyList<ReplacementItem> items, CancellationToken cancellationToken)
+        => ApplyAsync(workspace, ranAgainst, items, null, cancellationToken);
+
+    /// <param name="enrollDocument">
+    /// Called on the UI thread for every document about to change, immediately before the single
+    /// <see cref="Workspace.TryApplyChanges"/>. The tool window uses it to pull each file into an
+    /// open linked undo transaction; null in tests.
+    /// </param>
+    public static async Task<ApplyOutcome> ApplyAsync(
+        Workspace workspace, Solution ranAgainst, IReadOnlyList<ReplacementItem> items,
+        System.Action<DocumentId> enrollDocument, CancellationToken cancellationToken)
     {
         var outcome = new ApplyOutcome();
         var warnings = new List<string>();
@@ -40,6 +49,7 @@ internal static class ChangeApplier
 
         var current = workspace.CurrentSolution;
         var solution = current;
+        var changedDocuments = new List<DocumentId>();
 
         foreach (var group in included.GroupBy(i => i.Hit.DocumentId))
         {
@@ -53,7 +63,9 @@ internal static class ChangeApplier
                 continue;
             }
 
-            var currentText = await currentDoc.GetTextAsync(cancellationToken).ConfigureAwait(false);
+            // ConfigureAwait(true) throughout: enrolment and TryApplyChanges below touch live text
+            // buffers and the shell's undo stack, both of which are main-thread only.
+            var currentText = await currentDoc.GetTextAsync(cancellationToken).ConfigureAwait(true);
             var originalDoc = ranAgainst?.GetDocument(group.Key);
 
             // Remap each hit's span from the search snapshot to the live document. When nothing has
@@ -64,7 +76,7 @@ internal static class ChangeApplier
             {
                 var span = item.Hit.Span;
                 if (originalDoc != null && originalDoc != currentDoc)
-                    span = await SpanMapper.MapForwardAsync(originalDoc, currentDoc, span, cancellationToken).ConfigureAwait(false);
+                    span = await SpanMapper.MapForwardAsync(originalDoc, currentDoc, span, cancellationToken).ConfigureAwait(true);
 
                 if (span.Start < 0 || span.End > currentText.Length)
                 {
@@ -81,12 +93,7 @@ internal static class ChangeApplier
             // re-checks against the live spans rather than trusting that earlier verdict.
             remapped.Sort((a, b) => a.Span.Start.CompareTo(b.Span.Start));
 
-            // Tracks where each accepted change lands in the merged text: changes earlier in the sort
-            // shift every span after them by their own length delta, and Formatter needs those final
-            // positions, not the pre-splice ones the spans were recorded at.
             var changes = new List<TextChange>(remapped.Count);
-            var newSpans = new List<TextSpan>(remapped.Count);
-            var delta = 0;
             TextSpan? previous = null;
             foreach (var (item, span) in remapped)
             {
@@ -98,8 +105,6 @@ internal static class ChangeApplier
                 }
 
                 changes.Add(new TextChange(span, item.After));
-                newSpans.Add(new TextSpan(span.Start + delta, item.After.Length));
-                delta += item.After.Length - span.Length;
                 previous = span;
                 outcome.Applied++;
             }
@@ -108,29 +113,19 @@ internal static class ChangeApplier
                 continue;
 
             var newText = currentText.WithChanges(changes);
-            var newSolution = solution.WithDocumentText(group.Key, newText);
-
-            // Best-effort: raw text splicing (especially a SyntaxNode/SyntaxToken result's own
-            // formatting) can leave indentation wrong relative to its new surroundings. A formatting
-            // failure must never turn an otherwise-correct apply into a failed one, so fall back to
-            // the unformatted (but still correct) text rather than letting this throw.
-            try
-            {
-                var formatted = await Formatter.FormatAsync(newSolution.GetDocument(group.Key), newSpans, cancellationToken: cancellationToken)
-                    .ConfigureAwait(false);
-                newSolution = newSolution.WithDocumentText(group.Key, await formatted.GetTextAsync(cancellationToken).ConfigureAwait(false));
-            }
-            catch
-            {
-                // Keep newSolution's unformatted text.
-            }
-
-            solution = newSolution;
+            solution = solution.WithDocumentText(group.Key, newText);
+            changedDocuments.Add(group.Key);
         }
 
         outcome.Warnings = warnings;
         if (outcome.Applied == 0)
             return outcome;
+
+        if (enrollDocument != null)
+        {
+            foreach (var id in changedDocuments)
+                enrollDocument(id);
+        }
 
         if (!workspace.TryApplyChanges(solution))
         {

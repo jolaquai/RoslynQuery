@@ -1,9 +1,9 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 
 using RoslynQuery.Query;
@@ -30,6 +30,31 @@ public class ChangeApplierTests
         var project = workspace.AddProject(projectInfo);
         var document = workspace.AddDocument(project.Id, "Test.cs", SourceText.From(source));
         return (workspace, document.Id);
+    }
+
+    private static (AdhocWorkspace Workspace, DocumentId First, DocumentId Second) NewTwoDocuments(string first, string second)
+    {
+        var workspace = new AdhocWorkspace();
+        var projectInfo = ProjectInfo.Create(
+            ProjectId.CreateNewId(),
+            VersionStamp.Create(),
+            "ChangeApplierTestProject",
+            "ChangeApplierTestProject",
+            LanguageNames.CSharp,
+            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
+            metadataReferences: [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+
+        var project = workspace.AddProject(projectInfo);
+        var a = workspace.AddDocument(project.Id, "A.cs", SourceText.From(first));
+        var b = workspace.AddDocument(project.Id, "B.cs", SourceText.From(second));
+        return (workspace, a.Id, b.Id);
+    }
+
+    private static async Task<QueryHit> FirstIdentifierHitAsync(Document document, string name)
+    {
+        var root = await document.GetSyntaxRootAsync(TestContext.Current.CancellationToken);
+        var identifier = root.DescendantTokens().First(t => t.IsKind(SyntaxKind.IdentifierToken) && t.Text == name);
+        return await HitAtAsync(document, identifier.Span, identifier.Kind().ToString());
     }
 
     private static async Task<QueryHit> HitAtAsync(Document document, TextSpan span, string kind)
@@ -171,29 +196,49 @@ public class ChangeApplierTests
     }
 
     [Fact]
-    public async Task ApplyAsync_BadlyIndentedReplacement_IsReformattedToMatchContext()
+    public async Task ApplyAsync_MultipleDocuments_EnrolsEveryChangedDocumentBeforeApplying()
     {
-        var (workspace, docId) = NewDocument("class C\r\n{\r\n    void M()\r\n    {\r\n        DoWork();\r\n    }\r\n}");
-        var document = workspace.CurrentSolution.GetDocument(docId);
-        var root = await document.GetSyntaxRootAsync(TestContext.Current.CancellationToken);
-        var statement = root.DescendantNodes().OfType<ExpressionStatementSyntax>().First();
-        var hit = await HitAtAsync(document, statement.Span, statement.Kind().ToString());
+        var (workspace, aId, bId) = NewTwoDocuments("class A { void M() { int x = 1; } }", "class B { void M() { int y = 2; } }");
+        var aHit = await FirstIdentifierHitAsync(workspace.CurrentSolution.GetDocument(aId), "x");
+        var bHit = await FirstIdentifierHitAsync(workspace.CurrentSolution.GetDocument(bId), "y");
 
-        // Deliberately flush-left, the way a raw text splice lands regardless of surrounding
-        // indentation - this is the shape of replacement Formatter is meant to clean up.
-        var item = new ReplacementItem { Hit = hit, Before = "DoWork();", After = "if (Enabled)\r\nFluxMetrics.Add(1);" };
-        var outcome = await ChangeApplier.ApplyAsync(workspace, workspace.CurrentSolution, [item], TestContext.Current.CancellationToken);
+        var enrolled = new List<DocumentId>();
+        var textsWhenEnrolled = new List<string>();
+        var outcome = await ChangeApplier.ApplyAsync(
+            workspace,
+            workspace.CurrentSolution,
+            [new ReplacementItem { Hit = aHit, Before = "x", After = "ax" },
+             new ReplacementItem { Hit = bHit, Before = "y", After = "by" }],
+            id =>
+            {
+                enrolled.Add(id);
+                textsWhenEnrolled.Add(workspace.CurrentSolution.GetDocument(id).GetTextAsync().Result.ToString());
+            },
+            TestContext.Current.CancellationToken);
 
-        Assert.Equal(1, outcome.Applied);
-        var lines = (await workspace.CurrentSolution.GetDocument(docId).GetTextAsync(TestContext.Current.CancellationToken))
-            .Lines.Select(l => l.ToString()).ToArray();
+        Assert.Equal(2, outcome.Applied);
+        Assert.Equal(2, enrolled.Count);
+        Assert.Contains(aId, enrolled);
+        Assert.Contains(bId, enrolled);
 
-        var ifLine = Assert.Single(lines, l => l.TrimStart().StartsWith("if (Enabled)"));
-        var addLine = Assert.Single(lines, l => l.TrimStart().StartsWith("FluxMetrics.Add(1);"));
+        // Enrolment has to happen while the workspace still holds the pre-apply text, otherwise the
+        // buffers join the linked undo after the edit they were meant to group.
+        Assert.All(textsWhenEnrolled, t => Assert.DoesNotContain("ax", t));
+        Assert.All(textsWhenEnrolled, t => Assert.DoesNotContain("by", t));
+    }
 
-        // Same indent as the statement it replaced (nested one level inside M's block), and the if's
-        // own body nested one level deeper than that - not both flush-left as originally spliced.
-        Assert.Equal(8, ifLine.Length - ifLine.TrimStart().Length);
-        Assert.True(addLine.Length - addLine.TrimStart().Length > 8);
+    [Fact]
+    public async Task ApplyAsync_NothingApplied_DoesNotEnrolAnyDocument()
+    {
+        var (workspace, docId) = NewDocument("class C { void M() { int x = 1; } }");
+        var hit = await FirstIdentifierHitAsync(workspace.CurrentSolution.GetDocument(docId), "x");
+        var item = new ReplacementItem { Hit = hit, Before = "x", After = "renamed", Included = false };
+
+        var enrolled = new List<DocumentId>();
+        var outcome = await ChangeApplier.ApplyAsync(
+            workspace, workspace.CurrentSolution, [item], enrolled.Add, TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, outcome.Applied);
+        Assert.Empty(enrolled);
     }
 }
