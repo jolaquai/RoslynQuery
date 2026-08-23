@@ -10,6 +10,20 @@ Two Visual Studio tool windows over Roslyn.
 references it and what it references, recursively.
 `View > Other Windows > Reference Graph`, or right-click in the editor.
 
+## Contents
+
+- [Roslyn Query](#roslyn-query)
+  - [Contents](#contents)
+  - [Using it](#using-it)
+    - [Examples](#examples)
+    - [Keys](#keys)
+    - [Query history](#query-history)
+  - [Replace](#replace)
+  - [Reference Graph](#reference-graph)
+    - [Scope](#scope)
+    - [Usage kinds](#usage-kinds)
+  - [Building](#building)
+
 ## Using it
 
 The window has two tabs, **Search** and **Replace**, sharing one Find box and one set of
@@ -85,17 +99,17 @@ n is IdentifierNameSyntax id && model.GetSymbolInfo(id).Symbol is IMethodSymbol 
 
 ### Keys
 
-| Key                   | Effect                                                             |
-| --------------------- | ------------------------------------------------------------------ |
-| Ctrl+Enter             | run (Search in the Find box, Generate Previews in the Replace box), or commit the completion item if the list is open |
-| Enter / Shift+Enter    | newline in the box                                                |
-| Ctrl+Space            | invoke completion                                                  |
-| Up / Down             | move through the completion list, otherwise move the caret         |
-| Tab                   | commit the completion item, otherwise leave the box                |
-| Esc                   | dismiss the completion list, never leaves the box                  |
-| `.` `(` `,` operators | commit the completion item, then type the character                |
-| Double-click a result | open the file and select the match                                 |
-| Double-click history  | restore that predicate and re-run it                               |
+| Key                   | Effect                                                                                                                |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Ctrl+Enter            | run (Search in the Find box, Generate Previews in the Replace box), or commit the completion item if the list is open |
+| Enter / Shift+Enter   | newline in the box                                                                                                    |
+| Ctrl+Space            | invoke completion                                                                                                     |
+| Up / Down             | move through the completion list, otherwise move the caret                                                            |
+| Tab                   | commit the completion item, otherwise leave the box                                                                   |
+| Esc                   | dismiss the completion list, never leaves the box                                                                     |
+| `.` `(` `,` operators | commit the completion item, then type the character                                                                   |
+| Double-click a result | open the file and select the match                                                                                    |
+| Double-click history  | restore that predicate and re-run it                                                                                  |
 
 The predicate box is a real editor view, not a `TextBox`, and it is not wired into VS's command
 routing, so its keyboard map is implemented by the extension. Caret movement, selection, backspace
@@ -148,16 +162,16 @@ Find query itself first, so there is no need to switch to Search and run it sepa
 switching tabs to run Search directly clears any previews still on screen, so they never go stale
 against a changed query. It returns one of:
 
-| Return                     | Effect                                             |
-| --------------------------- | --------------------------------------------------- |
-| `string`                    | Replaces the match's text verbatim.                  |
+| Return                       | Effect                                                    |
+| ---------------------------- | --------------------------------------------------------- |
+| `string`                     | Replaces the match's text verbatim.                       |
 | `SyntaxNode` / `SyntaxToken` | Replaces structurally; normalized and re-printed as text. |
-| `null`                      | Skips the match.                                     |
+| `null`                       | Skips the match.                                          |
 
 The replacement signature mirrors the predicate's, with an `object` return in place of `bool`:
 
-| Target      | Replacement signature                                                         |
-| ----------- | ------------------------------------------------------------------------------ |
+| Target      | Replacement signature                                                        |
+| ----------- | ---------------------------------------------------------------------------- |
 | SyntaxNode  | `async ValueTask<object> (SyntaxNode n, SemanticModel model, Document doc)`  |
 | SyntaxToken | `async ValueTask<object> (SyntaxToken t, SemanticModel model, Document doc)` |
 
@@ -192,10 +206,10 @@ Right-click a method, constructor, property, field, event or type in the editor 
 Each invocation adds a root at the top of the list rather than replacing what is there, so the
 window keeps a history; **Clear** empties it. Every root has two branches:
 
-| Branch                | What is under it                                             |
-| --------------------- | ------------------------------------------------------------ |
-| `References To 'X'`   | The declarations that reference `X`                          |
-| `References From 'X'` | The declarations `X` itself references                       |
+| Branch                | What is under it                       |
+| --------------------- | -------------------------------------- |
+| `References To 'X'`   | The declarations that reference `X`    |
+| `References From 'X'` | The declarations `X` itself references |
 
 Every row expands the same way, recursively, staying in the direction its branch started in. A row
 is one declaration, not one call site: its second line reads `3 refs (1 invocation, 2 reads)`. A row
@@ -218,13 +232,13 @@ expanded, not from wherever the caret happens to be at the time.
 
 The **Filter** button opens a checkbox flyout, one box per kind of reference:
 
-| Kind             | What it matches                                                          |
-| ---------------- | ------------------------------------------------------------------------ |
-| Invocations      | The callee of a call                                                     |
-| Reads            | Anything read, including a method group                                  |
-| Writes           | An assignment target, an `out`/`ref` argument, `++`/`--`, `+=` on events |
-| Constructions    | `new T(...)`, a `this()`/`base()` initializer, an attribute              |
-| Type references  | A parameter or return type, a base type, a cast, `typeof`, a type argument, a `catch` clause |
+| Kind            | What it matches                                                                              |
+| --------------- | -------------------------------------------------------------------------------------------- |
+| Invocations     | The callee of a call                                                                         |
+| Reads           | Anything read, including a method group                                                      |
+| Writes          | An assignment target, an `out`/`ref` argument, `++`/`--`, `+=` on events                     |
+| Constructions   | `new T(...)`, a `this()`/`base()` initializer, an attribute                                  |
+| Type references | A parameter or return type, a base type, a cast, `typeof`, a type argument, a `catch` clause |
 
 Invocations, reads, writes and constructions start on; type references start off, because on a type
 root they otherwise swamp everything else. Ticking or unticking a box re-reads every expanded row
