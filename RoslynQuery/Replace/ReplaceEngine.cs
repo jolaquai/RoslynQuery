@@ -121,7 +121,7 @@ internal static class ReplaceEngine
         switch (result)
         {
             case null:
-                return Skip(hit, "The transform returned null for this match.");
+                return Skip(hit, "The replacement returned null for this match.");
             case string text:
                 return new ReplacementItem { Hit = hit, Before = hit.Preview, After = text };
             case SyntaxNode node:
@@ -133,7 +133,7 @@ internal static class ReplaceEngine
                 // the replacement must exclude trivia too or it would duplicate whatever surrounds it.
                 return new ReplacementItem { Hit = hit, Before = hit.Preview, After = token.Text };
             default:
-                return Skip(hit, "The transform returned " + result.GetType().Name + "; expected string, SyntaxNode, or SyntaxToken.");
+                return Skip(hit, "The replacement returned " + result.GetType().Name + "; expected string, SyntaxNode, or SyntaxToken.");
         }
     }
 
