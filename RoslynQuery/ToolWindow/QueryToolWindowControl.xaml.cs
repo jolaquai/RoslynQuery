@@ -174,7 +174,16 @@ public partial class QueryToolWindowControl : UserControl
         Run();
     }
 
-    private void OnStopClick(object sender, RoutedEventArgs e) => _cancellation?.Cancel();
+    private void OnStopClick(object sender, RoutedEventArgs e)
+    {
+        _cancellation?.Cancel();
+
+        // Stop doubles as "dismiss": Run/GeneratePreview only clear stale previews when they start a
+        // new run, so previews left over from editing the box without re-running need this too.
+        _replacements.Clear();
+        ApplySelectedButton.IsEnabled = false;
+        ReplaceStatusText.Text = string.Empty;
+    }
 
     private void OnResultDoubleClick(object sender, MouseButtonEventArgs e)
     {
