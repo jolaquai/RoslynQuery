@@ -201,6 +201,15 @@ public partial class QueryToolWindowControl : UserControl
         NavigateTo(item.Hit.DocumentId, item.Hit.Span);
     }
 
+    private void OnReplaceResultsPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Space) return;
+        if (ReplaceResults.SelectedItem is not ReplacementItem item || item.Warning is not null) return;
+
+        item.Included = !item.Included;
+        e.Handled = true;
+    }
+
     private void NavigateTo(DocumentId documentId, Microsoft.CodeAnalysis.Text.TextSpan span)
     {
         ThreadHelper.ThrowIfNotOnUIThread();

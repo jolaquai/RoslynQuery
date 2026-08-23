@@ -364,7 +364,8 @@
                                      VirtualizingStackPanel.VirtualizationMode="Recycling"
                                      ItemContainerStyle="{StaticResource ResultRow}"
                                      ItemTemplate="{StaticResource ReplacementTemplate}"
-                                     MouseDoubleClick="OnReplaceResultDoubleClick" />
+                                     MouseDoubleClick="OnReplaceResultDoubleClick"
+                                     PreviewKeyDown="OnReplaceResultsPreviewKeyDown" />
                         </Grid>
                     </Grid>
                 </TabItem>
