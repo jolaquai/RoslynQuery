@@ -62,6 +62,9 @@ descendants, ancestors, or siblings is fine, but a node built with `SyntaxFactor
 some other document) is rejected as an error for that hit rather than silently accepted, since
 neither navigation nor a later Replace pass could resolve it back to anything real.
 
+Different matches that end up reporting the same location - three statements in one method that
+all report that method, say - collapse to a single result rather than repeating it once per match.
+
 Write either a single boolean expression or a full statement body ending in a `return` - which one
 you meant is detected from the text, so nothing needs switching:
 

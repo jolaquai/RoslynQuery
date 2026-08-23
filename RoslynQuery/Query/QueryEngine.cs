@@ -45,6 +45,11 @@ internal static class QueryEngine
         var needsModel = target == TargetKind.Operation || MentionsModel.IsMatch(expression ?? string.Empty);
 
         var pending = new List<QueryHit>(BatchSize);
+        // A predicate may report a different node/token/operation than the one it matched on (see
+        // TryClassifyResult) - several distinct matches can then legitimately point at the same
+        // result location (e.g. "every await in this method" all reporting the containing method),
+        // and without this they would show up as that many duplicate rows for one location.
+        var seen = new HashSet<(DocumentId DocumentId, TextSpan Span, string Kind)>();
         var sync = new object();
         var examined = 0;
         var matched = 0;
@@ -73,6 +78,12 @@ internal static class QueryEngine
 
             void Emit(QueryHit hit)
             {
+                lock (sync)
+                {
+                    if (!seen.Add((hit.DocumentId, hit.Span, hit.Kind)))
+                        return;
+                }
+
                 if (Interlocked.Increment(ref matched) > maxResults)
                 {
                     outcome.Truncated = true;

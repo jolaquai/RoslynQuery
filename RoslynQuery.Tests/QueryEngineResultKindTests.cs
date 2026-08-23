@@ -89,6 +89,22 @@ public class QueryEngineResultKindTests
     }
 
     [Fact]
+    public async Task RunAsync_MultipleMatchesReportingTheSameAncestor_CollapseToOneHit()
+    {
+        var unit = await UnitAsync("class C { void M() { int a = 1; int b = 2; int c = 3; } }");
+        var hits = new List<QueryHit>();
+
+        // Three distinct local declarations all report the one method they live in - without
+        // deduplication this would show up as three identical rows for that one location.
+        var body = "if (n.IsKind(SyntaxKind.LocalDeclarationStatement)) return n.FirstAncestorOrSelf<MethodDeclarationSyntax>();\r\nreturn false;";
+        var outcome = await RunAsync(unit, TargetKind.SyntaxNode, body, hits);
+
+        Assert.Equal(1, outcome.Matched);
+        Assert.Equal(0, outcome.Errors);
+        Assert.Equal("MethodDeclaration", Assert.Single(hits).Kind);
+    }
+
+    [Fact]
     public async Task RunAsync_TokenPredicateReturnsAnotherToken_HitUsesThatTokensSpanAndKind()
     {
         var unit = await UnitAsync("class C { void M() { int x = 1; } }");
