@@ -96,7 +96,7 @@ internal static class ReferenceUsageClassifier
     /// <summary>Fallback for occurrences whose symbol did not bind (or bound to an alias).</summary>
     private static bool IsSyntacticTypeReference(SyntaxNode expr)
     {
-        if (!(expr is TypeSyntax)) return false;
+        if (expr is not TypeSyntax) return false;
 
         switch (expr.Parent)
         {

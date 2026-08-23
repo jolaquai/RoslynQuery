@@ -16,7 +16,7 @@ public sealed class TargetMonikerConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
-        if (!(value is TargetKind kind)) return KnownMonikers.CodeInformation;
+        if (value is not TargetKind kind) return KnownMonikers.CodeInformation;
 
         switch (kind)
         {

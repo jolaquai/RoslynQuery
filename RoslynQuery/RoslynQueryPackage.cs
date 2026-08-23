@@ -52,7 +52,7 @@ public sealed class RoslynQueryPackage : AsyncPackage
         await base.InitializeAsync(cancellationToken, progress).ConfigureAwait(false);
         await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
 
-        if (!(await GetServiceAsync(typeof(IMenuCommandService)) is OleMenuCommandService commands)) return;
+        if (await GetServiceAsync(typeof(IMenuCommandService)) is not OleMenuCommandService commands) return;
 
         commands.AddCommand(new MenuCommand(ShowToolWindow, new CommandID(CommandSet, ShowToolWindowCommandId)));
         commands.AddCommand(new MenuCommand(ShowReferenceGraph, new CommandID(CommandSet, ShowReferenceGraphCommandId)));

@@ -15,11 +15,11 @@ namespace RoslynQuery.Tests;
 // are passed as int and cast to TargetKind inside each test body.
 public class ReplaceTemplateTests
 {
-    public static TheoryData<int> SupportedKinds => new TheoryData<int>
-    {
+    public static TheoryData<int> SupportedKinds =>
+    [
         (int)TargetKind.SyntaxNode,
         (int)TargetKind.SyntaxToken,
-    };
+    ];
 
     [Theory]
     [InlineData((int)TargetKind.SyntaxNode, "async ValueTask<object> (SyntaxNode n, SemanticModel model, Document doc)")]

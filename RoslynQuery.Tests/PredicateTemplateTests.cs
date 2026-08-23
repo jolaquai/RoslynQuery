@@ -48,12 +48,12 @@ public class PredicateTemplateParameterTests
 
 public class PredicateTemplateBuildTests
 {
-    public static TheoryData<int> AllKinds => new TheoryData<int>
-    {
+    public static TheoryData<int> AllKinds =>
+    [
         (int)TargetKind.SyntaxNode,
         (int)TargetKind.SyntaxToken,
         (int)TargetKind.Operation,
-    };
+    ];
 
     [Theory]
     [MemberData(nameof(AllKinds))]

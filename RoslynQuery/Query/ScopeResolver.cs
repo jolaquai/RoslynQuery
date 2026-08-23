@@ -56,7 +56,7 @@ internal static class ScopeResolver
         if (ErrorHandler.Failed(view.GetCaretPos(out var line, out var column))) return null;
         if (ErrorHandler.Failed(view.GetBuffer(out var buffer)) || buffer is null) return null;
 
-        if (!(buffer is IPersistFileFormat persist)) return null;
+        if (buffer is not IPersistFileFormat persist) return null;
         if (ErrorHandler.Failed(persist.GetCurFile(out var path, out _)) || string.IsNullOrEmpty(path)) return null;
 
         return new ActiveContext { FilePath = path, Line = line, Column = column };

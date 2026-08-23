@@ -26,23 +26,17 @@ namespace RoslynQuery.ToolWindow;
 
 public partial class QueryToolWindowControl : UserControl
 {
-    private sealed class Choice<T>
+    private sealed class Choice<T>(string display, T value)
     {
-        public Choice(string display, T value)
-        {
-            Display = display;
-            Value = value;
-        }
-
-        public string Display { get; }
-        public T Value { get; }
+        public string Display { get; } = display;
+        public T Value { get; } = value;
 
         public override string ToString() => Display;
     }
 
-    private readonly ObservableCollection<QueryHit> _hits = new ObservableCollection<QueryHit>();
-    private readonly ObservableCollection<CachedPredicateItem> _cachedPredicates = new ObservableCollection<CachedPredicateItem>();
-    private readonly ObservableCollection<ReplacementItem> _replacements = new ObservableCollection<ReplacementItem>();
+    private readonly ObservableCollection<QueryHit> _hits = [];
+    private readonly ObservableCollection<CachedPredicateItem> _cachedPredicates = [];
+    private readonly ObservableCollection<ReplacementItem> _replacements = [];
 
     private IComponentModel _componentModel;
     private VisualStudioWorkspace _workspace;
@@ -169,7 +163,7 @@ public partial class QueryToolWindowControl : UserControl
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        if (!(Results.SelectedItem is QueryHit hit) || _workspace is null) return;
+        if (Results.SelectedItem is not QueryHit hit || _workspace is null) return;
         NavigateTo(hit.DocumentId, hit.Span);
     }
 
@@ -177,7 +171,7 @@ public partial class QueryToolWindowControl : UserControl
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        if (!(ReplaceResults.SelectedItem is ReplacementItem item) || _workspace is null) return;
+        if (ReplaceResults.SelectedItem is not ReplacementItem item || _workspace is null) return;
         NavigateTo(item.Hit.DocumentId, item.Hit.Span);
     }
 
@@ -207,7 +201,7 @@ public partial class QueryToolWindowControl : UserControl
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        if (!(CachedPredicates.SelectedItem is CachedPredicateItem item)) return;
+        if (CachedPredicates.SelectedItem is not CachedPredicateItem item) return;
 
         // TargetCombo is populated in OnLoaded in TargetKind declaration order, so the index and
         // the enum value coincide - no lookup needed. Scope is deliberately left as the user has
@@ -479,7 +473,7 @@ public partial class QueryToolWindowControl : UserControl
                     return;
                 }
 
-                await GeneratePreviewCoreAsync(ranAgainst, _hits.ToArray(), target, replacementExpression);
+                await GeneratePreviewCoreAsync(ranAgainst, [.. _hits], target, replacementExpression);
             }
             catch (OperationCanceledException)
             {

@@ -318,12 +318,11 @@ internal static class ReferenceGraphEngine
         {
             if (direction != ReferenceDirection.Incoming) return _ordered;
 
-            return _ordered
+            return [.. _ordered
                 .OrderBy(g => g.Display, StringComparer.Ordinal)
                 // Two rows can share a display string (same signature in different namespaces), and
                 // the tie has to break the same way every time.
-                .ThenBy(g => g.Identity.DeclarationId, StringComparer.Ordinal)
-                .ToList();
+                .ThenBy(g => g.Identity.DeclarationId, StringComparer.Ordinal)];
         }
 
         // By file then position, so the rows read in source order and the first one - the one

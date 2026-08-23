@@ -40,7 +40,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         public override string ToString() => Display;
     }
 
-    private readonly ObservableCollection<ReferenceGraphNode> _roots = new ObservableCollection<ReferenceGraphNode>();
+    private readonly ObservableCollection<ReferenceGraphNode> _roots = [];
 
     private VisualStudioWorkspace _workspace;
     private CancellationTokenSource _cancellation;
@@ -138,7 +138,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        if (!(e.OriginalSource is TreeViewItem item) || !(item.DataContext is ReferenceGraphNode node)) return;
+        if (e.OriginalSource is not TreeViewItem item || item.DataContext is not ReferenceGraphNode node) return;
         if (!node.IsExpandable || node.IsLoaded || node.IsLoading) return;
 
         BeginExpand(node);
@@ -163,7 +163,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         // The expander chevron is a ToggleButton; double-clicking it means "expand", not "navigate".
         if (Ancestor<ToggleButton>(source) != null) return;
 
-        if (!(Ancestor<TreeViewItem>(source)?.DataContext is ReferenceGraphNode node)) return;
+        if (Ancestor<TreeViewItem>(source)?.DataContext is not ReferenceGraphNode node) return;
 
         // A branch row has nowhere to navigate to, so leave the event alone and let it expand.
         if (node.DocumentId is null) return;
@@ -189,7 +189,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         ThreadHelper.ThrowIfNotOnUIThread();
 
         if (e.Key != Key.Enter || _workspace is null) return;
-        if (!(Tree.SelectedItem is ReferenceGraphNode node) || node.DocumentId is null) return;
+        if (Tree.SelectedItem is not ReferenceGraphNode node || node.DocumentId is null) return;
 
         e.Handled = true;
         Navigate(node);

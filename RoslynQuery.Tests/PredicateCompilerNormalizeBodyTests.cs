@@ -15,10 +15,9 @@ public class PredicateCompilerNormalizeBodyTests
 {
     /// <summary>Kind+text of every token, which is the only thing the compiler ultimately sees.</summary>
     private static List<string> Tokens(string text) =>
-        SyntaxFactory.ParseTokens(text, options: PredicateTemplate.ParseOptions)
+        [.. SyntaxFactory.ParseTokens(text, options: PredicateTemplate.ParseOptions)
             .Where(t => !t.IsKind(SyntaxKind.EndOfFileToken))
-            .Select(t => t.Kind() + ":" + t.Text)
-            .ToList();
+            .Select(t => t.Kind() + ":" + t.Text)];
 
     // The whole reason NormalizeBody exists: it must be impossible for it to change what a body
     // lexes to, for any body, without appealing to an adjacency heuristic being right.
