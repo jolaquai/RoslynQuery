@@ -82,10 +82,13 @@ internal sealed class PredicateEditorInput : IPredicateInput
         // Without a registered history the operations run untracked and Ctrl+Z has nothing to undo.
         _undo = undoRegistry?.RegisterHistory(_buffer);
 
+        // Zoomable is deliberately absent: it's what makes the host compose a zoom-control margin at
+        // all, and DefaultTextViewHostOptions.ZoomControlId/HorizontalScrollBarId being false is not
+        // enough on its own to keep that margin's row from rendering as an empty strip under a
+        // one-line input box.
         var roles = editorFactory.CreateTextViewRoleSet(
             PredefinedTextViewRoles.Editable,
             PredefinedTextViewRoles.Interactive,
-            PredefinedTextViewRoles.Zoomable,
             PredefinedTextViewRoles.Analyzable);
 
         _view = editorFactory.CreateTextView(_buffer, roles);
