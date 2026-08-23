@@ -8,11 +8,21 @@ namespace RoslynQuery.Replace;
 /// A generated replacement for one <see cref="QueryHit"/>. Mutable (<see cref="Included"/> is
 /// toggled by the user and by conflict detection), unlike <see cref="QueryHit"/> itself.
 /// </summary>
-internal sealed class ReplacementItem : INotifyPropertyChanged
+/// <remarks>
+/// Public, unlike the rest of Replace's types: WPF's binding engine reflects over the bound type to
+/// find and subscribe to <see cref="PropertyChanged"/>, and on .NET Framework that reflection has
+/// been unreliable against non-public types in exactly this "code sets the property, UI should
+/// repaint" direction - initial reads work either way, but the live update (Select All/None driving
+/// checkboxes) is the part that needs this to be public.
+/// </remarks>
+public sealed class ReplacementItem : INotifyPropertyChanged
 {
     private bool _included = true;
 
-    public QueryHit Hit { get; set; }
+    // Internal accessor: QueryHit is itself internal, so a public one here would be CS0053. Binding
+    // to Hit.Kind/Hit.Location in the DataTemplate is a read-once-at-render path (Hit is never
+    // reassigned after construction), which is the direction that already tolerates non-public types.
+    internal QueryHit Hit { get; set; }
 
     /// <summary>The hit's own preview text, reused verbatim so before/after line up.</summary>
     public string Before { get; set; }
