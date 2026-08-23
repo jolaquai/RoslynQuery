@@ -193,6 +193,7 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
@@ -235,7 +236,10 @@
                         Click="OnToggleSidebarClick" ToolTip="Toggle the query history sidebar" />
             </Grid>
 
-            <TabControl Grid.Row="2" Margin="0,7,0,0" Style="{StaticResource FlatTabControl}">
+            <!-- Describes the Find box above, so it stays visible on both tabs rather than living inside Search's own content. -->
+            <TextBlock x:Name="SignatureText" Grid.Row="2" Margin="0,4,0,0" FontFamily="Consolas" Style="{StaticResource Meta}" />
+
+            <TabControl Grid.Row="3" Margin="0,7,0,0" Style="{StaticResource FlatTabControl}">
                 <TabItem Header="Search" Style="{StaticResource FlatTabItem}">
                     <Grid>
                         <Grid.RowDefinitions>
@@ -244,23 +248,14 @@
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <Grid Grid.Row="0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-
-                            <TextBlock x:Name="SignatureText" Grid.Column="0" FontFamily="Consolas" Style="{StaticResource Meta}" />
-
-                            <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                <Button x:Name="RunButton" Content="Run" MinWidth="62" Margin="0,0,6,0" Padding="8,2"
-                                        Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
-                                        Click="OnRunClick" />
-                                <Button x:Name="StopButton" Content="Stop" MinWidth="62" Padding="8,2" IsEnabled="False"
-                                        Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
-                                        Click="OnStopClick" />
-                            </StackPanel>
-                        </Grid>
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button x:Name="RunButton" Content="Run" MinWidth="62" Margin="0,0,6,0" Padding="8,2"
+                                    Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
+                                    Click="OnRunClick" />
+                            <Button x:Name="StopButton" Content="Stop" MinWidth="62" Padding="8,2" IsEnabled="False"
+                                    Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
+                                    Click="OnStopClick" />
+                        </StackPanel>
 
                         <Grid Grid.Row="1" Margin="0,4,0,0">
                             <TextBlock x:Name="StatusText" Style="{StaticResource Meta}" />
