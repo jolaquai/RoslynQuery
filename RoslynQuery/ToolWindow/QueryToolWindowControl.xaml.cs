@@ -421,7 +421,13 @@ public partial class QueryToolWindowControl : UserControl
 
     private void OnSelectAllClick(object sender, RoutedEventArgs e)
     {
-        foreach (var item in _replacements) item.Included = true;
+        // Warned rows keep their box disabled and unchecked in the DataTemplate; setting Included
+        // from code here would silently override that and re-introduce the "checked, but Apply skips
+        // it anyway" case this is meant to prevent.
+        foreach (var item in _replacements)
+        {
+            if (item.Warning is null) item.Included = true;
+        }
     }
 
     private void OnSelectNoneClick(object sender, RoutedEventArgs e)

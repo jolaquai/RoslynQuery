@@ -14,6 +14,7 @@
     <UserControl.Resources>
         <local:TargetMonikerConverter x:Key="TargetMoniker" />
         <local:NullToVisibilityConverter x:Key="NullToVisibility" />
+        <local:NullToBooleanConverter x:Key="NullToEnabled" />
 
         <Style x:Key="Caption" TargetType="TextBlock">
             <Setter Property="VerticalAlignment" Value="Center" />
@@ -159,8 +160,12 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
+                <!-- A row with a Warning can never actually apply, so its box stays unchecked and
+                     un-clickable rather than let the user re-check it only to have Apply silently
+                     skip it again. -->
                 <CheckBox Grid.Column="0" Margin="0,2,8,0" VerticalAlignment="Top"
-                          IsChecked="{Binding Included, Mode=TwoWay}" />
+                          IsChecked="{Binding Included, Mode=TwoWay}"
+                          IsEnabled="{Binding Warning, Converter={StaticResource NullToEnabled}}" />
 
                 <StackPanel Grid.Column="1">
                     <TextBlock Text="{Binding Before}" FontFamily="Consolas" TextTrimming="CharacterEllipsis"

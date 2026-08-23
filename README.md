@@ -165,12 +165,10 @@ Replace has no `IOperation` target: an operation is not part of the syntax tree,
 to structurally replace it with. The tab disables itself with an explanation when Target is set to
 IOperation.
 
-Each previewed match gets a checkbox, checked by default. Two matches whose spans overlap can't both
-apply; the later one is unchecked automatically with a warning explaining why. **All** / **None**
-toggle every checkbox at once. Re-checking a flagged match doesn't force it through: Apply Selected
-re-validates every match against the live solution regardless of how its checkbox got checked, and a
-still-genuine conflict or stale span is skipped again, just silently rather than with an updated
-warning label on that row.
+Each previewed match gets a checkbox, checked by default. A match that can't actually apply - two
+overlapping spans, a null result, a span that's gone stale - has its box unchecked and disabled
+instead, with a warning explaining why; there's no re-checking your way past it. **All** / **None**
+toggle every checkbox that isn't disabled.
 
 **Apply Selected** writes the checked replacements back to the workspace in one pass. Spans are
 re-resolved against the live solution at apply time, so an edit made between preview and apply
