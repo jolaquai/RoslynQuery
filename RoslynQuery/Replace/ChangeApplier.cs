@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Formatting;
 using Microsoft.CodeAnalysis.Text;
 
 using RoslynQuery.Navigation;
@@ -93,7 +94,12 @@ internal static class ChangeApplier
             // re-checks against the live spans rather than trusting that earlier verdict.
             remapped.Sort((a, b) => a.Span.Start.CompareTo(b.Span.Start));
 
+            // Tracks where each accepted change lands in the merged text: changes earlier in the sort
+            // shift every span after them by their own length delta, and Formatter needs those final
+            // positions, not the pre-splice ones the spans were recorded at.
             var changes = new List<TextChange>(remapped.Count);
+            var newSpans = new List<TextSpan>(remapped.Count);
+            var delta = 0;
             TextSpan? previous = null;
             foreach (var (item, span) in remapped)
             {
@@ -105,6 +111,8 @@ internal static class ChangeApplier
                 }
 
                 changes.Add(new TextChange(span, item.After));
+                newSpans.Add(new TextSpan(span.Start + delta, item.After.Length));
+                delta += item.After.Length - span.Length;
                 previous = span;
                 outcome.Applied++;
             }
@@ -113,7 +121,24 @@ internal static class ChangeApplier
                 continue;
 
             var newText = currentText.WithChanges(changes);
-            solution = solution.WithDocumentText(group.Key, newText);
+            var newSolution = solution.WithDocumentText(group.Key, newText);
+
+            // Best-effort: raw text splicing (especially a SyntaxNode/SyntaxToken result's own
+            // formatting) can leave indentation wrong relative to its new surroundings. A formatting
+            // failure must never turn an otherwise-correct apply into a failed one, so fall back to
+            // the unformatted (but still correct) text rather than letting this throw.
+            try
+            {
+                var formatted = await Formatter.FormatAsync(newSolution.GetDocument(group.Key), newSpans, cancellationToken: cancellationToken)
+                    .ConfigureAwait(true);
+                newSolution = newSolution.WithDocumentText(group.Key, await formatted.GetTextAsync(cancellationToken).ConfigureAwait(true));
+            }
+            catch
+            {
+                // Keep newSolution's unformatted text.
+            }
+
+            solution = newSolution;
             changedDocuments.Add(group.Key);
         }
 
