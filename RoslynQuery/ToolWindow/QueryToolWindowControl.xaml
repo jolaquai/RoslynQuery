@@ -239,7 +239,7 @@
             <!-- Describes the Find box above, so it stays visible on both tabs rather than living inside Search's own content. -->
             <TextBlock x:Name="SignatureText" Grid.Row="2" Margin="0,4,0,0" FontFamily="Consolas" Style="{StaticResource Meta}" />
 
-            <TabControl Grid.Row="3" Margin="0,7,0,0" Style="{StaticResource FlatTabControl}">
+            <TabControl x:Name="MainTabs" Grid.Row="3" Margin="0,7,0,0" Style="{StaticResource FlatTabControl}">
                 <TabItem Header="Search" Style="{StaticResource FlatTabItem}">
                     <Grid>
                         <Grid.RowDefinitions>
@@ -311,6 +311,11 @@
                                     <Button x:Name="GeneratePreviewButton" Content="Generate Previews" MinWidth="62" Margin="0,0,6,0" Padding="8,2"
                                             Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
                                             Click="OnGeneratePreviewClick" />
+                                    <!-- Generate Previews re-runs the shared Find query, so it needs the same Stop the Search tab has -
+                                         one that's actually reachable without switching tabs mid-run. -->
+                                    <Button x:Name="ReplaceStopButton" Content="Stop" MinWidth="62" Margin="0,0,6,0" Padding="8,2" IsEnabled="False"
+                                            Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
+                                            Click="OnStopClick" />
                                     <Button x:Name="ApplySelectedButton" Content="Apply Selected" MinWidth="62" Padding="8,2" IsEnabled="False"
                                             Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogButtonStyleKey}}"
                                             Click="OnApplySelectedClick" />

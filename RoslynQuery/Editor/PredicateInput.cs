@@ -353,8 +353,8 @@ internal sealed class PredicateEditorInput : IPredicateInput
                 break;
             case Key.Enter:
                 if (active) { Commit(session, '\n'); e.Handled = true; }
-                else if (modifiers == ModifierKeys.Shift) { _operations.InsertNewLine(); e.Handled = true; }
-                else if (modifiers == ModifierKeys.None) { SubmitRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; }
+                else if (control) { SubmitRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; }
+                else { _operations.InsertNewLine(); e.Handled = true; }
                 break;
 
             case Key.Space:
@@ -405,7 +405,8 @@ internal sealed class PredicateTextBoxInput : IPredicateInput
 
         _textBox.PreviewKeyDown += (_, e) =>
         {
-            if (e.Key != Key.Enter || Keyboard.Modifiers != ModifierKeys.None) return;
+            // Plain/Shift+Enter falls through unhandled to AcceptsReturn's own newline insertion.
+            if (e.Key != Key.Enter || (Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
             SubmitRequested?.Invoke(this, EventArgs.Empty);
             e.Handled = true;
         };

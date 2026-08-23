@@ -120,7 +120,13 @@ public partial class QueryToolWindowControl : UserControl
         PredicateHost.Content = _searchInput.Element;
         _searchInput.Target = CurrentTarget;
         _searchInput.Text = DefaultQueryBoxContent;
-        _searchInput.SubmitRequested += (s, args) => Run();
+        // Switches tabs first: running against stale Replace previews from a since-changed query is
+        // exactly the confusion this is meant to avoid, and Run() itself clears them either way.
+        _searchInput.SubmitRequested += (s, args) =>
+        {
+            MainTabs.SelectedIndex = 0;
+            Run();
+        };
 
         _replacementInput = PredicateInputFactory.Create(_componentModel, out var replacementDiagnostic);
         ReplacementHost.Content = _replacementInput.Element;
@@ -135,7 +141,7 @@ public partial class QueryToolWindowControl : UserControl
         else if (diagnostic != null) SetError(diagnostic);
         else if (replacementDiagnostic != null) SetError(replacementDiagnostic);
 
-        StatusText.Text = "Enter runs, Shift+Enter is a newline";
+        StatusText.Text = "Ctrl+Enter runs, Enter/Shift+Enter is a newline";
 
         // The compiler cache is process-lifetime and static, so a reopened or second tool window
         // instance can have entries in it before this instance ever runs anything itself.
@@ -309,6 +315,7 @@ public partial class QueryToolWindowControl : UserControl
         SetError(null);
         StatusText.Text = "Running...";
         StopButton.IsEnabled = true;
+        ReplaceStopButton.IsEnabled = true;
         RunButton.IsEnabled = false;
         GeneratePreviewButton.IsEnabled = false;
 
@@ -334,6 +341,7 @@ public partial class QueryToolWindowControl : UserControl
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 StopButton.IsEnabled = false;
+                ReplaceStopButton.IsEnabled = false;
                 RunButton.IsEnabled = true;
                 GeneratePreviewButton.IsEnabled = true;
                 RefreshCachedPredicates();
@@ -459,6 +467,7 @@ public partial class QueryToolWindowControl : UserControl
         StatusText.Text = "Running...";
         ReplaceStatusText.Text = "Generating...";
         StopButton.IsEnabled = true;
+        ReplaceStopButton.IsEnabled = true;
         RunButton.IsEnabled = false;
         GeneratePreviewButton.IsEnabled = false;
         ApplySelectedButton.IsEnabled = false;
@@ -500,6 +509,7 @@ public partial class QueryToolWindowControl : UserControl
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 StopButton.IsEnabled = false;
+                ReplaceStopButton.IsEnabled = false;
                 RunButton.IsEnabled = true;
                 GeneratePreviewButton.IsEnabled = true;
                 RefreshCachedPredicates();
