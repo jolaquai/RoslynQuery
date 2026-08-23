@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -548,11 +549,27 @@ public partial class QueryToolWindowControl : UserControl
 
         await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-        foreach (var item in items) _replacements.Add(item);
+        foreach (var item in items)
+        {
+            item.PropertyChanged += OnReplacementItemPropertyChanged;
+            _replacements.Add(item);
+        }
 
-        var included = items.Count(i => i.Included);
+        UpdateReplaceSelectionStatus();
+    }
+
+    // Keeps the "N previewed, M selected" count live against every source of a checkbox change:
+    // an individual click, and Select All/None (which set Included in a loop rather than per-click).
+    private void OnReplacementItemPropertyChanged(object sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ReplacementItem.Included)) UpdateReplaceSelectionStatus();
+    }
+
+    private void UpdateReplaceSelectionStatus()
+    {
+        var included = _replacements.Count(i => i.Included);
         ReplaceStatusText.Text = string.Format(
-            "{0:N0} match{1} previewed, {2:N0} selected", items.Count, items.Count == 1 ? string.Empty : "es", included);
+            "{0:N0} match{1} previewed, {2:N0} selected", _replacements.Count, _replacements.Count == 1 ? string.Empty : "es", included);
         ApplySelectedButton.IsEnabled = included > 0;
     }
 
