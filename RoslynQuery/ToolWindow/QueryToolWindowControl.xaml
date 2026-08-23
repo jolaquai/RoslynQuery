@@ -250,6 +250,7 @@
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
@@ -266,10 +267,13 @@
                             <TextBlock x:Name="StatusText" Style="{StaticResource Meta}" />
                         </Grid>
 
-                        <TextBlock x:Name="ErrorText" Grid.Row="1" Margin="0,24,0,0" TextWrapping="Wrap"
+                        <!-- Its own row rather than overlaid on StatusText's via a guessed pixel margin: an
+                             exception message can wrap to several lines, and a fixed offset only clears a
+                             single line of StatusText before the two visually run together. -->
+                        <TextBlock x:Name="ErrorText" Grid.Row="2" Margin="0,4,0,0" TextWrapping="Wrap"
                                    Visibility="Collapsed" Foreground="#FFE0655F" />
 
-                        <ListBox x:Name="Results" Grid.Row="2" Margin="0,8,0,0"
+                        <ListBox x:Name="Results" Grid.Row="3" Margin="0,8,0,0"
                                  BorderThickness="0" Background="Transparent"
                                  HorizontalContentAlignment="Stretch"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -289,6 +293,7 @@
 
                         <Grid x:Name="ReplaceBody">
                             <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
@@ -346,10 +351,12 @@
                                 </StackPanel>
                             </Grid>
 
-                            <TextBlock x:Name="ReplaceErrorText" Grid.Row="2" Margin="0,28,0,0" TextWrapping="Wrap"
+                            <!-- Its own row rather than overlaid on the signature/status row via a guessed
+                                 pixel margin - see the identical fix on Search's ErrorText. -->
+                            <TextBlock x:Name="ReplaceErrorText" Grid.Row="3" Margin="0,4,0,0" TextWrapping="Wrap"
                                        Visibility="Collapsed" Foreground="#FFE0655F" />
 
-                            <ListBox x:Name="ReplaceResults" Grid.Row="3" Margin="0,8,0,0"
+                            <ListBox x:Name="ReplaceResults" Grid.Row="4" Margin="0,8,0,0"
                                      BorderThickness="0" Background="Transparent"
                                      HorizontalContentAlignment="Stretch"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
