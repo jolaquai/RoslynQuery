@@ -16,7 +16,7 @@ public static class Program
     public static async Task Main(string[] args)
     {
         var pipeName = ArgValue(args, "--pipe") ?? throw new ArgumentException("--pipe <name> is required.");
-        var port = int.Parse(ArgValue(args, "--port") ?? "5050");
+        var port = int.Parse(ArgValue(args, "--port") ?? "41330");
 
         // One connection for the broker's whole lifetime: RoslynQueryPackage's PipeHost accepts it
         // once and serves every tool call over it, rather than reconnecting per request.

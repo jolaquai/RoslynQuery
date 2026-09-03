@@ -54,7 +54,7 @@ public sealed class RoslynQueryPackage : AsyncPackage
 
     // Fixed for now - see the design doc's open "multi-instance discovery" question. Two VS windows
     // on this machine at once will fight over this port; only the pipe name is already per-instance.
-    private const int McpBridgePort = 5050;
+    private const int McpBridgePort = 41330;
 
     private PipeHost _mcpPipeHost;
     private BrokerProcess _mcpBrokerProcess;
