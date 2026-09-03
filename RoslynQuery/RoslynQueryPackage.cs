@@ -100,7 +100,7 @@ public sealed class RoslynQueryPackage : AsyncPackage
 
         var pipeName = $"RoslynQuery.{Process.GetCurrentProcess().Id}";
 
-        _mcpPipeHost = new PipeHost(pipeName, workspace);
+        _mcpPipeHost = new PipeHost(pipeName, workspace, JoinableTaskFactory);
         _mcpPipeHost.Start();
 
         _mcpBrokerProcess = new BrokerProcess();

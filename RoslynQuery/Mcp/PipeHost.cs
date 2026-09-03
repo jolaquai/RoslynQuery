@@ -4,26 +4,29 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Microsoft.CodeAnalysis;
+using Microsoft.VisualStudio.Threading;
 
 using StreamJsonRpc;
 
 namespace RoslynQuery.Mcp;
 
 /// <summary>
-/// Accepts one RoslynQuery.Mcp.Broker connection at a time over a named pipe and exposes
-/// RoslynQueryRpcServer on it via StreamJsonRpc, for the package's whole lifetime.
+/// Accepts one RoslynQuery.Mcp.Broker connection at a time over a named pipe and exposes a single
+/// RoslynQueryRpcServer on it via StreamJsonRpc, for the package's whole lifetime. The server is
+/// shared across accept-loop iterations so a dropped-and-reconnected broker keeps any live replace
+/// previews its PreviewCache is holding.
 /// </summary>
 internal sealed class PipeHost : IDisposable
 {
     private readonly string _pipeName;
-    private readonly Workspace _workspace;
+    private readonly RoslynQueryRpcServer _server;
     private readonly CancellationTokenSource _cts = new CancellationTokenSource();
     private Task _acceptLoop;
 
-    public PipeHost(string pipeName, Workspace workspace)
+    public PipeHost(string pipeName, Workspace workspace, JoinableTaskFactory mainThread = null)
     {
         _pipeName = pipeName;
-        _workspace = workspace;
+        _server = new RoslynQueryRpcServer(workspace, mainThread);
     }
 
     public void Start() => _acceptLoop = Task.Run(() => AcceptLoopAsync(_cts.Token));
@@ -40,7 +43,7 @@ internal sealed class PipeHost : IDisposable
             {
                 await pipe.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-                var rpc = JsonRpc.Attach(pipe, new RoslynQueryRpcServer(_workspace));
+                var rpc = JsonRpc.Attach(pipe, _server);
                 await rpc.Completion.ConfigureAwait(false);
             }
             catch (OperationCanceledException)
