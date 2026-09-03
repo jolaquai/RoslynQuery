@@ -1,6 +1,8 @@
 namespace RoslynQuery.Query;
 
-internal enum TargetKind
+// Public: RoslynQueryOptions exposes DefaultTarget as a DialogPage property, and a public property
+// can't be typed by a less-accessible enum (CS0053).
+public enum TargetKind
 {
     SyntaxNode,
     SyntaxToken,

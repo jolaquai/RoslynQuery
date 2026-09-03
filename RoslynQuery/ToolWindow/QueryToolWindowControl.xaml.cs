@@ -81,13 +81,22 @@ public partial class QueryToolWindowControl : UserControl
 
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        TargetCombo.ItemsSource = new[]
+        var options = RoslynQueryPackage.Instance?.GetDialogPage(typeof(RoslynQueryOptions)) as RoslynQueryOptions;
+
+        static int IndexOf<T>(Choice<T>[] choices, T value, int fallback)
+        {
+            var i = Array.FindIndex(choices, c => EqualityComparer<T>.Default.Equals(c.Value, value));
+            return i >= 0 ? i : fallback;
+        }
+
+        var targetChoices = new[]
         {
             new Choice<TargetKind>("SyntaxNode", TargetKind.SyntaxNode),
             new Choice<TargetKind>("SyntaxToken", TargetKind.SyntaxToken),
             new Choice<TargetKind>("IOperation", TargetKind.Operation)
         };
-        TargetCombo.SelectedIndex = 0;
+        TargetCombo.ItemsSource = targetChoices;
+        TargetCombo.SelectedIndex = IndexOf(targetChoices, options?.DefaultTarget ?? TargetKind.SyntaxNode, 0);
 
         var scopeChoices = new[]
         {
@@ -98,19 +107,20 @@ public partial class QueryToolWindowControl : UserControl
             new Choice<ScopeKind>("Solution", ScopeKind.Solution)
         };
         ScopeCombo.ItemsSource = scopeChoices;
+        ScopeCombo.SelectedIndex = IndexOf(scopeChoices, options?.DefaultScope ?? ScopeKind.Document, 2);
 
-        var defaultScope = (RoslynQueryPackage.Instance?.GetDialogPage(typeof(RoslynQueryOptions)) as RoslynQueryOptions)?.DefaultScope ?? ScopeKind.Document;
-        var defaultIndex = Array.FindIndex(scopeChoices, c => c.Value == defaultScope);
-        ScopeCombo.SelectedIndex = defaultIndex >= 0 ? defaultIndex : 2;
-
-        CapCombo.ItemsSource = new[]
+        var capChoices = new[]
         {
             new Choice<int>("1 000", 1000),
             new Choice<int>("5 000", 5000),
             new Choice<int>("20 000", 20000),
             new Choice<int>("100 000", 100000)
         };
-        CapCombo.SelectedIndex = 1;
+        CapCombo.ItemsSource = capChoices;
+        CapCombo.SelectedIndex = IndexOf(capChoices, options?.DefaultCap ?? 5000, 1);
+
+        GeneratedCheckBox.IsChecked = options?.DefaultIncludeGenerated ?? false;
+        SetSidebarExpanded(options?.DefaultShowHistory ?? true);
 
         _componentModel = Package.GetGlobalService(typeof(SComponentModel)) as IComponentModel;
         _workspace = _componentModel?.GetService<VisualStudioWorkspace>();
@@ -240,18 +250,19 @@ public partial class QueryToolWindowControl : UserControl
         Run();
     }
 
-    private void OnToggleSidebarClick(object sender, RoutedEventArgs e)
+    private void OnToggleSidebarClick(object sender, RoutedEventArgs e) => SetSidebarExpanded(SidebarColumn.Width.Value == 0);
+
+    /// <summary>Shared by the toggle button and the configured show-history-by-default option.</summary>
+    private void SetSidebarExpanded(bool expanded)
     {
-        var src = System.Runtime.CompilerServices.Unsafe.As<Button>(sender);
-        var collapsed = SidebarColumn.Width.Value == 0;
-        if (collapsed)
+        if (expanded)
         {
             SidebarColumn.MinWidth = 140;
             SidebarColumn.Width = new GridLength(_sidebarWidth);
             SidebarSplitterColumn.Width = GridLength.Auto;
             SidebarSplitter.Visibility = Visibility.Visible;
             SidebarPane.Visibility = Visibility.Visible;
-            src.Content = "History <";
+            SidebarToggleButton.Content = "History <";
         }
         else
         {
@@ -263,7 +274,7 @@ public partial class QueryToolWindowControl : UserControl
             SidebarSplitterColumn.Width = new GridLength(0);
             SidebarSplitter.Visibility = Visibility.Collapsed;
             SidebarPane.Visibility = Visibility.Collapsed;
-            src.Content = "History >";
+            SidebarToggleButton.Content = "History >";
         }
     }
 
