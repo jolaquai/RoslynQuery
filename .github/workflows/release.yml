@@ -57,10 +57,20 @@ jobs:
           dotnet-version: "11.0.x"
           dotnet-quality: preview
 
-      # Build-only for now: nothing packages or ships this yet (see BrokerProcess.Start's own
-      # comment), so there's nothing further to verify here than "does it still compile."
-      - name: Build broker
-        run: dotnet build RoslynQuery.Mcp.Broker/RoslynQuery.Mcp.Broker.csproj -c Release
+      # Self-contained, single-file, one per RID VS 2022+ actually runs on (both 64-bit-only): each
+      # publish doubles as this project's compile check, same as the old build-only step did, and
+      # produces exactly what "Embed broker into VSIX" below stages - no separate build step needed.
+      - name: Publish broker (win-x64)
+        run: >
+          dotnet publish RoslynQuery.Mcp.Broker/RoslynQuery.Mcp.Broker.csproj -c Release -r win-x64
+          --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -o artifacts/broker/win-x64
+
+      - name: Publish broker (win-arm64)
+        run: >
+          dotnet publish RoslynQuery.Mcp.Broker/RoslynQuery.Mcp.Broker.csproj -c Release -r win-arm64
+          --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -o artifacts/broker/win-arm64
 
       - name: Build
         run: msbuild RoslynQuery/RoslynQuery.csproj -t:Rebuild -p:Configuration=Release -p:DeployExtension=false
@@ -75,6 +85,27 @@ jobs:
           Copy-Item $vsix.FullName artifacts/
           "path=artifacts/$($vsix.Name)" >> $env:GITHUB_OUTPUT
           Write-Host "Staged VSIX: $($vsix.Name)"
+
+      # Added as .exe entries after VSSDK has already built and staged the .vsix, not as VSIX project
+      # content items: a self-contained single-file publish has no loose .dll beside it, so this
+      # sidesteps the payload check below entirely instead of needing to special-case it.
+      - name: Embed broker into VSIX
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $vsixPath = (Resolve-Path "${{ steps.vsix.outputs.path }}").Path
+          $zip = [System.IO.Compression.ZipFile]::Open($vsixPath, [System.IO.Compression.ZipArchiveMode]::Update)
+          try {
+            foreach ($rid in @("win-x64", "win-arm64")) {
+              $exe = Get-ChildItem -Path "artifacts/broker/$rid" -Filter *.exe -File | Select-Object -First 1
+              if (-not $exe) { throw "No published broker exe found for $rid." }
+              $entryName = "Broker/$rid/RoslynQuery.Mcp.Broker.exe"
+              [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $exe.FullName, $entryName) | Out-Null
+              Write-Host "Added $entryName ($([math]::Round($exe.Length / 1MB, 1)) MB)"
+            }
+          } finally {
+            $zip.Dispose()
+          }
 
       # A bundled Microsoft.CodeAnalysis.* would be a duplicate assembly identity in devenv and
       # would break MEF composition, so a payload beyond our own dll is a hard failure.

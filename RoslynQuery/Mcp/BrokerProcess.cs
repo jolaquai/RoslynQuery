@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 
 namespace RoslynQuery.Mcp;
 
@@ -12,11 +13,12 @@ internal sealed class BrokerProcess : IDisposable
     /// <returns>False if the broker executable couldn't be located - nothing else here has run.</returns>
     public bool Start(string pipeName, int port)
     {
-        // TODO(pass 2 follow-up, "Broker packaging" in the design doc): nothing yet copies the
-        // broker's published output next to the VSIX. Until a build step does that, this candidate
-        // path never exists and Start returns false - the bridge simply doesn't come up.
+        // release.yml's "Embed broker into VSIX" step is what actually puts this here, as a
+        // self-contained single-file exe per RID under Broker/<rid>/ next to this assembly - VS
+        // extracts a .vsix's whole content tree on install, this assembly included.
+        var rid = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "win-arm64" : "win-x64";
         var dir = Path.GetDirectoryName(typeof(BrokerProcess).Assembly.Location);
-        var brokerPath = Path.Combine(dir ?? string.Empty, "Broker", "RoslynQuery.Mcp.Broker.exe");
+        var brokerPath = Path.Combine(dir ?? string.Empty, "Broker", rid, "RoslynQuery.Mcp.Broker.exe");
         if (!File.Exists(brokerPath)) return false;
 
         _process = Process.Start(new ProcessStartInfo
