@@ -13,9 +13,9 @@ internal sealed class BrokerProcess : IDisposable
     /// <returns>False if the broker executable couldn't be located - nothing else here has run.</returns>
     public bool Start(string pipeName, int port)
     {
-        // release.yml's "Embed broker into VSIX" step is what actually puts this here, as a
-        // self-contained single-file exe per RID under Broker/<rid>/ next to this assembly - VS
-        // extracts a .vsix's whole content tree on install, this assembly included.
+        // RoslynQuery.csproj's IncludeBrokerInVsix target puts this here, as a self-contained
+        // single-file exe per RID under Broker/<rid>/ next to this assembly - VS extracts a .vsix's
+        // whole content tree on install (and an F5 experimental instance gets the same layout).
         var rid = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "win-arm64" : "win-x64";
         var dir = Path.GetDirectoryName(typeof(BrokerProcess).Assembly.Location);
         var brokerPath = Path.Combine(dir ?? string.Empty, "Broker", rid, "RoslynQuery.Mcp.Broker.exe");

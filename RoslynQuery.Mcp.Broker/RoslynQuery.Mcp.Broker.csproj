@@ -12,9 +12,9 @@
     <InvariantGlobalization>true</InvariantGlobalization>
 
     <!-- Declared here so `dotnet publish -r <rid>` needs no other project-side setup; self-contained,
-         single-file and native-library-extraction are release.yml's concern (its "Publish broker"
-         steps pass them explicitly), not baked in here, so a plain build/publish of this project
-         without a RID stays the ordinary framework-dependent build it always was. -->
+         single-file and native-library-extraction are the caller's concern (RoslynQuery.csproj's
+         PublishBroker target passes them explicitly), not baked in here, so a plain build/publish of
+         this project without a RID stays the ordinary framework-dependent build it always was. -->
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
   </PropertyGroup>
 

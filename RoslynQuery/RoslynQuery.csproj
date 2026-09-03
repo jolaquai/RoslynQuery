@@ -81,4 +81,49 @@
     <Compile Include="..\RoslynQuery.Mcp.Contracts\*.cs" Link="Mcp\Contracts\%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <!-- The broker ships inside this VSIX under Broker/<rid>/, next to RoslynQuery.dll, so
+       BrokerProcess.Start finds it on an installed extension and under an F5 experimental instance
+       alike. It is a net11 self-contained single-file publish, one per architecture VS 2022+ runs
+       on, injected as a VSIX source item rather than shipped as a loose payload assembly - the
+       single-file bundle has no loose .dll for "Verify VSIX payload" to trip over. -->
+  <PropertyGroup>
+    <BrokerProject>$(MSBuildThisFileDirectory)..\RoslynQuery.Mcp.Broker\RoslynQuery.Mcp.Broker.csproj</BrokerProject>
+    <!-- Not $(IntermediateOutputPath): that is set by the SDK targets, which import after this
+         PropertyGroup, so it reads empty here. -->
+    <BrokerStageDir>$(MSBuildProjectDirectory)\obj\$(Configuration)\broker\</BrokerStageDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Timestamp inputs for PublishBroker's incrementality: a touched broker or Contracts source
+         re-triggers the publish, an unchanged tree skips it (a self-contained ASP.NET Core publish
+         is slow and ~60-100 MB per RID). -->
+    <BrokerSource Include="$(MSBuildThisFileDirectory)..\RoslynQuery.Mcp.Broker\**\*.cs;$(MSBuildThisFileDirectory)..\RoslynQuery.Mcp.Broker\*.csproj;$(MSBuildThisFileDirectory)..\RoslynQuery.Mcp.Contracts\**\*.cs"
+                  Exclude="$(MSBuildThisFileDirectory)..\RoslynQuery.Mcp.Broker\bin\**;$(MSBuildThisFileDirectory)..\RoslynQuery.Mcp.Broker\obj\**" />
+  </ItemGroup>
+
+  <Target Name="PublishBroker"
+          Inputs="@(BrokerSource)"
+          Outputs="$(BrokerStageDir)win-x64\RoslynQuery.Mcp.Broker.exe;$(BrokerStageDir)win-arm64\RoslynQuery.Mcp.Broker.exe">
+    <!-- Always Release: the broker is a spawned child process, never debugged in-proc, and a Debug
+         self-contained publish is only larger. Needs the .NET 11 SDK on PATH (CI installs it; a dev
+         box building the VSIX already has it for the broker project). -->
+    <Exec Command="dotnet publish &quot;$(BrokerProject)&quot; -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o &quot;$(BrokerStageDir)win-x64&quot; --nologo" />
+    <Exec Command="dotnet publish &quot;$(BrokerProject)&quot; -c Release -r win-arm64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o &quot;$(BrokerStageDir)win-arm64&quot; --nologo" />
+  </Target>
+
+  <Target Name="IncludeBrokerInVsix" AfterTargets="GetVsixSourceItems" DependsOnTargets="PublishBroker">
+    <Error Condition="!Exists('$(BrokerStageDir)win-x64\RoslynQuery.Mcp.Broker.exe')"
+           Text="PublishBroker did not produce a win-x64 broker exe." />
+    <Error Condition="!Exists('$(BrokerStageDir)win-arm64\RoslynQuery.Mcp.Broker.exe')"
+           Text="PublishBroker did not produce a win-arm64 broker exe." />
+    <ItemGroup>
+      <VSIXSourceItem Include="$(BrokerStageDir)win-x64\RoslynQuery.Mcp.Broker.exe">
+        <VSIXSubPath>Broker\win-x64</VSIXSubPath>
+      </VSIXSourceItem>
+      <VSIXSourceItem Include="$(BrokerStageDir)win-arm64\RoslynQuery.Mcp.Broker.exe">
+        <VSIXSubPath>Broker\win-arm64</VSIXSubPath>
+      </VSIXSourceItem>
+    </ItemGroup>
+  </Target>
+
 </Project>
