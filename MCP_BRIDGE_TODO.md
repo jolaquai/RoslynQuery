@@ -23,13 +23,16 @@ works once installed.
    confirmed. If wrong, the MCP bridge's startup throws (caught, doesn't crash the extension,
    just logged) — check the Debug Output window in the experimental instance for
    `"RoslynQuery: MCP bridge failed to start:"`.
-3. **Broker extraction path** — nothing declares `Broker/**` in the `.vsixmanifest`; it's just
-   extra entries in the `.vsix` zip. Confirm the installed extension's folder
-   (`%LocalAppData%\Microsoft\VisualStudio\<ver>\Extensions\...`) actually contains
-   `Broker/win-x64/RoslynQuery.Mcp.Broker.exe` (or `win-arm64`) next to `RoslynQuery.dll`.
-4. **Broker actually launches** — open a solution, check Task Manager for
+3. **Broker extraction path** — `RoslynQuery.csproj`'s `IncludeBrokerInVsix` target adds the two
+   broker exes as `VSIXSourceItem`s with `VSIXSubPath=Broker\<rid>`; they are content files, not a
+   manifest `<Asset>`. Confirmed present in the built `.vsix` and picked up by F5 deploy locally.
+   Still confirm the *installed* extension folder
+   (`%LocalAppData%\Microsoft\VisualStudio\<ver>\Extensions\...`) contains
+   `Broker/win-x64/RoslynQuery.Mcp.Broker.exe` (or `win-arm64`) next to `RoslynQuery.dll` — VSIX
+   install and F5 deploy use the same source-item set, but only a real install proves it.
+4. **Broker actually launches** — F5, open a solution, check Task Manager for
    `RoslynQuery.Mcp.Broker.exe`. If it's missing, either #3 didn't hold or the spawn failed
-   silently.
+   silently (check the Debug Output window).
 5. **The actual MCP round trip** — point a real MCP client at `http://localhost:41330` (Claude
    Code itself, or any HTTP-transport client) and call `roslynquery_search`, then the
    `roslynquery_replace_preview` -> `roslynquery_replace_apply` pair. This has never happened
@@ -54,6 +57,14 @@ works once installed.
 
 ## Done in this pass
 
+- **Broker packaging via MSBuild** — `RoslynQuery.csproj` now has a `PublishBroker` /
+  `IncludeBrokerInVsix` target pair (`AfterTargets="GetVsixSourceItems"`) that `dotnet publish`es
+  the broker self-contained + single-file per RID into `obj\<config>\broker\<rid>\` and injects
+  each exe into the `.vsix` under `Broker\<rid>\`. Incremental on the broker + Contracts sources.
+  This replaces release.yml's old separate publish steps + `Embed broker into VSIX` zip surgery,
+  so a plain `msbuild`/F5 build now produces a working VSIX, not just CI. `Setup .NET for the
+  broker` moved ahead of `Build tests` in CI because building the VSIX (even transitively) now
+  shells out to `dotnet publish`.
 - **Replace over MCP** — `roslynquery_replace_preview` / `roslynquery_replace_apply` shipped in
   `RoslynQueryTools`, backed by `IRoslynQueryRpc.PreviewReplaceAsync` / `ApplyReplaceAsync`.
 - **Preview cache** — `RoslynQuery/Mcp/PreviewCache.cs`. A `PreviewId` (opaque GUID) maps to the
@@ -76,8 +87,9 @@ works once installed.
 
 ## Known, accepted tradeoffs (not bugs)
 
-- VSIX size roughly doubles-to-triples: two embedded self-contained single-file broker builds
-  (win-x64 + win-arm64), each typically 60-100MB even with `InvariantGlobalization` on.
+- VSIX size balloons: two embedded self-contained single-file broker builds (win-x64 + win-arm64),
+  ~110MB and ~125MB uncompressed respectively even with `InvariantGlobalization` on, vs.
+  `RoslynQuery.dll` at ~0.3MB.
 - No auth on the broker's HTTP endpoint beyond loopback bind + Host-header check + CORS
   restricted to localhost — same-machine trust model, same as Claude Code already editing files
   directly.
@@ -100,8 +112,9 @@ works once installed.
 
 ## CI, for reference
 
-`.github/workflows/release.yml` verifies: `RoslynQuery.csproj` compiles, `RoslynQuery.Tests`
-passes (`PipeHostTests`, now Search + Replace, included), `RoslynQuery.Mcp.Broker` publishes
-self-contained for both RIDs, and the resulting `.vsix` contains exactly `RoslynQuery.dll` plus
-the two broker exes under `Broker/<rid>/`. It cannot and does not install the VSIX or start a
-real VS.
+`.github/workflows/release.yml` verifies: `RoslynQuery.csproj` compiles (which, via the
+`IncludeBrokerInVsix` target, also publishes `RoslynQuery.Mcp.Broker` self-contained for both
+RIDs — that publish is the broker's compile check), `RoslynQuery.Tests` passes (`PipeHostTests`,
+now Search + Replace, included), and the resulting `.vsix` contains exactly `RoslynQuery.dll`
+plus the two broker exes under `Broker/<rid>/`. It cannot and does not install the VSIX or start
+a real VS.
