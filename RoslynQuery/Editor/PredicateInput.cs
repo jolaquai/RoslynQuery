@@ -12,7 +12,7 @@ using Microsoft.VisualStudio.Text.Editor;
 using Microsoft.VisualStudio.Text.Operations;
 using Microsoft.VisualStudio.Utilities;
 
-using RoslynQuery.Query;
+using RoslynQuery.Mcp.Contracts;
 
 using VsData = Microsoft.VisualStudio.Language.Intellisense.AsyncCompletion.Data;
 

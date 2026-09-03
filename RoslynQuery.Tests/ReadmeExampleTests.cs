@@ -1,3 +1,4 @@
+using RoslynQuery.Mcp.Contracts;
 using RoslynQuery.Query;
 
 using Xunit;

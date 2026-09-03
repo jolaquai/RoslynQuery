@@ -1,8 +1,8 @@
 namespace RoslynQuery.Mcp.Contracts;
 
 /// <summary>
-/// Wire copy of RoslynQuery.Query.TargetKind. Kept as its own type, not a shared reference, so
-/// either project's internals can change without the pipe protocol silently changing underneath it.
+/// What a Search/Replace predicate runs against. The canonical definition - RoslynQuery (the VSIX)
+/// references it from here too, rather than keeping a second copy in sync by hand.
 /// </summary>
 public enum TargetKind
 {
@@ -11,7 +11,7 @@ public enum TargetKind
     Operation
 }
 
-/// <summary>Wire copy of RoslynQuery.Query.ScopeKind - see <see cref="TargetKind"/>'s remark.</summary>
+/// <summary>How wide a Search/Replace run reaches. See <see cref="TargetKind"/>'s remark.</summary>
 public enum ScopeKind
 {
     ContainingMember,

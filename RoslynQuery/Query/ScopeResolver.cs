@@ -11,6 +11,8 @@ using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.TextManager.Interop;
 
+using RoslynQuery.Mcp.Contracts;
+
 using IServiceProvider = System.IServiceProvider;
 using TextSpan = Microsoft.CodeAnalysis.Text.TextSpan;
 

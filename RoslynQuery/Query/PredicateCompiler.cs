@@ -11,6 +11,8 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 
+using RoslynQuery.Mcp.Contracts;
+
 namespace RoslynQuery.Query;
 
 internal delegate ValueTask<object> NodeMatch(SyntaxNode n, SemanticModel model, Document doc);

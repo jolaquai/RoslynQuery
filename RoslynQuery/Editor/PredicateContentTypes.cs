@@ -3,7 +3,7 @@ using System.ComponentModel.Composition;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Utilities;
 
-using RoslynQuery.Query;
+using RoslynQuery.Mcp.Contracts;
 
 namespace RoslynQuery.Editor;
 

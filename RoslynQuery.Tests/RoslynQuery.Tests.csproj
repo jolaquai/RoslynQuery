@@ -29,6 +29,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\RoslynQuery\RoslynQuery.csproj" />
+    <ProjectReference Include="..\RoslynQuery.Mcp.Contracts\RoslynQuery.Mcp.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

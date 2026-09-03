@@ -7,6 +7,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 
+using RoslynQuery.Mcp.Contracts;
 using RoslynQuery.Query;
 using RoslynQuery.Replace;
 

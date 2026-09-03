@@ -4,6 +4,7 @@ using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
+using RoslynQuery.Mcp.Contracts;
 using RoslynQuery.Query;
 using RoslynQuery.Replace;
 

@@ -4,6 +4,8 @@ using System.IO;
 
 using Microsoft.CodeAnalysis.CSharp;
 
+using RoslynQuery.Mcp.Contracts;
+
 namespace RoslynQuery.Query;
 
 /// <summary>

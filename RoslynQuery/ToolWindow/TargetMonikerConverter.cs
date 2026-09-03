@@ -4,7 +4,7 @@ using System.Windows.Data;
 
 using Microsoft.VisualStudio.Imaging;
 
-using RoslynQuery.Query;
+using RoslynQuery.Mcp.Contracts;
 
 namespace RoslynQuery.ToolWindow;
 

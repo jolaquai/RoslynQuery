@@ -10,6 +10,8 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 
+using RoslynQuery.Mcp.Contracts;
+
 namespace RoslynQuery.Query;
 
 internal sealed class QueryOutcome

@@ -5,6 +5,8 @@ using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 
+using RoslynQuery.Mcp.Contracts;
+
 namespace RoslynQuery.Query;
 
 /// <summary>

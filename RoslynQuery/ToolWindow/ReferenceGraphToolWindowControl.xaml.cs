@@ -18,8 +18,8 @@ using Microsoft.VisualStudio.LanguageServices;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Threading;
 
+using RoslynQuery.Mcp.Contracts;
 using RoslynQuery.Navigation;
-using RoslynQuery.Query;
 using RoslynQuery.ReferenceGraph;
 
 namespace RoslynQuery.ToolWindow;

@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Reflection;
 
+using RoslynQuery.Mcp.Contracts;
 using RoslynQuery.Query;
 
 using Xunit;

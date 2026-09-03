@@ -19,6 +19,7 @@ using Microsoft.VisualStudio.TextManager.Interop;
 using Microsoft.VisualStudio.Threading;
 
 using RoslynQuery.Editor;
+using RoslynQuery.Mcp.Contracts;
 using RoslynQuery.Navigation;
 using RoslynQuery.Options;
 using RoslynQuery.Query;

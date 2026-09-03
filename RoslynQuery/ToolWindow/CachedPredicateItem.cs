@@ -5,6 +5,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
+using RoslynQuery.Mcp.Contracts;
 using RoslynQuery.Query;
 
 namespace RoslynQuery.ToolWindow;

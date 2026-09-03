@@ -1,5 +1,6 @@
 using System.Linq;
 
+using RoslynQuery.Mcp.Contracts;
 using RoslynQuery.Query;
 using RoslynQuery.ToolWindow;
 

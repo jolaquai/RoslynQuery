@@ -2,7 +2,7 @@ using System.ComponentModel;
 
 using Microsoft.VisualStudio.Shell;
 
-using RoslynQuery.Query;
+using RoslynQuery.Mcp.Contracts;
 
 namespace RoslynQuery.Options;
 
