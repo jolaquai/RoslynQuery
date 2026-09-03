@@ -28,8 +28,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Not also RoslynQuery.Mcp.Contracts directly: RoslynQuery.csproj links that project's source
+         straight into RoslynQuery.dll (see its own comment on why), so referencing both here would
+         put two different assemblies' copies of the same types in scope at once - CS0433. Everything
+         Contracts defines is already reachable through this one reference. -->
     <ProjectReference Include="..\RoslynQuery\RoslynQuery.csproj" />
-    <ProjectReference Include="..\RoslynQuery.Mcp.Contracts\RoslynQuery.Mcp.Contracts.csproj" />
   </ItemGroup>
 
 </Project>
