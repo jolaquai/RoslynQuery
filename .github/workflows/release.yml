@@ -49,6 +49,19 @@ jobs:
           & $exe
           if ($LASTEXITCODE -ne 0) { throw "Tests failed with exit code $LASTEXITCODE." }
 
+      # The broker targets a preview TFM windows-latest doesn't carry by default; nothing else here
+      # needs a non-default SDK, so this is scoped to just this one step rather than added globally.
+      - name: Setup .NET for the broker
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "11.0.x"
+          dotnet-quality: preview
+
+      # Build-only for now: nothing packages or ships this yet (see BrokerProcess.Start's own
+      # comment), so there's nothing further to verify here than "does it still compile."
+      - name: Build broker
+        run: dotnet build RoslynQuery.Mcp.Broker/RoslynQuery.Mcp.Broker.csproj -c Release
+
       - name: Build
         run: msbuild RoslynQuery/RoslynQuery.csproj -t:Rebuild -p:Configuration=Release -p:DeployExtension=false
 
