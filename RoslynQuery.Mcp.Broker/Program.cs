@@ -3,7 +3,6 @@ using System.IO.Pipes;
 using System.Threading.Tasks;
 
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
 using RoslynQuery.Mcp.Contracts;
@@ -22,7 +21,7 @@ public static class Program
         // One connection for the broker's whole lifetime: RoslynQueryPackage's PipeHost accepts it
         // once and serves every tool call over it, rather than reconnecting per request.
         var pipeClient = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-        await pipeClient.ConnectAsync(TimeSpan.FromSeconds(10));
+        await pipeClient.ConnectAsync((int)TimeSpan.FromSeconds(10).TotalMilliseconds);
         var rpc = JsonRpc.Attach<IRoslynQueryRpc>(pipeClient);
 
         var builder = WebApplication.CreateBuilder(args);
@@ -44,7 +43,7 @@ public static class Program
             if (!string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) &&
                 !string.Equals(host, "127.0.0.1", StringComparison.Ordinal))
             {
-                context.Response.StatusCode = StatusCodes.Status421MisdirectedRequest;
+                context.Response.StatusCode = 421; // Misdirected Request
                 return;
             }
             await next();
