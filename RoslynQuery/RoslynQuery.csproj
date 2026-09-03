@@ -64,6 +64,14 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.6.0" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" Version="5.6.0" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VisualStudio.LanguageServices" Version="4.14.0" ExcludeAssets="runtime" />
+
+    <!-- Unlike the Roslyn/VS SDK packages above, nothing guarantees devenv already has StreamJsonRpc
+         loaded and redirected - it ships as a private dependency alongside the VSIX instead. -->
+    <PackageReference Include="StreamJsonRpc" Version="2.25.29" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RoslynQuery.Mcp.Contracts\RoslynQuery.Mcp.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

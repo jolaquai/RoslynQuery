@@ -3,4 +3,6 @@
     <Deploy />
   </Project>
   <Project Path="RoslynQuery.Tests/RoslynQuery.Tests.csproj" />
+  <Project Path="RoslynQuery.Mcp.Contracts/RoslynQuery.Mcp.Contracts.csproj" />
+  <Project Path="RoslynQuery.Mcp.Broker/RoslynQuery.Mcp.Broker.csproj" />
 </Solution>

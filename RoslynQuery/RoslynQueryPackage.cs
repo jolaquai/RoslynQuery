@@ -1,15 +1,18 @@
 using System;
 using System.ComponentModel.Design;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.LanguageServices;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Threading;
 
+using RoslynQuery.Mcp;
 using RoslynQuery.Options;
 using RoslynQuery.Query;
 using RoslynQuery.ReferenceGraph;
@@ -49,6 +52,13 @@ public sealed class RoslynQueryPackage : AsyncPackage
     /// <summary>Set before anything can reach a tool window: opening one force-loads this package first.</summary>
     public static RoslynQueryPackage Instance { get; private set; }
 
+    // Fixed for now - see the design doc's open "multi-instance discovery" question. Two VS windows
+    // on this machine at once will fight over this port; only the pipe name is already per-instance.
+    private const int McpBridgePort = 5050;
+
+    private PipeHost _mcpPipeHost;
+    private BrokerProcess _mcpBrokerProcess;
+
     protected override async Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
     {
         Instance = this;
@@ -63,6 +73,49 @@ public sealed class RoslynQueryPackage : AsyncPackage
         var viewReferenceGraph = new OleMenuCommand(ViewReferenceGraph, new CommandID(CommandSet, ViewReferenceGraphCommandId));
         viewReferenceGraph.BeforeQueryStatus += OnViewReferenceGraphQueryStatus;
         commands.AddCommand(viewReferenceGraph);
+
+        try
+        {
+            await StartMcpBridgeAsync(cancellationToken);
+        }
+        catch (Exception ex) when (!ErrorHandler.IsCriticalException(ex))
+        {
+            // Best-effort: the Search/Replace tool window works fine without the MCP bridge up.
+            Debug.WriteLine($"RoslynQuery: MCP bridge failed to start: {ex}");
+        }
+    }
+
+    /// <summary>
+    /// Starts the pipe host and spawns the broker so Search is reachable over MCP without the tool
+    /// window ever having been opened. A no-op, not an error, when no workspace is available yet
+    /// (no solution open) or the broker executable isn't deployed (see BrokerProcess.Start).
+    /// </summary>
+    private async Task StartMcpBridgeAsync(CancellationToken cancellationToken)
+    {
+        await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+
+        var componentModel = await GetServiceAsync(typeof(SComponentModel)) as IComponentModel;
+        var workspace = componentModel?.GetService<VisualStudioWorkspace>();
+        if (workspace is null) return;
+
+        var pipeName = $"RoslynQuery.{Process.GetCurrentProcess().Id}";
+
+        _mcpPipeHost = new PipeHost(pipeName, workspace);
+        _mcpPipeHost.Start();
+
+        _mcpBrokerProcess = new BrokerProcess();
+        _mcpBrokerProcess.Start(pipeName, McpBridgePort);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _mcpBrokerProcess?.Dispose();
+            _mcpPipeHost?.Dispose();
+        }
+
+        base.Dispose(disposing);
     }
 
     private void ShowToolWindow(object sender, EventArgs e) => JoinableTaskFactory.RunAsync(async () =>

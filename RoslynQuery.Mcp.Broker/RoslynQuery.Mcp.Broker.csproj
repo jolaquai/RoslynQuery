@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <!-- The only piece that needs to speak MCP, so the only piece not pinned to net472 - see
+         RoslynQuery.csproj's own comment on why VisualStudioWorkspace keeps that project in-proc. -->
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>RoslynQuery.Mcp.Broker</RootNamespace>
+    <AssemblyName>RoslynQuery.Mcp.Broker</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- TODO(pass 2 follow-up): pin to whatever's actually restorable - verify both against NuGet,
+         this was written without a live restore available. -->
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.1.0" />
+    <PackageReference Include="StreamJsonRpc" Version="2.25.29" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RoslynQuery.Mcp.Contracts\RoslynQuery.Mcp.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>
