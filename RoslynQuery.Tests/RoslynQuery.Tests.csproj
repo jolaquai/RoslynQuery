@@ -25,6 +25,12 @@
          two the tests actually touch are referenced directly, with runtime assets. -->
     <PackageReference Include="Microsoft.VisualStudio.ImageCatalog" Version="17.14.40260" />
     <PackageReference Include="Microsoft.VisualStudio.Imaging.Interop.14.0.DesignTime" Version="17.14.40254" />
+
+    <!-- Same reasoning: RoslynQuery.csproj excludes StreamJsonRpc's runtime assets on the assumption
+         devenv already has a copy loaded. This test runner is its own standalone process with no
+         devenv behind it, so PipeHostTests needs StreamJsonRpc.dll actually present in its own output
+         - referenced directly here, with runtime assets, same as the moniker converters above. -->
+    <PackageReference Include="StreamJsonRpc" Version="2.25.29" />
   </ItemGroup>
 
   <ItemGroup>

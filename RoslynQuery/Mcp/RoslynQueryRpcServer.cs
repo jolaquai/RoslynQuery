@@ -3,9 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Microsoft.VisualStudio.LanguageServices;
-using Microsoft.VisualStudio.Shell;
-using Microsoft.VisualStudio.Threading;
+using Microsoft.CodeAnalysis;
 
 using RoslynQuery.Mcp.Contracts;
 using RoslynQuery.Query;
@@ -14,21 +12,20 @@ namespace RoslynQuery.Mcp;
 
 /// <summary>
 /// The pipe side of IRoslynQueryRpc, driving QueryEngine/ScopeResolver exactly as the tool window
-/// does. TargetKind/ScopeKind are RoslynQuery.Mcp.Contracts' own types, so the engine takes a
-/// request's Target/Scope directly - there's no translation layer at this boundary.
+/// does. Takes the base Workspace type rather than VisualStudioWorkspace: CurrentSolution is
+/// thread-safe to read from any thread and nothing here touches live editor state, so there is no
+/// VS-UI-thread requirement to inherit - and it means an AdhocWorkspace can drive this in a test the
+/// same way one already drives every other engine test in this repo.
 /// </summary>
 internal sealed class RoslynQueryRpcServer : IRoslynQueryRpc
 {
-    private readonly VisualStudioWorkspace _workspace;
+    private readonly Workspace _workspace;
 
-    public RoslynQueryRpcServer(VisualStudioWorkspace workspace) => _workspace = workspace;
+    public RoslynQueryRpcServer(Workspace workspace) => _workspace = workspace;
 
     public async Task<SearchResponse> SearchAsync(SearchRequest request, CancellationToken cancellationToken)
     {
-        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
         var solution = _workspace.CurrentSolution;
-
-        await TaskScheduler.Default;
 
         var active = request.FilePath is null
             ? null

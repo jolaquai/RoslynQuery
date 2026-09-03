@@ -3,7 +3,7 @@ using System.IO.Pipes;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Microsoft.VisualStudio.LanguageServices;
+using Microsoft.CodeAnalysis;
 
 using StreamJsonRpc;
 
@@ -16,11 +16,11 @@ namespace RoslynQuery.Mcp;
 internal sealed class PipeHost : IDisposable
 {
     private readonly string _pipeName;
-    private readonly VisualStudioWorkspace _workspace;
+    private readonly Workspace _workspace;
     private readonly CancellationTokenSource _cts = new CancellationTokenSource();
     private Task _acceptLoop;
 
-    public PipeHost(string pipeName, VisualStudioWorkspace workspace)
+    public PipeHost(string pipeName, Workspace workspace)
     {
         _pipeName = pipeName;
         _workspace = workspace;
