@@ -17,7 +17,9 @@ internal enum PredicateMode
     Body
 }
 
-internal enum ScopeKind
+// Public: RoslynQueryOptions exposes DefaultScope as a DialogPage property, and a public property
+// can't be typed by a less-accessible enum (CS0053).
+public enum ScopeKind
 {
     ContainingMember,
     ContainingType,

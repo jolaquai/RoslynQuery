@@ -20,6 +20,7 @@ using Microsoft.VisualStudio.Threading;
 
 using RoslynQuery.Editor;
 using RoslynQuery.Navigation;
+using RoslynQuery.Options;
 using RoslynQuery.Query;
 using RoslynQuery.Replace;
 
@@ -88,7 +89,7 @@ public partial class QueryToolWindowControl : UserControl
         };
         TargetCombo.SelectedIndex = 0;
 
-        ScopeCombo.ItemsSource = new[]
+        var scopeChoices = new[]
         {
             new Choice<ScopeKind>("Containing member", ScopeKind.ContainingMember),
             new Choice<ScopeKind>("Containing type", ScopeKind.ContainingType),
@@ -96,7 +97,11 @@ public partial class QueryToolWindowControl : UserControl
             new Choice<ScopeKind>("Current project", ScopeKind.Project),
             new Choice<ScopeKind>("Solution", ScopeKind.Solution)
         };
-        ScopeCombo.SelectedIndex = 2;
+        ScopeCombo.ItemsSource = scopeChoices;
+
+        var defaultScope = (RoslynQueryPackage.Instance?.GetDialogPage(typeof(RoslynQueryOptions)) as RoslynQueryOptions)?.DefaultScope ?? ScopeKind.Document;
+        var defaultIndex = Array.FindIndex(scopeChoices, c => c.Value == defaultScope);
+        ScopeCombo.SelectedIndex = defaultIndex >= 0 ? defaultIndex : 2;
 
         CapCombo.ItemsSource = new[]
         {
