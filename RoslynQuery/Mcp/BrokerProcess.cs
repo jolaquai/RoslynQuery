@@ -34,7 +34,9 @@ internal sealed class BrokerProcess : IDisposable
     {
         try
         {
-            if (_process is { HasExited: false }) _process.Kill(entireProcessTree: true);
+            // No entireProcessTree overload on net472 (that's .NET Core 3.0+ only) - fine as long as
+            // the broker doesn't itself spawn children, which it doesn't today.
+            if (_process is { HasExited: false }) _process.Kill();
         }
         catch
         {
