@@ -65,13 +65,20 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" Version="5.6.0" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VisualStudio.LanguageServices" Version="4.14.0" ExcludeAssets="runtime" />
 
-    <!-- Unlike the Roslyn/VS SDK packages above, nothing guarantees devenv already has StreamJsonRpc
-         loaded and redirected - it ships as a private dependency alongside the VSIX instead. -->
-    <PackageReference Include="StreamJsonRpc" Version="2.25.29" />
+    <!-- Compile-only, same reasoning as the Roslyn packages above: the Verify VSIX payload step in
+         release.yml hard-fails on any .dll beyond our own, so shipping a private copy was never an
+         option here. VS's own OOP/LSP infrastructure is built on StreamJsonRpc, so devenv already
+         has a copy loaded; unverified against a live devenv, since nothing here can launch one. -->
+    <PackageReference Include="StreamJsonRpc" Version="2.25.29" ExcludeAssets="runtime" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\RoslynQuery.Mcp.Contracts\RoslynQuery.Mcp.Contracts.csproj" />
+    <!-- Linked, not a ProjectReference: the Verify VSIX payload step below hard-fails on any .dll
+         beyond RoslynQuery.dll itself, so RoslynQuery.Mcp.Contracts.dll can't ship alongside it the
+         normal way. Compiling its source directly into this assembly instead still leaves exactly
+         one place these types are defined (RoslynQuery.Mcp.Contracts/*.cs) - just two assemblies
+         that each compile it, the other being the broker's own unconstrained build. -->
+    <Compile Include="..\RoslynQuery.Mcp.Contracts\*.cs" Link="Mcp\Contracts\%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>
