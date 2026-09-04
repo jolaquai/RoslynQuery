@@ -117,7 +117,7 @@ public partial class QueryToolWindowControl : UserControl
             new Choice<int>("100 000", 100000)
         };
         CapCombo.ItemsSource = capChoices;
-        CapCombo.SelectedIndex = IndexOf(capChoices, options?.DefaultCap ?? 5000, 1);
+        CapCombo.SelectedIndex = IndexOf(capChoices, (int)(options?.DefaultCap ?? CapPreset.Cap5000), 1);
 
         GeneratedCheckBox.IsChecked = options?.DefaultIncludeGenerated ?? false;
         SetSidebarExpanded(options?.DefaultShowHistory ?? true);
@@ -128,7 +128,7 @@ public partial class QueryToolWindowControl : UserControl
         _searchInput = PredicateInputFactory.Create(_componentModel, out var diagnostic);
         PredicateHost.Content = _searchInput.Element;
         _searchInput.Target = CurrentTarget;
-        _searchInput.Text = DefaultQueryBoxContent;
+        _searchInput.Text = (options?.ShowExampleQuery ?? true) ? DefaultQueryBoxContent : string.Empty;
         // Switches tabs first: running against stale Replace previews from a since-changed query is
         // exactly the confusion this is meant to avoid, and Run() itself clears them either way.
         _searchInput.SubmitRequested += (s, args) =>

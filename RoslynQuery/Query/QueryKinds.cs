@@ -29,3 +29,14 @@ public enum ScopeKind
     Project,
     Solution
 }
+
+// Public: RoslynQueryOptions exposes DefaultCap as a DialogPage property, and a public property
+// can't be typed by a less-accessible enum (CS0053). Values mirror the tool window's Cap presets
+// exactly, so the two stay in lockstep by construction rather than by convention.
+public enum CapPreset
+{
+    Cap1000 = 1000,
+    Cap5000 = 5000,
+    Cap20000 = 20000,
+    Cap100000 = 100000
+}
