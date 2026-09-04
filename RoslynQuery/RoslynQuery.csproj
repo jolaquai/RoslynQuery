@@ -12,7 +12,7 @@
 
     <!-- Single source of truth for the extension version: the VSIX manifest is stamped from this
          via |%CurrentProject%;GetVsixVersion| and release.yml derives the release tag from it. -->
-    <Version>0.3.0</Version>
+    <Version>0.3.1</Version>
 
     <VSSDKBuildToolsAutoSetup>true</VSSDKBuildToolsAutoSetup>
     <GeneratePkgDefFile>true</GeneratePkgDefFile>

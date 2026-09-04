@@ -10,6 +10,7 @@ using Microsoft.VisualStudio.LanguageServices;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Threading;
 
+using RoslynQuery.Options;
 using RoslynQuery.Query;
 using RoslynQuery.ReferenceGraph;
 using RoslynQuery.ToolWindow;
@@ -20,10 +21,11 @@ namespace RoslynQuery;
 
 [Guid(PackageGuidString)]
 [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
-[InstalledProductRegistration("#110", "#112", "0.3.0")]
+[InstalledProductRegistration("#110", "#112", "0.3.1")]
 [ProvideMenuResource("Menus.ctmenu", 1)]
 [ProvideToolWindow(typeof(QueryToolWindow), Style = VsDockStyle.Tabbed, Window = "{D78612C7-9962-4B83-95D9-268046DAD23A}")]
 [ProvideToolWindow(typeof(ReferenceGraphToolWindow), Style = VsDockStyle.Tabbed, Window = "{D78612C7-9962-4B83-95D9-268046DAD23A}")]
+[ProvideOptionPage(typeof(RoslynQueryOptions), "RoslynQuery", "General", 0, 0, true)]
 // Without this, "View Reference Graph" stays greyed out until a window is opened by hand: nothing
 // else loads the package, so its BeforeQueryStatus never runs.
 [ProvideAutoLoad(CSharpEditorContextGuidString, PackageAutoLoadFlags.BackgroundLoad)]
@@ -44,8 +46,12 @@ public sealed class RoslynQueryPackage : AsyncPackage
     public const int ShowReferenceGraphCommandId = 0x0101;
     public const int ViewReferenceGraphCommandId = 0x0102;
 
+    /// <summary>Set before anything can reach a tool window: opening one force-loads this package first.</summary>
+    public static RoslynQueryPackage Instance { get; private set; }
+
     protected override async Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
     {
+        Instance = this;
         await base.InitializeAsync(cancellationToken, progress).ConfigureAwait(false);
         await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
 
