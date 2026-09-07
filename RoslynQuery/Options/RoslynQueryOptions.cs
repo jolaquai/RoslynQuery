@@ -27,9 +27,9 @@ public sealed class RoslynQueryOptions : DialogPage
 
     [Category("Tool Window Defaults")]
     [DisplayName("Default cap")]
-    [Description("The match cap the tool window starts with. Only 1000, 5000, 20000 and 100000 match a Cap box preset; any other value is ignored.")]
-    [DefaultValue(5000)]
-    public int DefaultCap { get; set; } = 5000;
+    [Description("The match cap the tool window starts with.")]
+    [DefaultValue(CapPreset.Cap5000)]
+    public CapPreset DefaultCap { get; set; } = CapPreset.Cap5000;
 
     [Category("Tool Window Defaults")]
     [DisplayName("Include generated code by default")]
@@ -42,4 +42,10 @@ public sealed class RoslynQueryOptions : DialogPage
     [Description("Whether the query history sidebar starts expanded.")]
     [DefaultValue(true)]
     public bool DefaultShowHistory { get; set; } = true;
+
+    [Category("Tool Window Defaults")]
+    [DisplayName("Show example query")]
+    [Description("Whether the Find box starts pre-filled with the example query. Turn off to start with an empty box.")]
+    [DefaultValue(true)]
+    public bool ShowExampleQuery { get; set; } = true;
 }
