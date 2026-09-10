@@ -31,13 +31,13 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress - phase 1 code complete; phase 2 (steps 15-26) planned, not started
-- **Current step:** 18 - kind-narrowed incoming analyzers. Then 19-26 in order, then 27-28, which
+- **Current step:** 19 - extension methods. Then 20-26 in order, then 27-28, which
   were added mid-phase and depend on the analyzer plumbing steps 16-20 build. Steps 8, 12 and 14 stay
   `[~]`: their manual smoke test is deliberately deferred into step 26, which rewrites the tree they were
   verifying, and step 26 is re-run once 28 lands.
 - **Branch:** feature/favorites
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `add hierarchy analyzers to the reference graph engine` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `credit a field type reference to the field, not its containing type` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-09-10
 
 ## Goal
@@ -422,7 +422,7 @@ below are shaped the way they are.
   `DerivedTypes` returns framework types, which is the free metadata depth this phase is built on.
 - **Commit:** `add hierarchy analyzers to the reference graph engine`
 
-### 18. Engine: kind-narrowed incoming analyzers `[ ]`
+### 18. Engine: kind-narrowed incoming analyzers `[x]`
 
 - **Files:** `RoslynQuery/ReferenceGraph/ReferenceGraphEngine.cs`,
   `RoslynQuery/ReferenceGraph/ReferenceUsageClassifier.cs`,
@@ -700,6 +700,24 @@ turning them away, and only locals, parameters and type parameters actually need
   answers empty (see the probe findings). The exclusion keys off the containing type's kind instead.
 - **Step 15: a static class does not get `Instantiated By`.** Not called out in the step text; it cannot be
   constructed, so the branch could only ever be empty.
+- **Step 18 found a pre-existing attribution bug in `EnclosingDeclaration`.** `GetDeclaredSymbol` answers
+  null for a `FieldDeclarationSyntax` (a field declares its symbol on the `VariableDeclarator`), so the
+  ancestor walk climbed straight past it to the containing type. Everything in a field's attribute list
+  **and its declared type** was therefore credited to the class rather than the field. Fixed by resolving a
+  `BaseFieldDeclarationSyntax` through its first declarator, which also covers field-like events.
+  This corrected an existing expectation in `ReferenceGraphEngineLinkedFileTests`: for
+  `static readonly Fmt Cached = new();` the `Cached` row now reports two occurrences - the declared type and
+  the initializer - where it previously reported only the construction. The four-target-framework collapse
+  the test exists for still holds (two occurrences, not eight).
+- **Step 18: `AppliedTo` keys on the attribute's `Name` span, not merely on being inside an
+  `AttributeSyntax`.** Otherwise `[Marker(typeof(Foo))]` would report `Foo` as being applied to the
+  declaration, when it is only carried in the attribute's arguments.
+- **Step 18: `IsSignaturePosition` excludes lambda parameter lists explicitly.** A lambda's `ParameterSyntax`
+  is a nearer ancestor than the enclosing body, so the bottom-up walk would otherwise call it a signature
+  position and report the enclosing member under `Exposed By`.
+- **Step 18: the phase-1 `FindIncomingAsync` overload is kept as a wrapper.** The tool window and the
+  original engine tests still call it; step 22 migrates the window to the analyzer-driven overload, and
+  deleting it early would have broken the build for four steps for no benefit.
 - **Step 17: `Describe` now returns null when no usage kind is present.** A hierarchy row points at a
   declaration rather than a usage, so its single location carries `ReferenceUsageKind.None`; without the
   guard the secondary line rendered as `1 ref ()`. Cost one extra file beyond the step's list
