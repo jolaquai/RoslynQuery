@@ -23,11 +23,11 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress - phase 1 code complete; phase 2 (steps 15-26) planned, not started
-- **Current step:** 15 - analyzer kinds and the applicability table. Steps 8, 12 and 14 stay `[~]`: their
+- **Current step:** 16 - node roles and the alternating tree. Steps 8, 12 and 14 stay `[~]`: their
   manual smoke test is deliberately deferred into step 26, which rewrites the tree they were verifying.
 - **Branch:** feature/favorites
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `plan the ilspy-style analyzer redesign` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `add reference analyzer kinds and applicability table` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-09-10
 
 ## Goal
@@ -327,7 +327,7 @@ below are shaped the way they are.
   loaded under its own redirects. Step 25 therefore **starts** by proving the decompiler loads and runs
   inside the experimental instance, before any UI is built on it.
 
-### 15. Analyzer kinds and the applicability table `[ ]`
+### 15. Analyzer kinds and the applicability table `[x]`
 
 - **Files:** `RoslynQuery/ReferenceGraph/ReferenceAnalyzerKind.cs` (new),
   `RoslynQuery/ReferenceGraph/ReferenceAnalyzers.cs` (new),
@@ -593,6 +593,25 @@ below are shaped the way they are.
 - **Status field records the commit subject, not the hash.** Rule 5 requires the code change and this
   file's update to land in one commit, so a hash recorded in that same commit can never be its own.
   The field is `Last synced commit subject` instead; check it with `git log -1 --format=%s`.
+
+- **Step 15: branch order is fixed to the screenshots, which the step text did not specify.** Members read
+  `Uses`, `Used By`, `Overridden By`, `Overrides`, `Implements` / `Implemented By`, matching the second
+  screenshot's root row. Types read `Uses`, `Instantiated By`, `Used By`, `Exposed By`, `Derived Types`,
+  `Implemented By`, `Extension Methods`, `Applied To`.
+- **Step 15: ILSpy offers neither `Uses` nor `Derived Types` on a type; both are kept anyway.** ILSpy has
+  no type-level `Uses` analyzer at all, and surfaces derived types elsewhere in its own tree rather than in
+  the Analyzer pane. Phase 1 already answered outgoing references for a type, and `Derived Types` falls out
+  of `FindDerivedClassesAsync` for free, so dropping either to match the reference would lose working
+  behaviour for no gain.
+- **Step 15: `Implements` applicability compares override roots, not symbol identity.** The implementing
+  member can sit several levels up the override chain, so `Middle.Area` overriding `Base.Area` (which is
+  what actually implements `IShape.Area`) still has to report `Implements`. This is the same walk step 17's
+  finder needs, found here first. `OverrideOfAnImplementingMember_StillGetsImplements` covers it.
+- **Step 15: interface members report `IsAbstract == true`,** so `Overridden By` cannot be excluded by
+  modifiers alone - an interface member would otherwise offer a branch that `FindOverridesAsync` always
+  answers empty (see the probe findings). The exclusion keys off the containing type's kind instead.
+- **Step 15: a static class does not get `Instantiated By`.** Not called out in the step text; it cannot be
+  constructed, so the branch could only ever be empty.
 - **Step 1: `++`/`--` classify as `Write` only.** Followed the step's literal rule rather than the
   "genuinely ambiguous" latitude. Increment does read, but the filter is more useful when a mutation
   shows up under `Write` alone; compound assignment stays `Read | Write` as specified.
