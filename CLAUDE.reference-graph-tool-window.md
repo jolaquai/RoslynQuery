@@ -10,7 +10,15 @@ You are resuming work described by this file. This file is the single source of 
 2. Run `git status` and `git log --oneline -5`. The working tree should be clean and `HEAD` should match the commit recorded in **Status**. If it does, this file is up to date; trust it and continue at the current step without re-auditing.
 3. If the tree is dirty or `HEAD` does not match, reconcile first: figure out what happened, fix this file, commit the fix, then continue.
 4. Work the first step that is not `[x]`. One step at a time.
-5. **Every step ends with exactly one commit that contains both the code change and the update to this file.** They are never committed separately. This is what makes the file trustworthy.
+5. **Every step ends with a commit that contains both the code change and the update to this file**, unless
+   rule 5a applies. This is what makes the file trustworthy.
+5a. **Commit before running anything that rewrites files in bulk** - a line-ending normalization pass, a
+   patch script, a formatter, a bulk rename. Land the code as soon as it builds and its tests pass, run the
+   bulk operation, then commit that separately and update this file. Splitting a step across two or three
+   commits is always preferred to letting an unverified bulk edit sit on top of uncommitted work. This rule
+   exists because a normalization one-liner of the form `open(p,'wb').write(open(p,'rb').read())` truncated
+   three files to zero bytes - the write handle opens, and truncates, before the read is evaluated - and two
+   of them were uncommitted. Never read and write one path in a single expression.
 6. Commit messages: one terse line, imperative, lowercase, no body, no trailing period. Example: `add reference usage classifier`.
 7. `git commit` only. **Never** `git push`, `git commit --amend`, `git rebase`, or `git reset --hard` unless explicitly told to.
 8. Never mark a step `[x]` before its **Verify** command has actually run and passed. If it fails, the step stays `[~]` and the failure goes in **Deviations**.
@@ -23,13 +31,13 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress - phase 1 code complete; phase 2 (steps 15-26) planned, not started
-- **Current step:** 17 - hierarchy analyzers. Then 18-26 in order, then 27-28, which
+- **Current step:** 18 - kind-narrowed incoming analyzers. Then 19-26 in order, then 27-28, which
   were added mid-phase and depend on the analyzer plumbing steps 16-20 build. Steps 8, 12 and 14 stay
   `[~]`: their manual smoke test is deliberately deferred into step 26, which rewrites the tree they were
   verifying, and step 26 is re-run once 28 lands.
 - **Branch:** feature/favorites
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `alternate symbol and analyzer rows in the reference graph` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `add hierarchy analyzers to the reference graph engine` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-09-10
 
 ## Goal
@@ -390,7 +398,7 @@ below are shaped the way they are.
   and therefore offers no branches at all.
 - **Commit:** `alternate symbol and analyzer rows in the reference graph`
 
-### 17. Engine: hierarchy analyzers `[ ]`
+### 17. Engine: hierarchy analyzers `[x]`
 
 - **Files:** `RoslynQuery/ReferenceGraph/HierarchyAnalyzers.cs` (new),
   `RoslynQuery.Tests/ReferenceGraph/HierarchyAnalyzerTests.cs` (new)
@@ -692,6 +700,23 @@ turning them away, and only locals, parameters and type parameters actually need
   answers empty (see the probe findings). The exclusion keys off the containing type's kind instead.
 - **Step 15: a static class does not get `Instantiated By`.** Not called out in the step text; it cannot be
   constructed, so the branch could only ever be empty.
+- **Step 17: `Describe` now returns null when no usage kind is present.** A hierarchy row points at a
+  declaration rather than a usage, so its single location carries `ReferenceUsageKind.None`; without the
+  guard the secondary line rendered as `1 ref ()`. Cost one extra file beyond the step's list
+  (`ReferenceGraphNode.cs`).
+- **Step 17: `Overrides` keeps chain order; every other hierarchy branch sorts.** Nearest-first is the
+  meaningful order for an override chain and is already deterministic, so it needs no sort. The rest sort by
+  display text then declaration id, the same tie-break the incoming rows use, because `SymbolFinder` gives no
+  ordering guarantee.
+- **Step 17: results are de-duplicated on `SymbolIdentity`.** A transitive search can return overlapping
+  sets - `FindImplementationsAsync` on an interface walks both the implementing types and their subclasses -
+  and two rows for one symbol would each expand into the same subtree.
+- **Step 17: a hierarchy row navigates to `DeclaringSyntaxReferences[0].Span`.** A metadata symbol has none,
+  so it gets no location and is not navigable yet; steps 21 and 25 own that.
+- **Step 17 extra: a test pins Roslyn's own behaviour.**
+  `FindImplementedInterfaceMembers_CalledDirectlyOnAnOverride_ReturnsNothing` asserts the empty result that
+  forced the override-chain walk, so if a future Roslyn release changes it, the reason for the walk stops
+  being invisible.
 - **Step 16: the step's file list was incomplete.** Deleting `ReferenceDirection` breaks
   `ReferenceGraphEngine`, `SymbolGlyphMonikerConverter` and `ReferenceGraphToolWindowControl`, so all three
   moved in the same commit. There is no smaller version of this step that still builds.
