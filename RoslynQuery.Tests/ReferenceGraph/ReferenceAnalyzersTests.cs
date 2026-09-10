@@ -50,6 +50,22 @@ public class ReferenceAnalyzersTests
             public enum Color { Red }
 
             public delegate void Handler(int value);
+
+            public class Ops
+            {
+                public const int Limit = 4;
+                public readonly int Ready;
+                public event EventHandler Changed;
+                public static Ops operator +(Ops left, Ops right) => left;
+                public static explicit operator int(Ops value) => 0;
+                public int this[int index] => index;
+                ~Ops() { }
+            }
+
+            public static class Extensions
+            {
+                public static int Twice(this Point point) => point.X * 2;
+            }
         }
         """;
 
@@ -272,6 +288,88 @@ public class ReferenceAnalyzersTests
         Assert.Equal("Overridden By", ReferenceAnalyzerKind.OverriddenBy.Header());
         Assert.Equal("Extension Methods", ReferenceAnalyzerKind.ExtensionMethods.Header());
         Assert.Equal("Applied To", ReferenceAnalyzerKind.AppliedTo.Header());
+    }
+
+    [Fact]
+    public async Task Operator_IsAnAnalyzableRootWithUsesAndUsedBy()
+    {
+        var compilation = await CompilationAsync();
+
+        Assert.Equal(
+            [ReferenceAnalyzerKind.Uses, ReferenceAnalyzerKind.UsedBy],
+            ReferenceAnalyzers.For(Member(compilation, "Ops", "op_Addition")));
+    }
+
+    [Fact]
+    public async Task ConversionOperator_IsAnAnalyzableRootWithUsesAndUsedBy()
+    {
+        var compilation = await CompilationAsync();
+
+        Assert.Equal(
+            [ReferenceAnalyzerKind.Uses, ReferenceAnalyzerKind.UsedBy],
+            ReferenceAnalyzers.For(Member(compilation, "Ops", "op_Explicit")));
+    }
+
+    [Fact]
+    public async Task Indexer_IsAnAnalyzableRoot()
+    {
+        var compilation = await CompilationAsync();
+
+        Assert.Equal(
+            [ReferenceAnalyzerKind.Uses, ReferenceAnalyzerKind.UsedBy],
+            ReferenceAnalyzers.For(Member(compilation, "Ops", "this[]")));
+    }
+
+    [Fact]
+    public async Task Event_IsAnAnalyzableRoot()
+    {
+        var compilation = await CompilationAsync();
+
+        Assert.Equal(
+            [ReferenceAnalyzerKind.Uses, ReferenceAnalyzerKind.UsedBy],
+            ReferenceAnalyzers.For(Member(compilation, "Ops", "Changed")));
+    }
+
+    [Fact]
+    public async Task ExtensionMethod_IsAnAnalyzableRoot()
+    {
+        var compilation = await CompilationAsync();
+
+        Assert.Equal(
+            [ReferenceAnalyzerKind.Uses, ReferenceAnalyzerKind.UsedBy],
+            ReferenceAnalyzers.For(Member(compilation, "Extensions", "Twice")));
+    }
+
+    [Fact]
+    public async Task Destructor_IsAnAnalyzableRoot()
+    {
+        var compilation = await CompilationAsync();
+
+        Assert.NotEmpty(ReferenceAnalyzers.For(Member(compilation, "Ops", "Finalize")));
+    }
+
+    [Fact]
+    public async Task ConstAndReadonlyFields_KeepTheFieldBranches()
+    {
+        var compilation = await CompilationAsync();
+
+        Assert.Equal(
+            [ReferenceAnalyzerKind.Uses, ReferenceAnalyzerKind.AssignedBy, ReferenceAnalyzerKind.ReadBy],
+            ReferenceAnalyzers.For(Member(compilation, "Ops", "Limit")));
+
+        Assert.Equal(
+            [ReferenceAnalyzerKind.Uses, ReferenceAnalyzerKind.AssignedBy, ReferenceAnalyzerKind.ReadBy],
+            ReferenceAnalyzers.For(Member(compilation, "Ops", "Ready")));
+    }
+
+    /// <summary>An enum member cannot be assigned to, so Assigned By would be a branch that is always empty.</summary>
+    [Fact]
+    public async Task EnumMember_DoesNotGetAssignedBy()
+    {
+        var compilation = await CompilationAsync();
+        Assert.Equal(
+            [ReferenceAnalyzerKind.Uses, ReferenceAnalyzerKind.ReadBy],
+            ReferenceAnalyzers.For(Member(compilation, "Color", "Red")));
     }
 
     [Fact]

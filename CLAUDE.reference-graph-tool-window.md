@@ -371,6 +371,10 @@ below are shaped the way they are.
   it, set only on `Analyzer` rows. `CreateRoot` builds a `Symbol` row whose children are
   `ReferenceAnalyzers.For(symbol)` mapped to `Analyzer` rows. `ExpandSymbol(node, symbol)` does the same
   for any symbol row, prepending the `Locations (N)` branch when the row has more than one occurrence.
+  `SymbolGlyph` also gains `Operator` (covering `MethodKind.UserDefinedOperator` and
+  `MethodKind.Conversion`), which step 15's coverage showed collapsing into the generic method icon while
+  ILSpy gives operators their own - visible on `System.UInt128.operator *` and `System.TimeSpan.operator *`
+  in the reference screenshots.
   A `Symbol` row is expandable but its expansion is **synchronous** - it needs no fetch, only the
   applicability table - so `IsLoaded` is set the moment it materialises its branches. Only `Analyzer`
   rows fetch. `HasAncestor` walks `Parent` past `Analyzer` rows unchanged (it already compares
@@ -612,6 +616,16 @@ below are shaped the way they are.
   answers empty (see the probe findings). The exclusion keys off the containing type's kind instead.
 - **Step 15: a static class does not get `Instantiated By`.** Not called out in the step text; it cannot be
   constructed, so the branch could only ever be empty.
+- **Step 15 correction: an enum member does not get `Assigned By`.** It is an `IFieldSymbol`, so the field
+  rule gave it the full field branch set, but an enum member cannot be written - the branch could only ever
+  come back empty. Enum members now get `Uses` + `Read By`. Found by widening the step's coverage after the
+  step had already been committed; `EnumMember_DoesNotGetAssignedBy` reproduces it.
+- **Step 15: non-method symbol kinds were verified rather than assumed.** Operators
+  (`MethodKind.UserDefinedOperator`), conversion operators (`MethodKind.Conversion`), indexers, events,
+  extension methods, destructors, const and readonly fields, delegates, enums and structs all pass
+  `SymbolResolver.IsSupportedRoot` and get a sensible branch set with no special-casing; each now has a test.
+  The one thing that did not carry over is the **icon**: an operator renders with the generic method glyph,
+  which step 16 fixes.
 - **Step 1: `++`/`--` classify as `Write` only.** Followed the step's literal rule rather than the
   "genuinely ambiguous" latitude. Increment does read, but the filter is more useful when a mutation
   shows up under `Write` alone; compound assignment stays `Read | Write` as specified.

@@ -15,6 +15,10 @@ internal static class ReferenceAnalyzers
                 when method.MethodKind == MethodKind.Constructor || method.MethodKind == MethodKind.StaticConstructor:
                 return [ReferenceAnalyzerKind.Uses, ReferenceAnalyzerKind.UsedBy];
 
+            // An enum member is a field that cannot be written, so Assigned By could only ever be empty.
+            case IFieldSymbol enumMember when enumMember.ContainingType?.TypeKind == TypeKind.Enum:
+                return [ReferenceAnalyzerKind.Uses, ReferenceAnalyzerKind.ReadBy];
+
             case IFieldSymbol _:
                 return [ReferenceAnalyzerKind.Uses, ReferenceAnalyzerKind.AssignedBy, ReferenceAnalyzerKind.ReadBy];
 
