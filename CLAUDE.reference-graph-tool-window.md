@@ -31,13 +31,13 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress - phase 1 code complete; phase 2 (steps 15-26) planned, not started
-- **Current step:** 19 - extension methods. Then 20-26 in order, then 27-28, which
+- **Current step:** 21 - metadata rows. Then 22-26 in order, then 27-28, which
   were added mid-phase and depend on the analyzer plumbing steps 16-20 build. Steps 8, 12 and 14 stay
   `[~]`: their manual smoke test is deliberately deferred into step 26, which rewrites the tree they were
   verifying, and step 26 is re-run once 28 lands.
 - **Branch:** feature/favorites
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `credit a field type reference to the field, not its containing type` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `dispatch analyzers through one entry point and report counts` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-09-10
 
 ## Goal
@@ -444,7 +444,7 @@ below are shaped the way they are.
   nothing for a non-attribute class.
 - **Commit:** `narrow incoming references per analyzer kind`
 
-### 19. Engine: extension methods `[ ]`
+### 19. Engine: extension methods `[x]`
 
 - **Files:** `RoslynQuery/ReferenceGraph/HierarchyAnalyzers.cs`,
   `RoslynQuery.Tests/ReferenceGraph/ExtensionMethodAnalyzerTests.cs` (new)
@@ -460,7 +460,7 @@ below are shaped the way they are.
   extension on an unrelated type is not; a generic extension constrained away from the type is not.
 - **Commit:** `add extension method analyzer`
 
-### 20. Analyzer dispatch, counts and timings `[ ]`
+### 20. Analyzer dispatch, counts and timings `[x]`
 
 - **Files:** `RoslynQuery/ReferenceGraph/ReferenceGraphEngine.cs`,
   `RoslynQuery/ReferenceGraph/ReferenceGraphNode.cs`,
@@ -700,6 +700,20 @@ turning them away, and only locals, parameters and type parameters actually need
   answers empty (see the probe findings). The exclusion keys off the containing type's kind instead.
 - **Step 15: a static class does not get `Instantiated By`.** Not called out in the step text; it cannot be
   constructed, so the branch could only ever be empty.
+- **Step 20 added `AnalyzerResult.cs`, which the step's file list did not mention.** The elapsed time has to
+  cross a thread boundary: `RunAsync` runs on the background scheduler and the node it describes may only be
+  mutated on the UI thread, so the timing comes back as data and `ReferenceGraphNode.ApplyResults` writes the
+  header on the UI side. Measuring in the control instead would have put the stopwatch somewhere no test can
+  reach.
+- **Step 20: the dispatch throws on an unwired kind instead of returning empty.** A silent empty branch is
+  indistinguishable from a symbol that genuinely has no answers, so a missing case would hide for a long
+  time. `EveryAnalyzerKind_IsWired` walks `Enum.GetValues` over both a type and a member symbol, so adding a
+  kind without wiring it fails immediately - which is what step 27's `Contains` will run into by design.
+- **Step 20: the step's "count excluding the locations branch" caveat no longer applies.** Step 16 moved the
+  locations branch onto symbol rows, and `SetChildren` is now only ever called on an analyzer row, so a
+  branch's `Children.Count` is exactly its result count.
+- **Step 20: the tool window still calls the old engine entry points.** Migrating it is step 22's job, along
+  with deleting the filter; wiring it here would have meant touching the same file twice.
 - **Step 18 found a pre-existing attribution bug in `EnclosingDeclaration`.** `GetDeclaredSymbol` answers
   null for a `FieldDeclarationSyntax` (a field declares its symbol on the `VariableDeclarator`), so the
   ancestor walk climbed straight past it to the containing type. Everything in a field's attribute list
