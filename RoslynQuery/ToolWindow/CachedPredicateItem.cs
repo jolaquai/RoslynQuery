@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Linq;
 
 using Microsoft.CodeAnalysis;
@@ -9,22 +10,38 @@ using RoslynQuery.Query;
 
 namespace RoslynQuery.ToolWindow;
 
-/// <summary>One entry in the cached-predicates sidebar: a normalized predicate still in <see cref="PredicateCompiler"/>'s cache.</summary>
-internal sealed class CachedPredicateItem
+/// <summary>One entry in the cached-predicates sidebar: a normalized predicate still in <see cref="PredicateCompiler"/>'s cache, or one starred in <see cref="FavoritesStore"/>.</summary>
+internal sealed class CachedPredicateItem : INotifyPropertyChanged
 {
     private const int MaxDisplayLength = 300;
 
     private string _pretty;
+    private bool _isFavorite;
 
-    public CachedPredicateItem(TargetKind kind, PredicateMode mode, string text)
+    public CachedPredicateItem(TargetKind kind, PredicateMode mode, string text, bool isFavorite = false)
     {
         Kind = kind;
         Mode = mode;
         Text = text;
+        _isFavorite = isFavorite;
     }
+
+    public event PropertyChangedEventHandler PropertyChanged;
 
     public TargetKind Kind { get; }
     public PredicateMode Mode { get; }
+
+    public bool IsFavorite
+    {
+        get => _isFavorite;
+        set
+        {
+            if (_isFavorite == value) return;
+
+            _isFavorite = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsFavorite)));
+        }
+    }
 
     /// <summary>The cache key text exactly as <see cref="PredicateCompiler"/> stores it.</summary>
     public string Text { get; }

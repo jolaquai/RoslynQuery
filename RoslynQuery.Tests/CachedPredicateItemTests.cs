@@ -103,6 +103,34 @@ public class CachedPredicateItemTests
     }
 
     [Fact]
+    public void IsFavorite_DefaultsToFalseAndRaisesPropertyChangedOnChangeOnly()
+    {
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
+        var raised = 0;
+        item.PropertyChanged += (s, e) =>
+        {
+            Assert.Equal(nameof(CachedPredicateItem.IsFavorite), e.PropertyName);
+            raised++;
+        };
+
+        Assert.False(item.IsFavorite);
+
+        item.IsFavorite = true;
+        item.IsFavorite = true;
+
+        Assert.True(item.IsFavorite);
+        Assert.Equal(1, raised);
+    }
+
+    [Fact]
+    public void Constructor_CanStartFavorited()
+    {
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null", isFavorite: true);
+
+        Assert.True(item.IsFavorite);
+    }
+
+    [Fact]
     public void Constructor_ExposesKindModeAndTextUnchanged()
     {
         var item = new CachedPredicateItem(TargetKind.Operation, PredicateMode.Body, "return op != null;");
