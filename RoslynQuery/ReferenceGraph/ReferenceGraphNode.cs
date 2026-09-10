@@ -69,6 +69,9 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
 
     public bool IsMessage => Role == NodeRole.Message;
 
+    /// <summary>The row's symbol lives in a referenced assembly, so it has no source to navigate to.</summary>
+    public bool IsFromMetadata => Role == NodeRole.Symbol && Identity.IsFromMetadata;
+
     /// <summary>Set once the lazy fetch has replaced the seeded placeholder.</summary>
     public bool IsLoaded { get; set; }
 

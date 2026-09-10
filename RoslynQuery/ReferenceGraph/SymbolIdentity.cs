@@ -10,14 +10,24 @@ namespace RoslynQuery.ReferenceGraph;
 /// <summary>A symbol reference that survives a compilation snapshot. Not <c>SymbolKey</c>, which is internal to Microsoft.CodeAnalysis.Workspaces.</summary>
 internal readonly struct SymbolIdentity : IEquatable<SymbolIdentity>
 {
-    public SymbolIdentity(ProjectId projectId, string declarationId)
+    public SymbolIdentity(ProjectId projectId, string declarationId, bool fromMetadata = false)
     {
         ProjectId = projectId;
         DeclarationId = declarationId;
+        IsFromMetadata = fromMetadata;
     }
 
+    /// <summary>
+    /// The project whose compilation resolves this symbol. For a source symbol that is the project
+    /// declaring it; for a metadata symbol it is the project through which the symbol was reached, whose
+    /// references include the assembly it lives in.
+    /// </summary>
     public ProjectId ProjectId { get; }
+
     public string DeclarationId { get; }
+
+    /// <summary>The symbol lives in a referenced assembly, so it has no syntax to walk.</summary>
+    public bool IsFromMetadata { get; }
 
     public bool IsEmpty => DeclarationId is null;
 
@@ -29,8 +39,14 @@ internal readonly struct SymbolIdentity : IEquatable<SymbolIdentity>
         var declarationId = DocumentationCommentId.CreateDeclarationId(definition);
         if (declarationId is null) return default;
 
-        return new SymbolIdentity(DeclaringProject(definition, solution) ?? fallbackProjectId, declarationId);
+        // A metadata symbol has no declaring project, so the fallback is the only thing that can resolve
+        // it - and it works precisely because that project is the one that references the assembly.
+        return new SymbolIdentity(
+            DeclaringProject(definition, solution) ?? fallbackProjectId, declarationId, IsMetadataSymbol(definition));
     }
+
+    public static bool IsMetadataSymbol(ISymbol symbol) =>
+        symbol != null && symbol.Locations.Length > 0 && symbol.Locations.All(l => l.IsInMetadata);
 
     public async Task<ISymbol> ResolveAsync(Solution solution, CancellationToken cancellationToken)
     {

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 using Microsoft.CodeAnalysis;
 
@@ -8,6 +9,17 @@ namespace RoslynQuery.ReferenceGraph;
 internal static class ReferenceAnalyzers
 {
     public static IReadOnlyList<ReferenceAnalyzerKind> For(ISymbol symbol)
+    {
+        var kinds = Applicable(symbol);
+
+        // A metadata symbol has no syntax, so the outgoing walk has nothing to walk. Every other branch
+        // still answers: the incoming ones over your source, the hierarchy ones over metadata as well.
+        if (!SymbolIdentity.IsMetadataSymbol(symbol)) return kinds;
+
+        return [.. kinds.Where(kind => kind != ReferenceAnalyzerKind.Uses)];
+    }
+
+    private static IReadOnlyList<ReferenceAnalyzerKind> Applicable(ISymbol symbol)
     {
         switch (symbol)
         {
