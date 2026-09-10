@@ -169,8 +169,12 @@ of the same predicate are one entry and one compiled assembly.
 
 That cache is also the leak referred to above. Every distinct predicate emits an assembly, and
 .NET Framework has no way to unload one, so it stays for the life of the VS process; the status line
-reports the running count and total size. The cache is capped at 512 entries, which bounds the list,
-not the underlying leak.
+reports the running count and total size.
+
+Nothing is ever evicted from it, deliberately. Dropping an entry cannot reclaim the assembly it
+points at, so an eviction only guarantees that re-running that predicate emits and leaks a *second*
+assembly for text that already has one. A cap there would accelerate the leak it looks like it
+bounds, and it would do it worst to the queries you return to most.
 
 ### Favorites
 
@@ -280,8 +284,9 @@ immediately, as does **Refresh** and changing the scope. **Stop** cancels whatev
 clears every expanded row, since a cancelled fetch may have left them stale; expand a row again to
 re-read it.
 
-A compound assignment is both a read and a write, and is counted under each. Any single branch stops
-at 200 rows, with the remainder collapsed into one `N more...` row.
+A compound assignment is both a read and a write, and is counted under each. A branch shows every
+row it finds: the tree is virtualized, and a collapsed remainder row would be a dead end you could
+not expand.
 
 ## Building
 
