@@ -22,16 +22,21 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 
 ## Status
 
-- **State:** in-progress - all code complete, blocked only on step 8's manual smoke test
-- **Current step:** 8, 12 and 14 - manual F5 smoke test (seven defects found and fixed so far; needs re-running)
-- **Branch:** v0.3.0
+- **State:** in-progress - phase 1 code complete; phase 2 (steps 15-26) planned, not started
+- **Current step:** 15 - analyzer kinds and the applicability table. Steps 8, 12 and 14 stay `[~]`: their
+  manual smoke test is deliberately deferred into step 26, which rewrites the tree they were verifying.
+- **Branch:** feature/favorites
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `navigate on enter from the selected row` (verify with `git log -1 --format=%s`)
-- **Last updated:** 2026-08-20
+- **Last synced commit subject:** `plan the ilspy-style analyzer redesign` (verify with `git log -1 --format=%s`)
+- **Last updated:** 2026-09-10
 
 ## Goal
 
 A second VSIX tool window, "Reference Graph", alongside the existing "Roslyn Query" window. Right-clicking a method, constructor, property, field, event, or type in the editor (or opening the window from View > Other Windows) roots a lazily-expandable tree with two branches: "References To 'X'" (who references X) and "References From 'X'" (what X references). Each further node expands the same way, recursively, in whichever direction its branch started in. Styled like VS's built-in Call Hierarchy window but generalized to all reference kinds, not just calls. Done = builds clean, engine unit tests pass, and a manual F5 smoke test in the experimental instance shows both branches populating, recursion terminating cleanly, the usage-kind filter flyout live-refreshing the tree, and double-click navigation landing on the right line.
+
+**Phase 2 supersedes this goal.** The window keeps its purpose but changes shape: the two directional
+branches become ILSpy's per-symbol-kind analyzer set, and every row re-analyses rather than inheriting a
+direction. See **Phase 2: ILSpy-style analyzers** below; where the two disagree, phase 2 wins.
 
 ## Non-goals
 
@@ -207,6 +212,381 @@ supersede **Non-goal 1** ("no per-call-site leaf level under a node"), which the
   the final state correct even if the suppression fails again. Still **not verified** - no WPF host in
   the test suite.
 - **Commit:** `stop double-click from toggling row expansion`
+
+## Phase 2: ILSpy-style analyzers
+
+Steps 15-26 rework the window from two fixed directional branches into ILSpy's "Analyze symbol"
+model. User-directed, after comparing the window against ILSpy's Analyzer pane side by side. These
+decisions were taken up front and are not open for re-litigation inside the steps:
+
+1. **Full analyzer model.** The `References To` / `References From` pair is replaced by a per-symbol-kind
+   set of semantic branches (`Uses`, `Used By`, `Overrides`, `Overridden By`, `Implements`,
+   `Implemented By`, `Instantiated By`, `Exposed By`, `Read By`, `Assigned By`, `Derived Types`,
+   `Extension Methods`, `Applied To`).
+2. **Direction stops sticking.** Every symbol row re-offers the full applicable set for its own symbol,
+   the way ILSpy does. `ReferenceDirection` ceases to be a node property.
+3. **The usage-kind filter flyout is dropped.** `Used By` / `Read By` / `Assigned By` /
+   `Instantiated By` / `Exposed By` already carry the kind, so a second cross-cutting filter is
+   redundant. `ReferenceUsageKind` survives as an internal engine concept; only the UI control goes.
+4. **Signature rows are syntax-coloured** and spelled ILSpy's way: namespace-qualified, with the return
+   type appended as `: T`.
+5. **Metadata depth is taken where it is free, and not bought where it is not.** The hierarchy analyzers
+   already cross into referenced assemblies at no cost (see the probe findings); `Uses` and the incoming
+   analyzers stop at the source boundary and say so. IL-level analysis is **deferred**: step 24 adds the
+   settings that will one day switch it on, deliberately disabled and non-functional.
+6. **No Just My Code toggle.** Considered and dropped; the options page from step 24 is where that kind
+   of switch belongs if it is ever wanted.
+
+### Shape of the tree
+
+The tree strictly alternates symbol rows and analyzer branch rows, which is what makes ILSpy's
+recursion work:
+
+```
+System.Random.ThreadSafeRandom.NextBytes(byte[]) : void   symbol (root)
+  Uses (3 in 2 ms)                                        analyzer branch
+    System.ThrowHelper.ThrowArgumentNullException(...)    symbol
+      Locations (2)                                       locations branch
+      Uses (2 in 3 ms)                                    analyzer branch
+      Used By (7 in 5 ms)                                 analyzer branch
+```
+
+Expanding a symbol row no longer runs a fetch: it materialises that symbol's applicable branch rows,
+and each of those fetches lazily when expanded. `Locations (N)` stays (step 11's addition, which
+ILSpy has no equivalent for because it has no source spans to offer) and sorts ahead of the analyzer
+branches.
+
+### Probe findings these steps depend on
+
+Measured against Microsoft.CodeAnalysis.Workspaces 5.6.0 and ICSharpCode.Decompiler 11.0.0.9375 with
+throwaway console apps, not taken from documentation. Do not re-derive these; they are why the steps
+below are shaped the way they are.
+
+**Reference and hierarchy finding**
+
+- `SymbolFinder.FindOverridesAsync` is **transitive**: on a virtual `Base.Draw` with `Middle.Draw`
+  overriding it and `Leaf.Draw` overriding that, it returns both. One call, no manual walk.
+- `FindOverridesAsync` returns **empty for an interface member**. `Implemented By` is a different call
+  (`FindImplementationsAsync`), not a special case of the same one.
+- `FindImplementationsAsync(ISymbol, ...)` on `IShape.Area` returns the first implementing member per
+  type (`Base.Area`, `Direct.Area`), not the transitive override closure.
+- `FindImplementedInterfaceMembersAsync` returns **empty for an override**: `Leaf.Area` (which overrides
+  `Middle.Area`, which overrides the implementing `Base.Area`) gives `[]`, while `Base.Area` gives
+  `IShape.Area`. `Implements` must therefore walk `OverriddenMethod`/`OverriddenProperty`/`OverriddenEvent`
+  to the root of the chain **before** calling it.
+- `FindDerivedClassesAsync`'s three-argument overload is transitive; the `transitive: false` overload
+  returns direct subclasses only. `FindImplementationsAsync(INamedTypeSymbol, transitive: true)` returns
+  every implementing type including ones that inherit the implementation.
+- `IMethodSymbol.ReduceExtensionMethod(type)` returns null when the extension does not apply, which is
+  the whole `Extension Methods` test. There is no dedicated finder API;
+  `FindSourceDeclarationsAsync(solution, _ => true, SymbolFilter.Member)` plus that check is the scan.
+- **An attribute application binds to the attribute's constructor, not to its type.** `[Marker]` reports
+  as a reference to `MarkerAttribute.MarkerAttribute()`. `FindReferencesAsync` on the type does cascade
+  to the constructors, so the locations are reachable, but `Applied To` has to recognise them
+  syntactically (occurrence inside an `AttributeSyntax`) rather than by target symbol.
+
+**How deep the graph can go**
+
+- **The hierarchy finders search referenced assemblies, not only source.** `FindOverridesAsync(Stream.Read)`
+  returns `BufferedStream.Read`, `FileStream.Read`, `MemoryStream.Read`, `UnmanagedMemoryStream.Read`,
+  `CryptoStream.Read` and `IsolatedStorageFileStream.Read` alongside the one source override.
+  `FindDerivedClassesAsync(Stream, transitive: true)` does the same, and
+  `FindImplementationsAsync(IDisposable)` returns roughly 110 framework types. So `Overrides`,
+  `Overridden By`, `Implements`, `Implemented By` and `Derived Types` reach ILSpy-grade depth for free.
+- **Metadata symbols round-trip through `SymbolIdentity` unchanged.**
+  `M:System.String.Format(System.String,System.Object)~System.String` resolves back to the symbol, so a
+  framework row stays expandable rather than going inert.
+- **`FindReferencesAsync` works on a metadata symbol** and returns the source callers, so `Used By`
+  rooted on a framework symbol is meaningful (it answers "who in my solution calls this"). It will never
+  return a framework caller.
+- **`Uses` is the one unavoidable dead end.** A metadata symbol has `DeclaringSyntaxReferences.Length == 0`,
+  so the syntax walk has nothing to walk. This is what step 21 has to state honestly in the UI.
+- Roslyn 5.6.0 exposes **no public MetadataAsSource or decompilation type** in `Features`,
+  `CSharp.Features` or `Workspaces`, so "decompile to C# and re-run the ordinary analysis" is closed.
+- The PE files are on disk and reachable (`PortableExecutableReference.FilePath` gives
+  `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\mscorlib.dll`), and `MetadataFile.GetMethodBody`
+  hands back a `MethodBodyBlock` with an IL reader. IL-level analysis is therefore physically possible;
+  it is deferred for effort reasons, not capability ones.
+
+**Decompilation (step 25)**
+
+- ICSharpCode.Decompiler 11.0.0.9375 (ILSpy's own engine, so output matches what ILSpy shows) produces
+  **real method bodies**, not signature stubs.
+- The bridge is exact and needs no new identity concept: `SymbolIdentity.DeclarationId` already holds a
+  documentation comment id, `IdStringProvider.FindEntity(id, new SimpleTypeResolveContext(module))`
+  turns it into an `IEntity`, `IEntity.MetadataToken` is the `EntityHandle`, and
+  `CSharpDecompiler.DecompileAsString(handle)` returns the member. `IdStringProvider.GetIdString`
+  round-trips it back to the identical id.
+- Cost, measured on mscorlib: ~120 ms once to construct the decompiler for an assembly, then 0-9 ms per
+  member. A whole type is 216 ms for `System.String` (200 KB of output) and 1.9 s for a cold
+  `MemoryStream` including construction. Per-assembly caching makes this comfortably interactive.
+- **Assembly unification is the real risk, not the API.** The probe hard-failed at runtime with
+  `FileLoadException: System.Memory, Version=4.0.2.0` until `System.Memory` was pinned to 4.6.3;
+  the transitively-resolved 4.5.5 ships assembly version 4.0.1.2. In-proc this is worse, because devenv
+  already has its own `System.Memory`, `System.Collections.Immutable` and `System.Reflection.Metadata`
+  loaded under its own redirects. Step 25 therefore **starts** by proving the decompiler loads and runs
+  inside the experimental instance, before any UI is built on it.
+
+### 15. Analyzer kinds and the applicability table `[ ]`
+
+- **Files:** `RoslynQuery/ReferenceGraph/ReferenceAnalyzerKind.cs` (new),
+  `RoslynQuery/ReferenceGraph/ReferenceAnalyzers.cs` (new),
+  `RoslynQuery.Tests/ReferenceGraph/ReferenceAnalyzersTests.cs` (new)
+- **Do:** `internal enum ReferenceAnalyzerKind { Uses, UsedBy, ReadBy, AssignedBy, InstantiatedBy,
+  ExposedBy, AppliedTo, Overrides, OverriddenBy, Implements, ImplementedBy, DerivedTypes,
+  ExtensionMethods }` plus a `Header(this ReferenceAnalyzerKind)` giving ILSpy's exact wording
+  (`"Used By"`, `"Instantiated By"`, ...). `ReferenceAnalyzers.For(ISymbol)` returns the applicable
+  set **in display order**. Applicability is computed from the symbol, not just its kind - this is what
+  keeps a static method down to `Uses` + `Used By` (screenshot 1) while an override gets five branches
+  (screenshot 2):
+  - ordinary method / property / event: `Uses`, `UsedBy`; `Overrides` when `IsOverride`;
+    `OverriddenBy` when `IsVirtual || IsAbstract || IsOverride` and not `IsSealed`;
+    `Implements` when the containing type has any interface whose members it satisfies;
+    `ImplementedBy` when the symbol is itself an interface member.
+  - constructor: `Uses`, `UsedBy`.
+  - field: `Uses`, `ReadBy`, `AssignedBy`. A `const` or `readonly` field still gets `AssignedBy`
+    (the initialiser and any constructor assignment are real writes).
+  - class / struct: `Uses`, `UsedBy`, `InstantiatedBy`, `ExposedBy`, `DerivedTypes` (class only),
+    `ExtensionMethods`; plus `AppliedTo` when the type derives from `System.Attribute`.
+  - interface: `Uses`, `UsedBy`, `ExposedBy`, `DerivedTypes`, `ImplementedBy`, `ExtensionMethods`.
+  - enum: `Uses`, `UsedBy`, `ExposedBy`, `ExtensionMethods`. delegate: adds `InstantiatedBy`.
+- **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then
+  `RoslynQuery.Tests/bin/Debug/net472/RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceAnalyzersTests"`
+  passes. Cover: a static method gets exactly `Uses`/`UsedBy`; an override gets `Overrides` and
+  `OverriddenBy`; a sealed override gets `Overrides` but not `OverriddenBy`; an interface member gets
+  `ImplementedBy` and not `OverriddenBy`; a class implementing an interface member gets `Implements`;
+  an attribute class gets `AppliedTo` and a plain class does not; an interface gets `DerivedTypes` and
+  `ImplementedBy` but not `InstantiatedBy`.
+- **Commit:** `add reference analyzer kinds and applicability table`
+
+### 16. Node roles and the alternating tree `[ ]`
+
+- **Files:** `RoslynQuery/ReferenceGraph/ReferenceGraphNode.cs`,
+  `RoslynQuery/ReferenceGraph/ReferenceDirection.cs` (deleted),
+  `RoslynQuery/ReferenceGraph/SymbolGlyph.cs`,
+  `RoslynQuery.Tests/ReferenceGraph/ReferenceGraphNodeTests.cs`,
+  `ReferenceGraphNodeLocationRowTests.cs`, `ReferenceGraphRefreshTests.cs`
+- **Do:** Add `internal enum NodeRole { Symbol, Analyzer, Locations, Location, Message }` and carry it on
+  the node. `ReferenceDirection` is deleted; a node's `Analyzer` (a `ReferenceAnalyzerKind?`) replaces
+  it, set only on `Analyzer` rows. `CreateRoot` builds a `Symbol` row whose children are
+  `ReferenceAnalyzers.For(symbol)` mapped to `Analyzer` rows. `ExpandSymbol(node, symbol)` does the same
+  for any symbol row, prepending the `Locations (N)` branch when the row has more than one occurrence.
+  A `Symbol` row is expandable but its expansion is **synchronous** - it needs no fetch, only the
+  applicability table - so `IsLoaded` is set the moment it materialises its branches. Only `Analyzer`
+  rows fetch. `HasAncestor` walks `Parent` past `Analyzer` rows unchanged (it already compares
+  identities, and branch rows carry their parent symbol's identity).
+- **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then
+  `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceGraphNode*"` and
+  `-class "RoslynQuery.Tests.ReferenceGraphRefreshTests"` pass. Cover: a root's children are its
+  applicable analyzer branches in order; expanding a symbol row two levels down produces branches, not
+  results; `Locations (N)` sorts ahead of the branches; a recursive symbol row is built non-expandable
+  and therefore offers no branches at all.
+- **Commit:** `alternate symbol and analyzer rows in the reference graph`
+
+### 17. Engine: hierarchy analyzers `[ ]`
+
+- **Files:** `RoslynQuery/ReferenceGraph/HierarchyAnalyzers.cs` (new),
+  `RoslynQuery.Tests/ReferenceGraph/HierarchyAnalyzerTests.cs` (new)
+- **Do:** `Overrides` walks the `OverriddenMethod`/`OverriddenProperty`/`OverriddenEvent` chain and
+  returns every step of it, nearest first. `OverriddenBy` is one `SymbolFinder.FindOverridesAsync` call
+  (already transitive). `Implements` walks the override chain **to its root first**, then calls
+  `FindImplementedInterfaceMembersAsync` on that root - see the probe findings; calling it on the
+  symbol as given returns nothing for any override. `ImplementedBy` is
+  `FindImplementationsAsync(ISymbol, ...)`. `DerivedTypes` is `FindDerivedClassesAsync` for a class,
+  `FindDerivedInterfacesAsync` for an interface, both transitive. For an interface, `ImplementedBy` is
+  `FindImplementationsAsync(INamedTypeSymbol, transitive: true)`. A result declared in source becomes a
+  row whose location is its declaration; a result from metadata has none, and step 21 handles that.
+- **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then
+  `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.HierarchyAnalyzerTests"` passes. Cover, over the
+  three-level `Base`/`Middle`/`Leaf` hierarchy the probe used: `OverriddenBy` on the base returns both
+  descendants; `Overrides` on the leaf returns the middle then the base; `Implements` on an override
+  two levels removed from the implementing member still finds the interface member (**this is the
+  regression the probe exists to prevent** - verify it fails when the chain walk is removed);
+  `ImplementedBy` on an interface member returns one row per implementing type; `DerivedTypes` on a
+  class is transitive and on an interface returns derived interfaces; and, rooted on `System.IO.Stream`,
+  `DerivedTypes` returns framework types, which is the free metadata depth this phase is built on.
+- **Commit:** `add hierarchy analyzers to the reference graph engine`
+
+### 18. Engine: kind-narrowed incoming analyzers `[ ]`
+
+- **Files:** `RoslynQuery/ReferenceGraph/ReferenceGraphEngine.cs`,
+  `RoslynQuery/ReferenceGraph/ReferenceUsageClassifier.cs`,
+  `RoslynQuery.Tests/ReferenceGraph/IncomingAnalyzerTests.cs` (new)
+- **Do:** `FindIncomingAsync` gains an occurrence predicate alongside its existing kind mask, and the
+  six incoming analyzers become configurations of it: `UsedBy` = `Invocation | Read | Write`,
+  `ReadBy` = `Read`, `AssignedBy` = `Write`, `InstantiatedBy` = `Construction`,
+  `ExposedBy` = `TypeReference` **restricted to signature positions** (return type, parameter type,
+  field/property/event type, base list, type-parameter constraint - not a local, not a cast, not a
+  `typeof`), `AppliedTo` = any kind whose occurrence sits inside an `AttributeSyntax`. `AppliedTo` is
+  the one that cannot key off the target symbol, because an attribute application binds to the
+  constructor; the classifier gains an `IsAttributeApplication(SyntaxNode)` helper for it.
+- **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then
+  `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.IncomingAnalyzerTests"` passes. Cover: a field read
+  in one method and written in another lands in `ReadBy` and `AssignedBy` respectively and neither
+  appears in the other; `InstantiatedBy` finds `new Foo()` but not `Foo x = null`; `ExposedBy` finds a
+  parameter typed `Foo` and a property typed `Foo` but **not** a `typeof(Foo)` or a local declaration;
+  `AppliedTo` on an attribute class finds both `[Marker] class` and `[Marker] field` sites and finds
+  nothing for a non-attribute class.
+- **Commit:** `narrow incoming references per analyzer kind`
+
+### 19. Engine: extension methods `[ ]`
+
+- **Files:** `RoslynQuery/ReferenceGraph/HierarchyAnalyzers.cs`,
+  `RoslynQuery.Tests/ReferenceGraph/ExtensionMethodAnalyzerTests.cs` (new)
+- **Do:** `FindExtensionMethodsAsync(INamedTypeSymbol, Solution, ...)`:
+  `FindSourceDeclarationsAsync(solution, _ => true, SymbolFilter.Member)`, keep
+  `IMethodSymbol { IsExtensionMethod: true }` whose `ReduceExtensionMethod(type)` is non-null, and
+  return the **unreduced** definition as the row (the reduced form has no declaration to navigate to).
+  This is a whole-solution declaration scan with no cheaper API available, and it is source-only, so it
+  is both the branch step 20's timing display exists for and one step 21 has to mark as source-scoped.
+- **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then
+  `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ExtensionMethodAnalyzerTests"` passes. Cover: an
+  extension on the type itself is found; an extension on an interface the type implements is found; an
+  extension on an unrelated type is not; a generic extension constrained away from the type is not.
+- **Commit:** `add extension method analyzer`
+
+### 20. Analyzer dispatch, counts and timings `[ ]`
+
+- **Files:** `RoslynQuery/ReferenceGraph/ReferenceGraphEngine.cs`,
+  `RoslynQuery/ReferenceGraph/ReferenceGraphNode.cs`,
+  `RoslynQuery.Tests/ReferenceGraph/AnalyzerDispatchTests.cs` (new)
+- **Do:** One entry point - `RunAsync(ReferenceAnalyzerKind, ISymbol, Solution, IImmutableSet<Document>,
+  ReferenceGraphNode, CancellationToken)` - switching to the right finder, so the UI has a single call
+  site rather than a switch of its own. The branch row records `Stopwatch` elapsed milliseconds and the
+  row count, and formats `SecondaryText` as ILSpy does: `(5 in 12 ms)`. A branch that returns nothing
+  gets **no child rows at all** (not a `No references.` message row), which is what removes its
+  expander and matches ILSpy's bare `Implements` header.
+- **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then
+  `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.AnalyzerDispatchTests"` passes. Cover: every
+  `ReferenceAnalyzerKind` value dispatches without throwing (a loop over `Enum.GetValues`, so a new kind
+  added later cannot be silently unhandled); an empty result leaves `Children` empty and `IsLoaded`
+  true; the count in `SecondaryText` matches `Children.Count` excluding the locations branch.
+- **Commit:** `dispatch analyzers through one entry point and report counts`
+
+### 21. Metadata rows: identity, glyphs, and honest dead ends `[ ]`
+
+- **Files:** `RoslynQuery/ReferenceGraph/SymbolIdentity.cs`,
+  `RoslynQuery/ReferenceGraph/ReferenceAnalyzers.cs`,
+  `RoslynQuery/ReferenceGraph/ReferenceGraphNode.cs`,
+  `RoslynQuery.Tests/ReferenceGraph/MetadataRowTests.cs` (new)
+- **Do:** Step 17 starts returning framework symbols, which today only work by accident: `SymbolIdentity.Create`
+  falls back to `fallbackProjectId` when a symbol has no declaring project, and resolution then happens to
+  succeed because that project references the assembly. Make it deliberate - a metadata symbol records the
+  project through which it was reached, and `ResolveAsync` documents that this is the project whose
+  compilation must contain it. Add `IsFromMetadata` to the node (`symbol.Locations.All(l => l.IsInMetadata)`),
+  give metadata rows a distinguishing glyph or suffix so a framework row is never mistaken for one of
+  yours, and **suppress the branches that cannot answer for a metadata symbol**: `ReferenceAnalyzers.For`
+  drops `Uses` (no syntax to walk) and keeps the incoming analyzers, whose results are real but
+  source-scoped. The suppression is the honest form of the dead end; a branch that can only ever return
+  nothing should not be offered.
+- **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then
+  `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.MetadataRowTests"` passes. Cover: a metadata symbol's
+  identity round-trips through `SymbolIdentity` and resolves against the reaching project; `For` on a
+  metadata method omits `Uses` and retains `UsedBy`/`OverriddenBy`; `IsFromMetadata` is false for every
+  source symbol in the fixture and true for `System.IO.Stream.Read`.
+- **Commit:** `mark metadata rows and drop the branches they cannot answer`
+
+### 22. UI: drop the filter, wire the alternating tree `[ ]`
+
+- **Files:** `RoslynQuery/ToolWindow/ReferenceGraphToolWindowControl.xaml` / `.xaml.cs`
+- **Do:** Delete the `Filter` toggle, its popup, all six checkboxes, `CurrentFilter` and `Flag`. The
+  scope combo stays (it genuinely narrows the incoming analyzers) and its tooltip is retitled off
+  `References To` onto the analyzers it actually affects. `ExpandCoreAsync` splits: an `Analyzer` row
+  calls `ReferenceGraphEngine.RunAsync`, a `Symbol` row materialises branches on the UI thread with no
+  fetch. `RefreshExpanded` walks to the shallowest expanded **analyzer** row rather than any expanded row.
+- **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds (XAML compiles). Behaviour is covered by
+  step 26's smoke test.
+- **Commit:** `drop the usage filter and wire the analyzer tree into the tool window`
+
+### 23. Coloured, ILSpy-spelled signature rows `[ ]`
+
+- **Files:** `RoslynQuery/ReferenceGraph/ReferenceGraphDisplay.cs`,
+  `RoslynQuery/ToolWindow/SymbolDisplayPartsConverter.cs` (new),
+  `RoslynQuery/ToolWindow/ReferenceGraphToolWindowControl.xaml`,
+  `RoslynQuery.Tests/ToolWindow/SymbolDisplayPartsConverterTests.cs` (new)
+- **Do:** Before writing the converter, **probe how to reach Roslyn's classification brushes from an
+  in-proc tool window** - `IClassificationFormatMapService` + `IClassificationTypeRegistryService` off
+  `IComponentModel` is the expectation, but confirm which format map to request (`"text"` vs `"tooltip"`)
+  and that the brushes track a theme switch. Then: `ReferenceGraphDisplay` switches to
+  `NameAndContainingTypesAndNamespaces` and returns `ImmutableArray<SymbolDisplayPart>`, appending a
+  hand-built `: ReturnType` run - the probe confirmed no display-format flag does this. The node stores
+  the parts alongside the flat string, which stays for tests and for the status line. The converter maps
+  `SymbolDisplayPartKind` to classification brushes and yields WPF `Run`s; the row template binds them
+  into a `TextBlock`. Falls back to the plain foreground brush when the classification services are
+  unavailable, so the window still renders outside a full VS host.
+- **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then
+  `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.SymbolDisplayPartsConverterTests"` passes. The part
+  kind to classification name mapping is a pure function and is tested directly; brush resolution needs
+  a VS host and is left to the smoke test.
+- **Commit:** `render signature rows with syntax colouring`
+
+### 24. Reference Graph options page `[ ]`
+
+- **Files:** `RoslynQuery/Options/ReferenceGraphOptionsPage.cs` (new),
+  `RoslynQuery/RoslynQueryPackage.cs`,
+  `RoslynQuery.Tests/Options/ReferenceGraphOptionsPageTests.cs` (new)
+- **Do:** A `DialogPage` registered with `[ProvideOptionPage]` under a `RoslynQuery` category, named
+  `Reference Graph`, carrying two boolean settings: **Enable IL analysis** (would let `Uses` continue
+  past the source boundary by decoding the callee's IL body) and **Enable reverse IL analysis** (would
+  let `Used By` report framework callers by indexing every method body in every referenced assembly).
+  **Both ship disabled and non-functional in this phase** - nothing reads them. Wire them as read-only
+  in the UI (greyed, `ReadOnly` / disabled descriptors) so they are visibly forthcoming rather than
+  broken. The reverse-IL setting carries a prominent description saying plainly that framework code
+  calling into your code is rare, that the option therefore earns its keep only in unusual situations,
+  and that it costs a full scan of every referenced assembly.
+- **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then
+  `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceGraphOptionsPageTests"` passes. Cover: both
+  properties default to false; both are marked read-only/disabled; the descriptions are non-empty (the
+  warning text is the point of the reverse-IL one). A `DialogPage` is constructible outside a VS host,
+  so this needs no shell.
+- **Commit:** `add a reference graph options page with the deferred il analysis switches`
+
+### 25. Navigate metadata rows to decompiled source `[ ]`
+
+- **Files:** `RoslynQuery/RoslynQuery.csproj`,
+  `RoslynQuery/Navigation/DecompiledSourceProvider.cs` (new),
+  `RoslynQuery/ToolWindow/ReferenceGraphToolWindowControl.xaml.cs`,
+  `RoslynQuery.Tests/Navigation/DecompiledSourceProviderTests.cs` (new)
+- **Do:** **Start with a load probe and stop if it fails.** Add `ICSharpCode.Decompiler` 11.0.0.9375 to
+  the VSIX, deploy to the experimental instance, and confirm it loads and decompiles a member in-proc.
+  The probe already hard-failed once outside VS on `System.Memory` unification (fixed by pinning 4.6.3),
+  and devenv carries its own `System.Memory`, `System.Collections.Immutable` and
+  `System.Reflection.Metadata` under its own redirects, so this is the step's real risk. If it cannot be
+  made to load reliably, **mark this step `[!]` and leave metadata rows non-navigable** rather than
+  shipping a half-working navigation - the whole point of the feature is seeing implementations, and a
+  fallback to the signature-only `[from metadata]` view does not deliver that.
+  If it does load: `DecompiledSourceProvider` maps a `SymbolIdentity` to decompiled C# via
+  `IdStringProvider.FindEntity` then `CSharpDecompiler.DecompileTypeAsString` for the containing type
+  (type context, the way ILSpy shows it), caches one `CSharpDecompiler` per assembly path, writes the
+  result to a temp file under the extension's own folder, and opens it read-only, positioning on the
+  member. Double-click and Enter route metadata rows here instead of to `SpanMapper`.
+- **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then
+  `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.DecompiledSourceProviderTests"` passes. Cover, against
+  mscorlib on disk: a documentation id for `System.IO.MemoryStream.Read` produces source containing a
+  real body (assert on a statement, not just a signature); an id that matches nothing returns null
+  rather than throwing; the per-assembly decompiler is constructed once across repeated calls. Then the
+  in-VS half of the check belongs to step 26's smoke test.
+- **Commit:** `navigate metadata rows to decompiled source`
+
+### 26. README and the full smoke test `[ ]`
+
+- **Files:** `README.md`
+- **Do:** Rewrite the Reference Graph section for the analyzer model: the branch set per symbol kind,
+  that every row re-analyses, the `(N in T ms)` headers, the removal of the usage filter, what the scope
+  combo now applies to, how far into referenced assemblies each branch reaches, and the options page
+  with its two deferred switches. No new C# fences.
+- **Verify:** `dotnet build RoslynQuery.slnx -c Debug`, then
+  `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReadmeExampleTests"` passes, then the manual F5 smoke
+  test **including everything steps 8, 12 and 14 never got walked through**, since this phase rewrites
+  the tree they were verifying: both a member and a type root show the right branch set; a branch header
+  gains its count and timing on expand; an empty branch loses its expander; a row three levels down
+  still offers its own full branch set; `Overrides` / `Implements` / `Derived Types` / `Extension Methods`
+  each return something on a solution known to have them; a framework row appears under `Derived Types`
+  rooted on a framework type and is marked as metadata; double-click still navigates without toggling
+  (step 12); Enter navigates from the selected row (step 14); a metadata row opens **decompiled source
+  with real bodies** (step 25); signature colouring survives a Tools > Options theme switch; the options
+  page appears with both switches visibly disabled.
+- **Commit:** `document the analyzer model and finish the smoke test`
 
 ## Deviations
 
