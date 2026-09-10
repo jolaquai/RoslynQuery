@@ -7,7 +7,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 
 using Microsoft.CodeAnalysis;
@@ -242,12 +244,39 @@ public partial class QueryToolWindowControl : UserControl
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
+        // The star swallows selection, so without this a double-click on it would run whichever row
+        // happened to be selected before rather than the one under the cursor.
+        if (IsWithinButton(e.OriginalSource)) return;
         if (CachedPredicates.SelectedItem is not CachedPredicateItem item) return;
 
         // Pretty, not Display: the latter is truncated for the list and would restore a fragment.
         TargetCombo.SelectedIndex = (int)item.Kind;
         _searchInput.Text = item.Pretty;
         Run();
+    }
+
+    private void OnFavoriteClick(object sender, RoutedEventArgs e)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        if ((sender as FrameworkElement)?.DataContext is not CachedPredicateItem item) return;
+
+        item.IsFavorite = !item.IsFavorite;
+        if (item.IsFavorite) FavoritesStore.Add(item.Kind, item.Mode, item.Text);
+        else FavoritesStore.Remove(item.Kind, item.Mode, item.Text);
+    }
+
+    private static bool IsWithinButton(object originalSource)
+    {
+        for (var current = originalSource as DependencyObject; current != null;)
+        {
+            if (current is ButtonBase) return true;
+            // Not every hit-testable source is a Visual (a Run is not), and VisualTreeHelper throws
+            // on anything that isn't; the logical parent is the only walk those have.
+            current = current is Visual ? VisualTreeHelper.GetParent(current) : LogicalTreeHelper.GetParent(current);
+        }
+
+        return false;
     }
 
     private void OnToggleSidebarClick(object sender, RoutedEventArgs e) => SetSidebarExpanded(SidebarColumn.Width.Value == 0);
@@ -278,13 +307,25 @@ public partial class QueryToolWindowControl : UserControl
         }
     }
 
+    /// <summary>Favorites pinned above the live cache snapshot, deduped on the shared cache key.</summary>
     private void RefreshCachedPredicates()
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
         _cachedPredicates.Clear();
+        var seen = new HashSet<(TargetKind, PredicateMode, string)>();
+
+        foreach (var (kind, mode, text) in FavoritesStore.All)
+        {
+            if (seen.Add((kind, mode, text)))
+                _cachedPredicates.Add(new CachedPredicateItem(kind, mode, text, isFavorite: true));
+        }
+
         foreach (var (kind, mode, text) in PredicateCompiler.Snapshot())
-            _cachedPredicates.Add(new CachedPredicateItem(kind, mode, text));
+        {
+            if (seen.Add((kind, mode, text)))
+                _cachedPredicates.Add(new CachedPredicateItem(kind, mode, text));
+        }
     }
 
     private void UpdateSignature() => SignatureText.Text = PredicateTemplate.Signature(CurrentTarget);
