@@ -47,8 +47,10 @@ public class ReferenceGraphEngineLinkedFileTests
 
         var construction = Assert.Single(nodes, n => n.DisplayText.Contains("Cached"));
 
-        Assert.Equal("1 construction", construction.SecondaryText);
-        Assert.Single(construction.Locations);
+        // Two real occurrences on one line: the field's declared type and its initializer. Four target
+        // frameworks would report eight without the collapse, so this still pins what the test is for.
+        Assert.Equal("2 refs (1 construction, 1 type reference)", construction.SecondaryText);
+        Assert.Equal(2, construction.Locations.Count);
     }
 
     [Fact]
