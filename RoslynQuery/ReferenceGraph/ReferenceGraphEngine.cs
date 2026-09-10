@@ -19,9 +19,6 @@ namespace RoslynQuery.ReferenceGraph;
 /// </summary>
 internal static class ReferenceGraphEngine
 {
-    /// <summary>Past this the tree stops being navigable, so the rest collapses into one row.</summary>
-    public const int MaxNodes = 200;
-
     public static async Task<IReadOnlyList<ReferenceGraphNode>> FindIncomingAsync(
         ISymbol target,
         Solution solution,
@@ -262,16 +259,9 @@ internal static class ReferenceGraphEngine
         {
             var ordered = Order(direction);
             var nodes = new List<ReferenceGraphNode>(ordered.Count);
-            var count = 0;
 
             foreach (var group in ordered)
             {
-                if (count == MaxNodes)
-                {
-                    nodes.Add(ReferenceGraphNode.CreateMessage($"{ordered.Count - MaxNodes} more...", parent));
-                    break;
-                }
-
                 // Whichever location ends up first is the one double-click navigates to, so it has to
                 // be the same one on every refresh.
                 group.Locations.Sort(CompareLocations);
@@ -289,8 +279,6 @@ internal static class ReferenceGraphEngine
                     // forever, so it is a leaf that says so instead.
                     expandable: !recursive)
                 { IsRecursive = recursive });
-
-                count++;
             }
 
             return nodes;

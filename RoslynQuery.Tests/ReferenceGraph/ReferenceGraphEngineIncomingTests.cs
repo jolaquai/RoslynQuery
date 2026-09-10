@@ -129,10 +129,11 @@ public class ReferenceGraphEngineIncomingTests
     }
 
     [Fact]
-    public async Task Incoming_MoreCallersThanTheCap_CollapsesTheRemainderIntoOneRow()
+    public async Task Incoming_ManyCallers_ReturnsEveryOneWithNoCollapsedRow()
     {
+        const int callers = 205;
         var source = new StringBuilder("class Owner { public void Target() { } }\r\n");
-        for (var i = 0; i < MaxPlusFive; i++)
+        for (var i = 0; i < callers; i++)
             source.Append($"class Caller{i} {{ void Go() {{ new Owner().Target(); }} }}\r\n");
 
         var solution = TestSolutions.Create(("Many.cs", source.ToString()));
@@ -140,12 +141,11 @@ public class ReferenceGraphEngineIncomingTests
         var nodes = await ReferenceGraphEngine.FindIncomingAsync(
             await SymbolAsync(solution, "Owner", "Target"), solution, null, All, null, TestContext.Current.CancellationToken);
 
-        Assert.Equal(ReferenceGraphEngine.MaxNodes + 1, nodes.Count);
-        Assert.Equal("5 more...", nodes[ReferenceGraphEngine.MaxNodes].DisplayText);
-        Assert.True(nodes[ReferenceGraphEngine.MaxNodes].IsMessage);
+        // A "N more..." row would be a dead end: CreateMessage builds it expandable: false, so
+        // anything past it is unreachable rather than merely collapsed.
+        Assert.Equal(callers, nodes.Count);
+        Assert.DoesNotContain(nodes, n => n.IsMessage);
     }
-
-    private const int MaxPlusFive = ReferenceGraphEngine.MaxNodes + 5;
 
     [Fact]
     public async Task Incoming_ACrefInADocComment_IsExcludedByDefault()
@@ -252,11 +252,12 @@ public class ReferenceGraphEngineIncomingTests
     }
 
     [Fact]
-    public async Task Incoming_TheCap_KeepsTheFirstRowsInSortedOrder()
+    public async Task Incoming_ManyCallers_StayInSortedOrder()
     {
+        const int callers = 205;
         var source = new StringBuilder();
         source.AppendLine("class Owner { public void Target() { } }");
-        for (var i = 0; i < MaxPlusFive; i++)
+        for (var i = 0; i < callers; i++)
             source.AppendLine($"class Caller{i:D4} {{ void Go() {{ new Owner().Target(); }} }}");
 
         var solution = TestSolutions.Create(("Many.cs", source.ToString()));
@@ -264,9 +265,10 @@ public class ReferenceGraphEngineIncomingTests
         var nodes = await ReferenceGraphEngine.FindIncomingAsync(
             await SymbolAsync(solution, "Owner", "Target"), solution, null, All, null, TestContext.Current.CancellationToken);
 
-        var rows = nodes.Take(ReferenceGraphEngine.MaxNodes).Select(n => n.DisplayText).ToList();
+        var rows = nodes.Select(n => n.DisplayText).ToList();
 
-        // Which rows survive the cap must not depend on which document finished searching first.
+        // Row order must not depend on which document finished searching first.
+        Assert.Equal(callers, rows.Count);
         Assert.Equal(rows.OrderBy(x => x, System.StringComparer.Ordinal), rows);
         Assert.Equal("Caller0000.Go()", rows[0]);
     }
