@@ -64,17 +64,6 @@ public partial class ReferenceGraphToolWindowControl : UserControl
 
     private ScopeKind CurrentScope => ((Choice<ScopeKind>)ScopeCombo.SelectedItem)?.Value ?? ScopeKind.Project;
 
-    private ReferenceUsageKind CurrentFilter =>
-        Flag(InvocationCheck, ReferenceUsageKind.Invocation)
-        | Flag(ReadCheck, ReferenceUsageKind.Read)
-        | Flag(WriteCheck, ReferenceUsageKind.Write)
-        | Flag(ConstructionCheck, ReferenceUsageKind.Construction)
-        | Flag(TypeReferenceCheck, ReferenceUsageKind.TypeReference)
-        | Flag(DocumentationCheck, ReferenceUsageKind.Documentation);
-
-    private static ReferenceUsageKind Flag(CheckBox box, ReferenceUsageKind kind) =>
-        box.IsChecked == true ? kind : ReferenceUsageKind.None;
-
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         if (_initialized) return;
@@ -239,14 +228,6 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         RefreshExpanded();
     }
 
-    private void OnFilterChanged(object sender, RoutedEventArgs e)
-    {
-        ThreadHelper.ThrowIfNotOnUIThread();
-        if (!_ready) return;
-
-        RefreshExpanded();
-    }
-
     private void OnStopClick(object sender, RoutedEventArgs e)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
@@ -286,7 +267,6 @@ public partial class ReferenceGraphToolWindowControl : UserControl
 
         var solution = _workspace.CurrentSolution;
         var scope = CurrentScope;
-        var filter = CurrentFilter;
         var token = SharedCancellation().Token;
 
         _ranAgainst = new WeakReference<Solution>(solution);
@@ -299,7 +279,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         {
             try
             {
-                await ExpandCoreAsync(node, solution, scope, filter, token);
+                await ExpandCoreAsync(node, solution, scope, token);
             }
             catch (OperationCanceledException)
             {
@@ -330,36 +310,28 @@ public partial class ReferenceGraphToolWindowControl : UserControl
     }
 
     private async Task ExpandCoreAsync(
-        ReferenceGraphNode node, Solution solution, ScopeKind scope, ReferenceUsageKind filter, CancellationToken cancellationToken)
+        ReferenceGraphNode node, Solution solution, ScopeKind scope, CancellationToken cancellationToken)
     {
+        if (node.Analyzer is null) return;
+
         await TaskScheduler.Default;
 
         var symbol = await node.Identity.ResolveAsync(solution, cancellationToken).ConfigureAwait(false);
 
-        IReadOnlyList<ReferenceGraphNode> children;
-
         if (symbol is null)
         {
-            children = [ReferenceGraphNode.CreateMessage("This symbol no longer exists in the current solution.", node)];
-        }
-        else if (node.Analyzer == ReferenceAnalyzerKind.Uses)
-        {
-            children = await ReferenceGraphEngine
-                .FindOutgoingAsync(symbol, solution, filter, node, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        else
-        {
-            children = await ReferenceGraphEngine
-                .FindIncomingAsync(symbol, solution, DocumentsFor(symbol, solution, scope), filter, node, cancellationToken)
-                .ConfigureAwait(false);
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+            node.SetChildren([ReferenceGraphNode.CreateMessage("This symbol no longer exists in the current solution.", node)]);
+            return;
         }
 
-        if (children.Count == 0)
-            children = [ReferenceGraphNode.CreateMessage("No references.", node)];
+        var result = await ReferenceGraphEngine
+            .RunAsync(node.Analyzer.Value, symbol, solution, DocumentsFor(symbol, solution, scope), node, cancellationToken)
+            .ConfigureAwait(false);
 
+        // An empty branch gets no children at all, which is what drops its expander.
         await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-        node.SetChildren(children);
+        node.ApplyResults(result);
     }
 
     private static IImmutableSet<Document> DocumentsFor(ISymbol symbol, Solution solution, ScopeKind scope)

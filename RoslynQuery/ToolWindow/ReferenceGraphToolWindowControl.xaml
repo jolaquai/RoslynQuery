@@ -46,6 +46,9 @@
                 <TextBlock Text="(recursive)" Margin="10,0,0,0" Style="{StaticResource Meta}"
                            Visibility="{Binding IsRecursive, Converter={StaticResource BoolToVisibility}}" />
 
+                <TextBlock Text="(metadata)" Margin="10,0,0,0" Style="{StaticResource Meta}"
+                           Visibility="{Binding IsFromMetadata, Converter={StaticResource BoolToVisibility}}" />
+
                 <TextBlock Text="(searching)" Margin="10,0,0,0" Style="{StaticResource Meta}"
                            Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibility}}" />
             </StackPanel>
@@ -71,40 +74,8 @@
                 <ComboBox x:Name="ScopeCombo" MinWidth="132" Margin="0,0,14,3" VerticalAlignment="Center"
                           Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}"
                           SelectionChanged="OnScopeChanged"
-                          ToolTip="Only narrows &quot;References To&quot;. &quot;References From&quot; is always read out of the root's own declaration." />
+                          ToolTip="Narrows the reference branches (Used By, Read By, Assigned By, Instantiated By, Exposed By, Applied To). Uses is always read out of the row's own declaration, and the hierarchy branches search referenced assemblies too." />
 
-                <ToggleButton x:Name="FilterToggle" Content="Filter" MinWidth="62" Padding="8,2" Margin="0,0,0,3"
-                              Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogToggleButtonStyleKey}}"
-                              ToolTip="Which kinds of reference the graph shows." />
-
-                <Popup IsOpen="{Binding IsChecked, ElementName=FilterToggle, Mode=TwoWay}"
-                       PlacementTarget="{Binding ElementName=FilterToggle}" Placement="Bottom"
-                       StaysOpen="False" AllowsTransparency="True">
-                    <Border Padding="10,8" BorderThickness="1"
-                            BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarBorderKey}}"
-                            Background="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowBackgroundKey}}">
-                        <StackPanel>
-                            <CheckBox x:Name="InvocationCheck" Content="Invocations" IsChecked="True" Margin="0,0,0,4"
-                                      Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogCheckBoxStyleKey}}"
-                                      Checked="OnFilterChanged" Unchecked="OnFilterChanged" />
-                            <CheckBox x:Name="ReadCheck" Content="Reads" IsChecked="True" Margin="0,0,0,4"
-                                      Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogCheckBoxStyleKey}}"
-                                      Checked="OnFilterChanged" Unchecked="OnFilterChanged" />
-                            <CheckBox x:Name="WriteCheck" Content="Writes" IsChecked="True" Margin="0,0,0,4"
-                                      Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogCheckBoxStyleKey}}"
-                                      Checked="OnFilterChanged" Unchecked="OnFilterChanged" />
-                            <CheckBox x:Name="ConstructionCheck" Content="Constructions" IsChecked="True" Margin="0,0,0,4"
-                                      Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogCheckBoxStyleKey}}"
-                                      Checked="OnFilterChanged" Unchecked="OnFilterChanged" />
-                            <CheckBox x:Name="TypeReferenceCheck" Content="Type references" IsChecked="False" Margin="0,0,0,4"
-                                      Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogCheckBoxStyleKey}}"
-                                      Checked="OnFilterChanged" Unchecked="OnFilterChanged" />
-                            <CheckBox x:Name="DocumentationCheck" Content="Doc comments (cref)" IsChecked="False"
-                                      Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogCheckBoxStyleKey}}"
-                                      Checked="OnFilterChanged" Unchecked="OnFilterChanged" />
-                        </StackPanel>
-                    </Border>
-                </Popup>
             </WrapPanel>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
