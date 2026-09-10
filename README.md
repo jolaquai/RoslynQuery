@@ -18,6 +18,7 @@ references it and what it references, recursively.
     - [Examples](#examples)
     - [Keys](#keys)
     - [Query history](#query-history)
+    - [Favorites](#favorites)
   - [Replace](#replace)
   - [Reference Graph](#reference-graph)
     - [Scope](#scope)
@@ -171,7 +172,17 @@ That cache is also the leak referred to above. Every distinct predicate emits an
 reports the running count and total size. The cache is capped at 512 entries, which bounds the list,
 not the underlying leak.
 
-## Replace
+### Favorites
+
+Hovering a sidebar row reveals a star. Starring one writes it to
+`%LocalAppData%\RoslynQuery\favorites.tsv`, and favorites are listed above the rest of the sidebar
+on every load, whether or not the compile cache still holds them. That is a text-only record: a
+restored favorite compiles on its first run of a session like any other predicate.
+
+There is no limit and nothing is evicted: every star is a deliberate click, so the only thing a cap
+could do is throw away a query you meant to keep. They are listed most recently starred first. The
+list re-sorts on the next run rather than under the cursor, so an accidental star can be clicked
+straight back off.
 
 The **Replace** tab sits next to Search and shares its Find box, Target, Scope and Cap - there is
 one query, and Replace runs it itself rather than requiring a prior Search run.
