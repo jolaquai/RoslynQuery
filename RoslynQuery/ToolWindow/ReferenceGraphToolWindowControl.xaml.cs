@@ -117,7 +117,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         }
 
         var root = ReferenceGraphNode.CreateRoot(
-            ReferenceGraphDisplay.Of(symbol), symbol.Name, identity, SymbolGlyphs.For(symbol));
+            ReferenceGraphDisplay.Of(symbol), identity, SymbolGlyphs.For(symbol), ReferenceAnalyzers.For(symbol));
 
         _roots.Insert(0, root);
         SetError(null);
@@ -342,16 +342,16 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         {
             children = [ReferenceGraphNode.CreateMessage("This symbol no longer exists in the current solution.", node)];
         }
-        else if (node.Direction == ReferenceDirection.Incoming)
+        else if (node.Analyzer == ReferenceAnalyzerKind.Uses)
         {
             children = await ReferenceGraphEngine
-                .FindIncomingAsync(symbol, solution, DocumentsFor(symbol, solution, scope), filter, node, cancellationToken)
+                .FindOutgoingAsync(symbol, solution, filter, node, cancellationToken)
                 .ConfigureAwait(false);
         }
         else
         {
             children = await ReferenceGraphEngine
-                .FindOutgoingAsync(symbol, solution, filter, node, cancellationToken)
+                .FindIncomingAsync(symbol, solution, DocumentsFor(symbol, solution, scope), filter, node, cancellationToken)
                 .ConfigureAwait(false);
         }
 

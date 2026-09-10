@@ -82,7 +82,7 @@ internal static class ReferenceGraphEngine
             }
         }
 
-        return groups.Build(ReferenceDirection.Incoming, parent);
+        return groups.Build(ReferenceAnalyzerKind.UsedBy, parent);
     }
 
     /// <summary>What <paramref name="root"/> itself references, scoped to its own declarations, members, and base list.</summary>
@@ -114,7 +114,7 @@ internal static class ReferenceGraphEngine
                 Walk(scope, model, document, text, filter, groups, solution, cancellationToken);
         }
 
-        return groups.Build(ReferenceDirection.Outgoing, parent);
+        return groups.Build(ReferenceAnalyzerKind.Uses, parent);
     }
 
     private static void Walk(
@@ -255,9 +255,9 @@ internal static class ReferenceGraphEngine
             group.Locations.Add(location);
         }
 
-        public IReadOnlyList<ReferenceGraphNode> Build(ReferenceDirection direction, ReferenceGraphNode parent)
+        public IReadOnlyList<ReferenceGraphNode> Build(ReferenceAnalyzerKind analyzer, ReferenceGraphNode parent)
         {
-            var ordered = Order(direction);
+            var ordered = Order(analyzer);
             var nodes = new List<ReferenceGraphNode>(ordered.Count);
 
             foreach (var group in ordered)
@@ -268,26 +268,28 @@ internal static class ReferenceGraphEngine
 
                 var recursive = parent != null && parent.HasAncestor(group.Identity);
 
-                nodes.Add(new ReferenceGraphNode(
+                var node = ReferenceGraphNode.CreateSymbol(
                     group.Display,
                     group.Identity,
                     SymbolGlyphs.For(group.Symbol),
-                    direction,
+                    ReferenceAnalyzers.For(group.Symbol),
                     group.Locations,
                     parent,
                     // A node whose symbol already sits above it would expand into the same subtree
-                    // forever, so it is a leaf that says so instead.
-                    expandable: !recursive)
-                { IsRecursive = recursive });
+                    // forever, so it offers no branches and says so instead.
+                    analyzable: !recursive);
+
+                node.IsRecursive = recursive;
+                nodes.Add(node);
             }
 
             return nodes;
         }
 
-        /// <summary>Incoming rows sort by name - <c>SymbolFinder</c>'s parallel search makes first-seen order nondeterministic. Outgoing rows keep insertion (source) order.</summary>
-        private List<Group> Order(ReferenceDirection direction)
+        /// <summary>Incoming rows sort by name - <c>SymbolFinder</c>'s parallel search makes first-seen order nondeterministic. <c>Uses</c> keeps insertion (source) order.</summary>
+        private List<Group> Order(ReferenceAnalyzerKind analyzer)
         {
-            if (direction != ReferenceDirection.Incoming) return _ordered;
+            if (analyzer == ReferenceAnalyzerKind.Uses) return _ordered;
 
             return [.. _ordered
                 .OrderBy(g => g.Display, StringComparer.Ordinal)

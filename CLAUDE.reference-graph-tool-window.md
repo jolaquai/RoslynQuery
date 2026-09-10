@@ -23,13 +23,13 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress - phase 1 code complete; phase 2 (steps 15-26) planned, not started
-- **Current step:** 16 - node roles and the alternating tree. Then 17-26 in order, then 27-28, which
+- **Current step:** 17 - hierarchy analyzers. Then 18-26 in order, then 27-28, which
   were added mid-phase and depend on the analyzer plumbing steps 16-20 build. Steps 8, 12 and 14 stay
   `[~]`: their manual smoke test is deliberately deferred into step 26, which rewrites the tree they were
   verifying, and step 26 is re-run once 28 lands.
 - **Branch:** feature/favorites
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `add reference analyzer kinds and applicability table` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `alternate symbol and analyzer rows in the reference graph` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-09-10
 
 ## Goal
@@ -361,7 +361,7 @@ below are shaped the way they are.
   `ImplementedBy` but not `InstantiatedBy`.
 - **Commit:** `add reference analyzer kinds and applicability table`
 
-### 16. Node roles and the alternating tree `[ ]`
+### 16. Node roles and the alternating tree `[x]`
 
 - **Files:** `RoslynQuery/ReferenceGraph/ReferenceGraphNode.cs`,
   `RoslynQuery/ReferenceGraph/ReferenceDirection.cs` (deleted),
@@ -692,6 +692,40 @@ turning them away, and only locals, parameters and type parameters actually need
   answers empty (see the probe findings). The exclusion keys off the containing type's kind instead.
 - **Step 15: a static class does not get `Instantiated By`.** Not called out in the step text; it cannot be
   constructed, so the branch could only ever be empty.
+- **Step 16: the step's file list was incomplete.** Deleting `ReferenceDirection` breaks
+  `ReferenceGraphEngine`, `SymbolGlyphMonikerConverter` and `ReferenceGraphToolWindowControl`, so all three
+  moved in the same commit. There is no smaller version of this step that still builds.
+- **Step 16: `ExpandSymbol` was replaced by deciding the branch set at construction.** The step called for
+  a method that materialises a symbol row's branches on expand, but `ReferenceAnalyzers.For` needs a live
+  `ISymbol` and a node deliberately keeps none - the same constraint that already forces `SymbolGlyphs.For`
+  to run once at construction. The applicable kinds are therefore computed while the symbol is still in
+  hand and stored on the row, which makes opening a symbol row free rather than merely synchronous.
+- **Step 16: `IsExpandable` is now computed, and means "is an analyzer row".** It was a stored flag meaning
+  "seed a placeholder and fetch on open". Only analyzer rows fetch, so the two concepts collapsed into one
+  and `ShallowestExpanded`/`ShallowestLoaded` now target analyzer rows without needing a role check of
+  their own.
+- **Step 16: construction moved behind factories.** `CreateSymbol`, `CreateAnalyzer`, `CreateRoot`,
+  `CreateMessage` and `CreateLocation` over a private constructor - the positional parameter list had grown
+  past the point where a call site was readable. Note that an object initializer cannot follow a factory
+  call, so `IsRecursive` is now assigned after construction in `GroupSet.Build`.
+- **Step 16: `ResetToUnloaded` is a no-op on anything but an analyzer row.** Stop previously cleared every
+  loaded row; under the new model that would drop a symbol row's branches permanently, since nothing
+  refetches them.
+- **Step 16: the `Locations (N)` branch is built at construction, not in `SetChildren`.** It depends only
+  on the row's own occurrences, and `SetChildren` is now an analyzer-row concern. A recursive symbol row
+  still gets its locations branch even though it offers no analyzer branches - the occurrences are real and
+  worth reaching.
+- **Step 16: the image catalog has no lambda or type-parameter glyph.** Same class of finding as step 6's
+  missing constructor glyph, verified by reflecting over Microsoft.VisualStudio.ImageCatalog 17.14:
+  `Lambda`, `LocalFunction`, `TypeParameter` and `ClassHierarchy` do not exist. Used `Inline` for a lambda,
+  `MethodSnippet` for a local function, `TypeDefinition` for a type parameter and `Hierarchy` for the
+  hierarchy branches. `Operator`, `Namespace`, `LocalVariable` and `Parameter` all do exist.
+  `Convert_EveryDeclaredGlyph_IsHandled` already asserts every glyph maps to a distinct moniker, so a
+  collision here would have failed the build rather than shipping two rows with the same icon.
+- **Step 16: analyzer branches share three glyphs, not thirteen.** `Uses` gets `OutgoingBranch`, the
+  reference analyzers (`UsedBy`, `ReadBy`, `AssignedBy`, `InstantiatedBy`, `ExposedBy`, `AppliedTo`) get
+  `IncomingBranch`, and the structural ones get `HierarchyBranch`. ILSpy's own branch icons are similarly
+  undifferentiated.
 - **Step 15 correction: an enum member does not get `Assigned By`.** It is an `IFieldSymbol`, so the field
   rule gave it the full field branch set, but an enum member cannot be written - the branch could only ever
   come back empty. Enum members now get `Uses` + `Read By`. Found by widening the step's coverage after the
