@@ -88,6 +88,28 @@ internal static class HierarchyAnalyzers
         return await ToNodesAsync(results, solution, parent, sorted: true, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Extension methods applicable to a type. There is no finder API for this, so it is a whole-solution
+    /// declaration scan filtered by <c>ReduceExtensionMethod</c>, which answers null when the extension
+    /// does not apply. Rows are the unreduced definitions, since the reduced form has no declaration to
+    /// navigate to.
+    /// </summary>
+    public static async Task<IReadOnlyList<ReferenceGraphNode>> FindExtensionMethodsAsync(
+        ISymbol symbol, Solution solution, ReferenceGraphNode parent, CancellationToken cancellationToken)
+    {
+        if (!(symbol is INamedTypeSymbol type)) return [];
+
+        var declarations = await SymbolFinder
+            .FindSourceDeclarationsAsync(solution, _ => true, SymbolFilter.Member, cancellationToken)
+            .ConfigureAwait(false);
+
+        var applicable = declarations
+            .OfType<IMethodSymbol>()
+            .Where(method => method.IsExtensionMethod && method.ReduceExtensionMethod(type) != null);
+
+        return await ToNodesAsync(applicable, solution, parent, sorted: true, cancellationToken).ConfigureAwait(false);
+    }
+
     private static async Task<IReadOnlyList<ReferenceGraphNode>> ToNodesAsync(
         IEnumerable<ISymbol> symbols, Solution solution, ReferenceGraphNode parent, bool sorted,
         CancellationToken cancellationToken)
