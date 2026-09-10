@@ -240,6 +240,8 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
             .Where(p => p.Count > 0)
             .ToList();
 
+        // A hierarchy row's location is a declaration, not a usage, so it has no breakdown to report.
+        if (parts.Count == 0) return null;
         if (parts.Count == 1) return $"{parts[0].Count} {Pluralize(NameOf(parts[0].Kind), parts[0].Count)}";
 
         var builder = new StringBuilder();
