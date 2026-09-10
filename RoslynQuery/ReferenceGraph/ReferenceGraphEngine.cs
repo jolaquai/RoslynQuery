@@ -19,11 +19,63 @@ namespace RoslynQuery.ReferenceGraph;
 /// </summary>
 internal static class ReferenceGraphEngine
 {
-    public static async Task<IReadOnlyList<ReferenceGraphNode>> FindIncomingAsync(
+    private const ReferenceUsageKind AllKinds =
+        ReferenceUsageKind.Invocation | ReferenceUsageKind.Read | ReferenceUsageKind.Write
+        | ReferenceUsageKind.Construction | ReferenceUsageKind.TypeReference | ReferenceUsageKind.Documentation;
+
+    /// <summary>One incoming analyzer branch. The analyzer decides both the usage mask and, where a mask alone cannot say it, an occurrence test.</summary>
+    public static Task<IReadOnlyList<ReferenceGraphNode>> FindIncomingAsync(
+        ReferenceAnalyzerKind analyzer,
+        ISymbol target,
+        Solution solution,
+        IImmutableSet<Document> documents,
+        ReferenceGraphNode parent,
+        CancellationToken cancellationToken)
+    {
+        var (mask, occurrenceFilter) = ConfigFor(analyzer);
+
+        return FindIncomingAsync(target, solution, documents, mask, occurrenceFilter, analyzer, parent, cancellationToken);
+    }
+
+    private static (ReferenceUsageKind Mask, Func<SyntaxNode, bool> Filter) ConfigFor(ReferenceAnalyzerKind analyzer)
+    {
+        switch (analyzer)
+        {
+            case ReferenceAnalyzerKind.UsedBy:
+                return (ReferenceUsageKind.Invocation | ReferenceUsageKind.Read | ReferenceUsageKind.Write, null);
+            case ReferenceAnalyzerKind.ReadBy:
+                return (ReferenceUsageKind.Read, null);
+            case ReferenceAnalyzerKind.AssignedBy:
+                return (ReferenceUsageKind.Write, null);
+            case ReferenceAnalyzerKind.InstantiatedBy:
+                return (ReferenceUsageKind.Construction, null);
+            case ReferenceAnalyzerKind.ExposedBy:
+                return (ReferenceUsageKind.TypeReference, ReferenceUsageClassifier.IsSignaturePosition);
+            // An attribute application binds to the constructor, so its kind is Construction or
+            // TypeReference depending on which definition SymbolFinder cascaded to; the syntax decides.
+            case ReferenceAnalyzerKind.AppliedTo:
+                return (AllKinds, ReferenceUsageClassifier.IsAttributeApplication);
+            default:
+                return (AllKinds, null);
+        }
+    }
+
+    public static Task<IReadOnlyList<ReferenceGraphNode>> FindIncomingAsync(
         ISymbol target,
         Solution solution,
         IImmutableSet<Document> documents,
         ReferenceUsageKind filter,
+        ReferenceGraphNode parent,
+        CancellationToken cancellationToken) =>
+        FindIncomingAsync(target, solution, documents, filter, null, ReferenceAnalyzerKind.UsedBy, parent, cancellationToken);
+
+    private static async Task<IReadOnlyList<ReferenceGraphNode>> FindIncomingAsync(
+        ISymbol target,
+        Solution solution,
+        IImmutableSet<Document> documents,
+        ReferenceUsageKind filter,
+        Func<SyntaxNode, bool> occurrenceFilter,
+        ReferenceAnalyzerKind analyzer,
         ReferenceGraphNode parent,
         CancellationToken cancellationToken)
     {
@@ -60,6 +112,7 @@ internal static class ReferenceGraphEngine
 
                 var kind = ReferenceUsageClassifier.Classify(occurrence, reference.Definition);
                 if ((kind & filter) == ReferenceUsageKind.None) continue;
+                if (occurrenceFilter != null && !occurrenceFilter(occurrence)) continue;
 
                 if (!models.TryGetValue(document.Id, out var model))
                 {
@@ -82,7 +135,7 @@ internal static class ReferenceGraphEngine
             }
         }
 
-        return groups.Build(ReferenceAnalyzerKind.UsedBy, parent);
+        return groups.Build(analyzer, parent);
     }
 
     /// <summary>What <paramref name="root"/> itself references, scoped to its own declarations, members, and base list.</summary>
@@ -204,7 +257,14 @@ internal static class ReferenceGraphEngine
             if (!(node is MemberDeclarationSyntax || node is AccessorDeclarationSyntax || node is VariableDeclaratorSyntax))
                 continue;
 
-            var declared = model.GetDeclaredSymbol(node, cancellationToken);
+            // A field or field-like event declares its symbol on the declarator, so GetDeclaredSymbol
+            // answers null for the declaration itself and the walk would climb out to the containing type.
+            var declaring = node is BaseFieldDeclarationSyntax field
+                ? field.Declaration?.Variables.FirstOrDefault()
+                : node;
+            if (declaring is null) continue;
+
+            var declared = model.GetDeclaredSymbol(declaring, cancellationToken);
             if (declared != null) return Normalize(declared);
         }
 
