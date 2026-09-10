@@ -13,7 +13,9 @@ namespace RoslynQuery.ToolWindow;
 /// <summary>One entry in the cached-predicates sidebar: a normalized predicate still in <see cref="PredicateCompiler"/>'s cache, or one starred in <see cref="FavoritesStore"/>.</summary>
 internal sealed class CachedPredicateItem : INotifyPropertyChanged
 {
-    private const int MaxDisplayLength = 300;
+    // Not a cap on the entry: Pretty stays whole and is what a double-click restores. This only
+    // stops a pasted novel from being text-laid-out in full for the 64px the row actually shows.
+    private const int MaxDisplayLength = 2000;
 
     private string _pretty;
     private bool _isFavorite;

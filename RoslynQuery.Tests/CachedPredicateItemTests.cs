@@ -19,7 +19,7 @@ public class CachedPredicateItemTests
 
     // A long but genuinely valid expression, so these exercise the truncation boundary rather than
     // the formatter's fallback path.
-    private static string LongExpression() => string.Join(" || ", Enumerable.Repeat("n != null", 40));
+    private static string LongExpression() => string.Join(" || ", Enumerable.Repeat("n != null", 200));
 
     [Fact]
     public void Display_OverLimit_IsTruncatedWithEllipsis()
@@ -27,7 +27,18 @@ public class CachedPredicateItemTests
         var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, LongExpression());
 
         Assert.EndsWith("...", item.Display);
-        Assert.Equal(303, item.Display.Length);
+        Assert.Equal(2003, item.Display.Length);
+    }
+
+    [Fact]
+    public void Display_WellPastTheOldLimitButUnderTheNewOne_IsNotTruncated()
+    {
+        // 300 was low enough to clip text a widened sidebar had room for.
+        var text = string.Join(" || ", Enumerable.Repeat("n != null", 40));
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, text);
+
+        Assert.Equal(item.Pretty, item.Display);
+        Assert.True(item.Display.Length > 300);
     }
 
     [Fact]
@@ -36,7 +47,7 @@ public class CachedPredicateItemTests
         var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, LongExpression());
 
         // Restoring happens from Pretty; a truncated restore would silently run a fragment.
-        Assert.True(item.Pretty.Length > 300);
+        Assert.True(item.Pretty.Length > 2000);
         Assert.DoesNotContain("...", item.Pretty);
     }
 
