@@ -23,8 +23,10 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress - phase 1 code complete; phase 2 (steps 15-26) planned, not started
-- **Current step:** 16 - node roles and the alternating tree. Steps 8, 12 and 14 stay `[~]`: their
-  manual smoke test is deliberately deferred into step 26, which rewrites the tree they were verifying.
+- **Current step:** 16 - node roles and the alternating tree. Then 17-26 in order, then 27-28, which
+  were added mid-phase and depend on the analyzer plumbing steps 16-20 build. Steps 8, 12 and 14 stay
+  `[~]`: their manual smoke test is deliberately deferred into step 26, which rewrites the tree they were
+  verifying, and step 26 is re-run once 28 lands.
 - **Branch:** feature/favorites
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
 - **Last synced commit subject:** `add reference analyzer kinds and applicability table` (verify with `git log -1 --format=%s`)
@@ -374,7 +376,8 @@ below are shaped the way they are.
   `SymbolGlyph` also gains `Operator` (covering `MethodKind.UserDefinedOperator` and
   `MethodKind.Conversion`), which step 15's coverage showed collapsing into the generic method icon while
   ILSpy gives operators their own - visible on `System.UInt128.operator *` and `System.TimeSpan.operator *`
-  in the reference screenshots.
+  in the reference screenshots - plus `Namespace`, `LocalFunction`, `Lambda`, `Local`, `Parameter` and
+  `TypeParameter` for the root kinds steps 27 and 28 add.
   A `Symbol` row is expandable but its expansion is **synchronous** - it needs no fetch, only the
   applicability table - so `IsLoaded` is set the moment it materialises its branches. Only `Analyzer`
   rows fetch. `HasAncestor` walks `Parent` past `Analyzer` rows unchanged (it already compares
@@ -590,7 +593,80 @@ below are shaped the way they are.
   (step 12); Enter navigates from the selected row (step 14); a metadata row opens **decompiled source
   with real bodies** (step 25); signature colouring survives a Tools > Options theme switch; the options
   page appears with both switches visibly disabled.
+  **Re-run this step's verify after step 28**, which adds root kinds this documentation has to cover.
 - **Commit:** `document the analyzer model and finish the smoke test`
+
+### Steps added after phase 2 was planned
+
+Steps 27-28 come from a user challenge to the phase-1 non-goal list: a tool calling itself a reference
+graph should handle locals, parameters, type parameters, namespaces, lambdas and local functions.
+The challenge was correct, and probing showed the blocker was much narrower than the non-goal implied.
+
+**Probe findings (Microsoft.CodeAnalysis 5.6.0, measured):**
+
+| Root kind | `DocumentationCommentId` | `FindReferencesAsync` | `(file, span)` re-resolve |
+| --- | --- | --- | --- |
+| namespace | `N:Outer.Inner`, resolves | works | works |
+| local function | full doc id, resolves | works | works |
+| lambda | doc id resolves | **always 0 - nothing can refer to a lambda** | works |
+| type parameter | **null** | works (3 hits) | works |
+| parameter | **null** | works (2 hits) | works |
+| local | **null** | works (5 hits) | works |
+
+So namespaces and local functions were never blocked by anything but `SymbolResolver.IsSupportedRoot`
+turning them away, and only locals, parameters and type parameters actually need a new identity.
+
+### 27. Namespace, local function and lambda roots `[ ]`
+
+- **Files:** `RoslynQuery/ReferenceGraph/SymbolResolver.cs`,
+  `RoslynQuery/ReferenceGraph/ReferenceAnalyzerKind.cs`,
+  `RoslynQuery/ReferenceGraph/ReferenceAnalyzers.cs`,
+  `RoslynQuery/ReferenceGraph/ReferenceGraphEngine.cs`,
+  `RoslynQuery.Tests/ReferenceGraph/ReferenceAnalyzersTests.cs`,
+  `RoslynQuery.Tests/ReferenceGraph/SymbolResolverTests.cs`, `README.md`
+- **Do:** These three need no identity work - the existing `SymbolIdentity` already round-trips all of them.
+  **Split the root test from the engine's target filter first:** `IsSupportedRoot` currently does double duty
+  as "what can root a graph" and, via `ReferenceGraphEngine.Walk`/`Normalize`, as "what deserves a row in an
+  outgoing result". Widening it alone would put a namespace row under `Uses` for every qualified name
+  (`Outer.Inner.Holder` binds `Outer` and `Inner` to namespace symbols), so add `IsGraphTarget` holding the
+  current narrower set for the engine and let `IsSupportedRoot` widen. Then accept
+  `MethodKind.LocalFunction`, `MethodKind.AnonymousFunction` and `SymbolKind.Namespace` as roots, add a
+  `Contains` analyzer kind, and extend `ReferenceAnalyzers.For`: namespace gets `UsedBy` + `Contains`
+  (its member types and sub-namespaces, straight off `GetMembers`); local function gets `Uses` + `UsedBy`;
+  lambda gets `Uses` **only**, because the probe measured `Used By` at a permanent zero.
+  Accepting local functions as graph targets is a deliberate side effect: a call to one becomes a real row
+  under `Uses`, which it never did before.
+- **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then
+  `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceAnalyzersTests"` and
+  `-class "RoslynQuery.Tests.SymbolResolverTests"` pass. Cover: a caret on a namespace, a local function
+  and a lambda each resolve to a root; a namespace root gets `UsedBy` + `Contains` and its `Contains`
+  lists the namespace's types; a lambda root gets `Uses` and **not** `UsedBy`; an outgoing walk over a
+  method containing a qualified type name produces **no** namespace rows (the `IsGraphTarget` split);
+  an outgoing walk over a method that calls a local function **does** produce a row for it.
+- **Commit:** `add namespace, local function and lambda roots`
+
+### 28. Positional identity for locals, parameters and type parameters `[ ]`
+
+- **Files:** `RoslynQuery/ReferenceGraph/SymbolIdentity.cs`,
+  `RoslynQuery/ReferenceGraph/SymbolResolver.cs`,
+  `RoslynQuery/ReferenceGraph/ReferenceAnalyzers.cs`,
+  `RoslynQuery.Tests/ReferenceGraph/PositionalIdentityTests.cs` (new), `README.md`
+- **Do:** `DocumentationCommentId.CreateDeclarationId` returns null for these three, so `SymbolIdentity`
+  gains a second form: a file path plus the declaration's `TextSpan`, resolved by finding the node at that
+  span in the current tree and calling `GetDeclaredSymbol`. The probe confirmed this round-trips exactly for
+  all three. Keep it a single struct with a discriminator rather than an interface - it is stored on every
+  node and compared constantly. A positional identity is only valid while the file is unedited, so
+  re-resolution runs the span through `SpanMapper` first, the same way navigation already does, and a row
+  whose span no longer resolves reports the existing "no longer exists in the current solution" message.
+  Branch sets: local and parameter get `ReadBy` + `AssignedBy` (a parameter is writable, and `ref`/`out`
+  arguments are already classified `Write`); type parameter gets `UsedBy`.
+- **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then
+  `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.PositionalIdentityTests"` passes. Cover: a local, a
+  parameter and a type parameter each round-trip through `SymbolIdentity` and resolve back to the same
+  symbol; two locals of the same name in different methods do not compare equal; a local's `ReadBy` and
+  `AssignedBy` split its occurrences correctly; resolution against a solution where the declaration has
+  been edited away returns null rather than throwing or resolving to the wrong symbol.
+- **Commit:** `identify locals, parameters and type parameters by position`
 
 ## Deviations
 
