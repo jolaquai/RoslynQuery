@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -22,6 +23,77 @@ internal static class ReferenceGraphEngine
     private const ReferenceUsageKind AllKinds =
         ReferenceUsageKind.Invocation | ReferenceUsageKind.Read | ReferenceUsageKind.Write
         | ReferenceUsageKind.Construction | ReferenceUsageKind.TypeReference | ReferenceUsageKind.Documentation;
+
+    /// <summary>
+    /// Runs one analyzer branch. The single entry point the tool window calls, so the switch over
+    /// analyzer kinds lives here rather than in the UI.
+    /// </summary>
+    public static async Task<AnalyzerResult> RunAsync(
+        ReferenceAnalyzerKind analyzer,
+        ISymbol symbol,
+        Solution solution,
+        IImmutableSet<Document> documents,
+        ReferenceGraphNode parent,
+        CancellationToken cancellationToken)
+    {
+        if (symbol is null || solution is null) return new AnalyzerResult([], 0);
+
+        var stopwatch = Stopwatch.StartNew();
+        var rows = await DispatchAsync(analyzer, symbol, solution, documents, parent, cancellationToken).ConfigureAwait(false);
+        stopwatch.Stop();
+
+        return new AnalyzerResult(rows, stopwatch.ElapsedMilliseconds);
+    }
+
+    private static Task<IReadOnlyList<ReferenceGraphNode>> DispatchAsync(
+        ReferenceAnalyzerKind analyzer,
+        ISymbol symbol,
+        Solution solution,
+        IImmutableSet<Document> documents,
+        ReferenceGraphNode parent,
+        CancellationToken cancellationToken)
+    {
+        switch (analyzer)
+        {
+            case ReferenceAnalyzerKind.Uses:
+                return FindOutgoingAsync(symbol, solution, AllKinds, parent, cancellationToken);
+
+            case ReferenceAnalyzerKind.UsedBy:
+            case ReferenceAnalyzerKind.ReadBy:
+            case ReferenceAnalyzerKind.AssignedBy:
+            case ReferenceAnalyzerKind.InstantiatedBy:
+            case ReferenceAnalyzerKind.ExposedBy:
+            case ReferenceAnalyzerKind.AppliedTo:
+                return FindIncomingAsync(analyzer, symbol, solution, documents, parent, cancellationToken);
+
+            case ReferenceAnalyzerKind.Overrides:
+                return HierarchyAnalyzers.FindOverridesAsync(symbol, solution, parent, cancellationToken);
+
+            case ReferenceAnalyzerKind.OverriddenBy:
+                return HierarchyAnalyzers.FindOverriddenByAsync(symbol, solution, ProjectsFor(documents), parent, cancellationToken);
+
+            case ReferenceAnalyzerKind.Implements:
+                return HierarchyAnalyzers.FindImplementsAsync(symbol, solution, ProjectsFor(documents), parent, cancellationToken);
+
+            case ReferenceAnalyzerKind.ImplementedBy:
+                return HierarchyAnalyzers.FindImplementedByAsync(symbol, solution, ProjectsFor(documents), parent, cancellationToken);
+
+            case ReferenceAnalyzerKind.DerivedTypes:
+                return HierarchyAnalyzers.FindDerivedTypesAsync(symbol, solution, ProjectsFor(documents), parent, cancellationToken);
+
+            case ReferenceAnalyzerKind.ExtensionMethods:
+                return HierarchyAnalyzers.FindExtensionMethodsAsync(symbol, solution, parent, cancellationToken);
+
+            // Throwing, not returning empty: an unwired kind is a bug, and a silent empty branch would
+            // look exactly like a symbol that genuinely has no answers.
+            default:
+                throw new ArgumentOutOfRangeException(nameof(analyzer), analyzer, "No analyzer is wired for this kind.");
+        }
+    }
+
+    /// <summary>The hierarchy finders scope by project, not by document.</summary>
+    private static IImmutableSet<Project> ProjectsFor(IImmutableSet<Document> documents) =>
+        documents is null ? null : documents.Select(d => d.Project).ToImmutableHashSet();
 
     /// <summary>One incoming analyzer branch. The analyzer decides both the usage mask and, where a mask alone cannot say it, an occurrence test.</summary>
     public static Task<IReadOnlyList<ReferenceGraphNode>> FindIncomingAsync(

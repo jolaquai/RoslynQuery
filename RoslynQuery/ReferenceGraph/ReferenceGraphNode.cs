@@ -230,6 +230,18 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
         IsLoaded = true;
     }
 
+    /// <summary>
+    /// Installs a branch's results and writes ILSpy's header suffix, "(5 in 12 ms)". A branch that found
+    /// nothing gets no children and no suffix, which is what leaves it bare and without an expander.
+    /// </summary>
+    public void ApplyResults(AnalyzerResult result)
+    {
+        SetChildren(result.Rows);
+        SecondaryText = result.Rows.Count == 0
+            ? null
+            : $"({result.Rows.Count} in {result.ElapsedMilliseconds} ms)";
+    }
+
     /// <summary>"3 refs (2 reads, 1 write)", or just "2 invocations" when there is only one kind.</summary>
     public static string Describe(IReadOnlyList<ReferenceLocationInfo> locations)
     {
