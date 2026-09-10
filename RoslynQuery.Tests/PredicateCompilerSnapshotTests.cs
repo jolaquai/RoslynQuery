@@ -104,10 +104,8 @@ public class PredicateCompilerSnapshotTests
     [Fact]
     public void Snapshot_SkipsKeysEvictedSinceBeingEnqueued()
     {
-        // Seeded directly via reflection rather than by actually pushing 512+ real compiles
-        // through to trigger eviction: that would take the test run from a few seconds to
-        // plausibly a minute-plus and permanently leak 512 more assemblies for the rest of the
-        // process, just to reach one filtering branch reflection can hit precisely and cheaply.
+        // Nothing evicts any more, so a key in CacheOrder that is absent from Cache is unreachable
+        // by normal use; the filter stays as defence and reflection is the only way to exercise it.
         var cacheOrderField = typeof(PredicateCompiler).GetField("CacheOrder", BindingFlags.NonPublic | BindingFlags.Static)
             ?? throw new InvalidOperationException("PredicateCompiler.CacheOrder not found - has it been renamed?");
         var cacheOrder = (ConcurrentQueue<(TargetKind, PredicateMode, string)>)cacheOrderField.GetValue(null);

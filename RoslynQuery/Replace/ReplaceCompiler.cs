@@ -20,8 +20,9 @@ internal delegate ValueTask<object> TokenReplace(SyntaxToken t, SemanticModel mo
 /// <summary>Compiles a user's replacement transform, cached separately from <see cref="PredicateCompiler"/>'s cache since identical text compiles to a different delegate type here.</summary>
 internal static class ReplaceCompiler
 {
-    // net472 has no collectible load context: this cap only bounds the dictionary, not the underlying leak.
-    private const int MaxCachedExpressions = 512;
+    // net472 has no collectible load context, so every unique expression leaks its emitted assembly for
+    // the process lifetime. Never evict: removing an entry reclaims nothing, and re-running it then
+    // emits and leaks a second assembly for text that already has one.
     private static readonly ConcurrentDictionary<(TargetKind, PredicateMode, string), Delegate> Cache = new ConcurrentDictionary<(TargetKind, PredicateMode, string), Delegate>();
     private static readonly ConcurrentQueue<(TargetKind, PredicateMode, string)> CacheOrder = new ConcurrentQueue<(TargetKind, PredicateMode, string)>();
     private static long _totalEmittedBytes;
@@ -87,9 +88,6 @@ internal static class ReplaceCompiler
             var method = type.GetMethod(ReplaceTemplate.MethodName, BindingFlags.Public | BindingFlags.Static);
             var @delegate = Cache.GetOrAdd(key, method.CreateDelegate(DelegateType(kind)));
             CacheOrder.Enqueue(key);
-
-            while (Cache.Count > MaxCachedExpressions && CacheOrder.TryDequeue(out var oldest))
-                Cache.TryRemove(oldest, out _);
 
             return @delegate;
         }
