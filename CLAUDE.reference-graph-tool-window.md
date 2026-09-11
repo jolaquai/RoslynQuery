@@ -31,7 +31,7 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress - phase 1 code complete; phase 2 (steps 15-26) planned, not started
-- **Current step:** 27 - namespace, local function and lambda roots, then 28. Steps 22 and 25 are
+- **Current step:** 27 - namespace roots, then 28, which now also carries local functions and lambdas. Steps 22 and 25 are
   code-complete but stay `[~]` until step 26's smoke test exercises them inside Visual Studio, and step 26
   itself moves last, after 28, since its README has to describe 27-28 too. Steps 27-28, which
   were added mid-phase and depend on the analyzer plumbing steps 16-20 build. Steps 8, 12 and 14 stay
@@ -39,7 +39,7 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
   verifying, and step 26 is re-run once 28 lands.
 - **Branch:** feature/favorites
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `record step 25 progress` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `correct the local function and lambda identity finding` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-09-10
 
 ## Goal
@@ -668,54 +668,53 @@ The challenge was correct, and probing showed the blocker was much narrower than
 | Root kind | `DocumentationCommentId` | `FindReferencesAsync` | `(file, span)` re-resolve |
 | --- | --- | --- | --- |
 | namespace | `N:Outer.Inner`, resolves | works | works |
-| local function | full doc id, resolves | works | works |
-| lambda | doc id resolves | **always 0 - nothing can refer to a lambda** | works |
+| local function | id created, but **resolves to nothing**, and collides across sibling blocks | works | works, unambiguously |
+| lambda | id created, but **resolves to nothing**, and collides for lambdas of one shape | **always 0 - nothing can refer to a lambda** | works, unambiguously |
 | type parameter | **null** | works (3 hits) | works |
 | parameter | **null** | works (2 hits) | works |
 | local | **null** | works (5 hits) | works |
 
-So namespaces and local functions were never blocked by anything but `SymbolResolver.IsSupportedRoot`
-turning them away, and only locals, parameters and type parameters actually need a new identity.
+So only namespaces were blocked by nothing but `SymbolResolver.IsSupportedRoot` turning them away. Local
+functions and lambdas need the positional identity exactly as locals, parameters and type parameters do - the
+first version of this table said otherwise; see the correction under **Deviations**.
 
-### 27. Namespace, local function and lambda roots `[ ]`
+### 27. Namespace roots `[ ]`
 
 - **Files:** `RoslynQuery/ReferenceGraph/SymbolResolver.cs`,
   `RoslynQuery/ReferenceGraph/ReferenceAnalyzerKind.cs`,
   `RoslynQuery/ReferenceGraph/ReferenceAnalyzers.cs`,
   `RoslynQuery/ReferenceGraph/ReferenceGraphEngine.cs`,
+  `RoslynQuery/ReferenceGraph/HierarchyAnalyzers.cs`,
   `RoslynQuery.Tests/ReferenceGraph/ReferenceAnalyzersTests.cs`,
-  `RoslynQuery.Tests/ReferenceGraph/SymbolResolverTests.cs`, `README.md`
-- **Do:** These three need no identity work - the existing `SymbolIdentity` already round-trips all of them.
-  **Split the root test from the engine's target filter first:** `IsSupportedRoot` currently does double duty
-  as "what can root a graph" and, via `ReferenceGraphEngine.Walk`/`Normalize`, as "what deserves a row in an
-  outgoing result". Widening it alone would put a namespace row under `Uses` for every qualified name
-  (`Outer.Inner.Holder` binds `Outer` and `Inner` to namespace symbols), so add `IsGraphTarget` holding the
-  current narrower set for the engine and let `IsSupportedRoot` widen. Then accept
-  `MethodKind.LocalFunction`, `MethodKind.AnonymousFunction` and `SymbolKind.Namespace` as roots, add a
-  `Contains` analyzer kind, and extend `ReferenceAnalyzers.For`: namespace gets `UsedBy` + `Contains`
-  (its member types and sub-namespaces, straight off `GetMembers`); local function gets `Uses` + `UsedBy`;
-  lambda gets `Uses` **only**, because the probe measured `Used By` at a permanent zero.
-  Also refine their row spelling: step 23's composed signature qualifies them by containing type, which reads
-  as `Local.Helper(int) : int` and, for a lambda, `Local.lambda expression : int`. Qualify by the enclosing
-  member instead, so a local function or lambda says which method it lives in.
-  Accepting local functions as graph targets is a deliberate side effect: a call to one becomes a real row
-  under `Uses`, which it never did before.
+  `RoslynQuery.Tests/ReferenceGraph/SymbolResolverTests.cs`,
+  `RoslynQuery.Tests/ReferenceGraph/NamespaceRootTests.cs` (new)
+- **Do:** Namespaces need no identity work - `N:Outer.Inner` round-trips, measured with an equality check.
+  **Split the root test from the engine's target filter first:** `IsSupportedRoot` also decides, through
+  `ReferenceGraphEngine.Walk` and `Normalize`, what becomes a row and where an incoming occurrence is attributed.
+  Widening it alone would put a namespace row under `Uses` for every qualified name (`Outer.Inner.Holder` binds
+  `Outer` and `Inner` to namespace symbols) and stop incoming attribution at a namespace. So add `IsGraphTarget`,
+  holding the current narrower set, for both engine uses, and widen `IsSupportedRoot` to accept a non-global
+  namespace. Add a `Contains` analyzer kind; a namespace gets `UsedBy` + `Contains`, and `Contains` lists
+  sub-namespaces first, then types, each alphabetical. **`Used By` must widen its mask for a namespace:** every
+  namespace occurrence classifies as `TypeReference`, which the member-oriented `Invocation | Read | Write` mask
+  excludes, so without it that branch could only ever be empty.
 - **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then
-  `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceAnalyzersTests"` and
-  `-class "RoslynQuery.Tests.SymbolResolverTests"` pass. Cover: a caret on a namespace, a local function
-  and a lambda each resolve to a root; a namespace root gets `UsedBy` + `Contains` and its `Contains`
-  lists the namespace's types; a lambda root gets `Uses` and **not** `UsedBy`; an outgoing walk over a
-  method containing a qualified type name produces **no** namespace rows (the `IsGraphTarget` split);
-  an outgoing walk over a method that calls a local function **does** produce a row for it.
-- **Commit:** `add namespace, local function and lambda roots`
+  `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.NamespaceRootTests"`,
+  `-class "RoslynQuery.Tests.ReferenceAnalyzersTests"` and `-class "RoslynQuery.Tests.SymbolResolverTests"` pass.
+  Cover: a caret on a namespace declaration name and on a using directive resolves to the namespace; a namespace
+  gets `UsedBy` + `Contains`; `Contains` lists sub-namespaces before types; `Used By` on a namespace finds the member
+  naming it and no row for the namespace declaration itself; `Uses` over a method naming a qualified type yields no
+  namespace rows; a namespace identity round-trips; the global namespace is not a root.
+- **Commit:** `add namespace roots`
 
-### 28. Positional identity for locals, parameters and type parameters `[ ]`
+### 28. Positional identity for locals, parameters, type parameters, local functions and lambdas `[ ]`
 
 - **Files:** `RoslynQuery/ReferenceGraph/SymbolIdentity.cs`,
   `RoslynQuery/ReferenceGraph/SymbolResolver.cs`,
   `RoslynQuery/ReferenceGraph/ReferenceAnalyzers.cs`,
+  `RoslynQuery/ReferenceGraph/ReferenceGraphEngine.cs`, `RoslynQuery/ReferenceGraph/ReferenceGraphDisplay.cs`,
   `RoslynQuery.Tests/ReferenceGraph/PositionalIdentityTests.cs` (new), `README.md`
-- **Do:** `DocumentationCommentId.CreateDeclarationId` returns null for these three, so `SymbolIdentity`
+- **Do:** `DocumentationCommentId` cannot identify any of these five - it returns null for locals, parameters and type parameters, and for local functions and lambdas it produces an id that resolves to nothing and collides between siblings - so `SymbolIdentity`
   gains a second form: a file path plus the declaration's `TextSpan`, resolved by finding the node at that
   span in the current tree and calling `GetDeclaredSymbol`. The probe confirmed this round-trips exactly for
   all three. Keep it a single struct with a discriminator rather than an interface - it is stored on every
@@ -723,11 +722,19 @@ turning them away, and only locals, parameters and type parameters actually need
   re-resolution runs the span through `SpanMapper` first, the same way navigation already does, and a row
   whose span no longer resolves reports the existing "no longer exists in the current solution" message.
   Branch sets: local and parameter get `ReadBy` + `AssignedBy` (a parameter is writable, and `ref`/`out`
-  arguments are already classified `Write`); type parameter gets `UsedBy`.
+  arguments are already classified `Write`); type parameter gets `UsedBy`; local function gets `Uses` + `UsedBy`;
+  lambda gets `Uses` only, since nothing can refer to a lambda. Local functions also become graph targets here - a
+  call to one becomes a real row under `Uses` - because only this identity makes such a row expandable; the
+  `IsGraphTarget` split from step 27 then separates "is a row" from "attributes an incoming occurrence", which must
+  keep stepping over local functions and lambdas to the enclosing member. Finally, qualify a local function or
+  lambda by its enclosing member when spelling it: step 23's composed signature qualifies by containing type,
+  which reads as `Local.Helper(int) : int` and `Local.lambda expression : int`.
 - **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then
   `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.PositionalIdentityTests"` passes. Cover: a local, a
-  parameter and a type parameter each round-trip through `SymbolIdentity` and resolve back to the same
-  symbol; two locals of the same name in different methods do not compare equal; a local's `ReadBy` and
+  parameter, a type parameter, a local function and a lambda each round-trip through `SymbolIdentity` and resolve back to the same
+  symbol; two locals of the same name in different methods do not compare equal, and neither do two same-shape lambdas or
+  two same-named sibling local functions in one method; a call to a local function is a row under `Uses` that
+  expands; a local's `ReadBy` and
   `AssignedBy` split its occurrences correctly; resolution against a solution where the declaration has
   been edited away returns null rather than throwing or resolving to the wrong symbol.
 - **Commit:** `identify locals, parameters and type parameters by position`
@@ -756,6 +763,17 @@ turning them away, and only locals, parameters and type parameters actually need
   answers empty (see the probe findings). The exclusion keys off the containing type's kind instead.
 - **Step 15: a static class does not get `Instantiated By`.** Not called out in the step text; it cannot be
   constructed, so the branch could only ever be empty.
+- **Correction to the step 27/28 probe: local functions and lambdas cannot use doc-comment identities.** The first
+  probe recorded their `DocumentationCommentId` as resolving, but it only checked that a lookup returned something,
+  not that it returned the same symbol. Re-measured with a symbol count and an equality check,
+  `GetSymbolsForDeclarationId` finds nothing and `GetFirstSymbolForDeclarationId` returns null for every local
+  function and lambda, a uniquely named one included. The ids also collide: `x => x` and `y => y + 1` in one method
+  both produce `M:N.Host.SameShape.(System.Int32)~System.Int32`, and two local functions named `F` in sibling blocks
+  share one id. Positional `(file, span)` re-resolution returns the same symbol for all four, on the same
+  compilation and on a fresh one. Both kinds therefore moved into step 28 alongside locals, parameters and type
+  parameters, and step 27 now covers namespaces alone. Namespaces were re-measured the same way and do round-trip:
+  `N:N` and `N:N.Deeper` each resolve to exactly one, equal symbol. The user had been told local functions were
+  "not blocked at all"; that was wrong, and was corrected in conversation.
 - **Step 25 found that a project's references are reference assemblies, which decompile to stubs.**
   Measured: `Reference Assemblies\...\v4.7.2\mscorlib.dll` decompiles `MemoryStream.Read` to
   `/*Error: Empty body found...*/`, and a .NET pack's `System.Runtime.dll` to `throw null`. Decompiling the path
