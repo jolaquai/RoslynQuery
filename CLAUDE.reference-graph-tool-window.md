@@ -31,14 +31,15 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress - phase 1 code complete; phase 2 (steps 15-26) planned, not started
-- **Current step:** 25 - decompiled-source navigation. Step 22 is code-complete and builds but stays `[~]`
-  until step 26's smoke test exercises it. Then 26, then 27-28, which
+- **Current step:** 27 - namespace, local function and lambda roots, then 28. Steps 22 and 25 are
+  code-complete but stay `[~]` until step 26's smoke test exercises them inside Visual Studio, and step 26
+  itself moves last, after 28, since its README has to describe 27-28 too. Steps 27-28, which
   were added mid-phase and depend on the analyzer plumbing steps 16-20 build. Steps 8, 12 and 14 stay
   `[~]`: their manual smoke test is deliberately deferred into step 26, which rewrites the tree they were
   verifying, and step 26 is re-run once 28 lands.
 - **Branch:** feature/favorites
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `record step 24` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `record step 25 progress` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-09-10
 
 ## Goal
@@ -587,12 +588,20 @@ below are shaped the way they are.
   page under RoslynQuery; and nothing outside the page references either switch.
 - **Commit:** `add a reference graph options page with the deferred il analysis switches`
 
-### 25. Navigate metadata rows to decompiled source `[ ]`
+### 25. Navigate metadata rows to decompiled source `[~]`
 
-- **Files:** `RoslynQuery/RoslynQuery.csproj`,
-  `RoslynQuery/Navigation/DecompiledSourceProvider.cs` (new),
+- **Files:** `RoslynQuery/RoslynQuery.csproj`, `RoslynQuery.Tests/RoslynQuery.Tests.csproj`,
+  `RoslynQuery/Navigation/ImplementationAssemblyResolver.cs` (new),
+  `RoslynQuery/Navigation/DecompiledSource.cs` (new), `RoslynQuery/Navigation/DecompiledSourceProvider.cs` (new),
+  `RoslynQuery/Navigation/DecompiledSourceFiles.cs` (new), `RoslynQuery/Navigation/MetadataAssemblyLocator.cs` (new),
+  `RoslynQuery/ReferenceGraph/ReferenceGraphNode.cs`,
   `RoslynQuery/ToolWindow/ReferenceGraphToolWindowControl.xaml.cs`,
-  `RoslynQuery.Tests/Navigation/DecompiledSourceProviderTests.cs` (new)
+  `RoslynQuery.Tests/Navigation/ImplementationAssemblyResolverTests.cs` (new),
+  `RoslynQuery.Tests/Navigation/DecompiledSourceProviderTests.cs` (new),
+  `RoslynQuery.Tests/Navigation/DecompiledSourceFilesTests.cs` (new),
+  `RoslynQuery.Tests/Navigation/MetadataAssemblyLocatorTests.cs` (new),
+  `RoslynQuery.Tests/Infrastructure/InstalledAssemblies.cs` (new),
+  `RoslynQuery.Tests/ReferenceGraph/MetadataRowTests.cs`
 - **Do:** **Start with a load probe and stop if it fails.** Reference `ICSharpCode.Decompiler`
   **9.1.0.7988 with `ExcludeAssets="runtime"`**, the same way this project already compiles against Roslyn
   5.6.0 and lets devenv supply its own - see the finding below: Visual Studio already ships exactly that
@@ -615,6 +624,16 @@ below are shaped the way they are.
   real body (assert on a statement, not just a signature); an id that matches nothing returns null
   rather than throwing; the per-assembly decompiler is constructed once across repeated calls. Then the
   in-VS half of the check belongs to step 26's smoke test.
+- **Progress:** Code complete and unit-tested, not yet run inside Visual Studio. Landed as
+  `reference visual studio's own icsharpcode.decompiler at compile time`,
+  `resolve reference assemblies to the implementations behind them`,
+  `write decompiled source to read-only temp files`,
+  `decompile metadata symbols from their implementation assemblies` and
+  `open decompiled source from metadata rows`; 586 tests green, none skipped on this machine, so every
+  machine-dependent decompilation test actually ran. What remains is this step's opening check, which no
+  out-of-process probe can answer: that the extension binds to Visual Studio's own ICSharpCode.Decompiler
+  9.1.0.7988 in-proc. If it does not, double-click on a metadata row reports a load failure in the window
+  instead of crashing, and this step becomes `[!]`. Folded into step 26's smoke test.
 - **Commit:** `navigate metadata rows to decompiled source`
 
 ### 26. README and the full smoke test `[ ]`
@@ -737,6 +756,49 @@ turning them away, and only locals, parameters and type parameters actually need
   answers empty (see the probe findings). The exclusion keys off the containing type's kind instead.
 - **Step 15: a static class does not get `Instantiated By`.** Not called out in the step text; it cannot be
   constructed, so the branch could only ever be empty.
+- **Step 25 found that a project's references are reference assemblies, which decompile to stubs.**
+  Measured: `Reference Assemblies\...\v4.7.2\mscorlib.dll` decompiles `MemoryStream.Read` to
+  `/*Error: Empty body found...*/`, and a .NET pack's `System.Runtime.dll` to `throw null`. Decompiling the path
+  the project reports would have produced exactly the view the user rejected. `ImplementationAssemblyResolver`
+  maps a reference assembly to its implementation, and anything it cannot map is **refused**, never shown as
+  stubs:
+  - a .NET reference pack, or the same layout restored into the NuGet cache, maps to
+    `dotnet\shared\<framework>\<same major version>`, preferring the pack's own version
+  - a NuGet `ref\<tfm>` maps to `lib\<tfm>`, then to any other `lib` folder carrying the file
+  - anything else goes to the GAC by name and public key token, then the framework directory; the GAC is the
+    only place `WindowsBase` lives
+  - a .NET reference assembly found outside its pack is never matched to a .NET Framework namesake, because the
+    GAC holds a `System.Runtime` with the same name and key; `ANetReferenceAssemblyOutsideItsPack_...` pins it
+  Every candidate must also agree with the reference on name and public key token.
+- **Step 25: the member is positioned from the decompiled syntax tree, not by matching text or tracking names.**
+  Matching the member's signature line is ambiguous: `List<T>.Add` and `List<T>.this[int]` each match twice in
+  mscorlib, because a nested synchronized wrapper repeats the signature. Tracking where
+  `ITextOutput.WriteReference(..., isDefinition: true)` fires fixed that but missed indexers and operators, whose
+  declarations have no name token. `TokenWriter.CreateWriterThatSetsLocationsInAST` positions every declaration
+  and yields text identical to `DecompileTypeAsString`. A declaration's own `StartLocation` is unreliable (an
+  event reports line 0, `List<T>` line 141), so the name token is used, falling back to the first child that is
+  not an attribute section or comment.
+- **Step 25: forwarded types are followed into the declaring assembly.** A facade - .NET's shared
+  `System.Runtime`, or the GAC's - resolves the entity into another module; `IModule.MetadataFile.FileName` gives
+  that module's path, which is resolved and decompiled in turn, up to three hops.
+- **Step 25: the decompiler is kept out of the caller's JIT.** `Decompile` and `DecompileFrom` are `NoInlining`
+  and every ICSharpCode-typed static lives in a nested `Cache` class, so if Visual Studio's decompiler cannot bind,
+  the failure is thrown inside the window's `try` and reported as such - not a crash while JIT-compiling the
+  double-click handler, which is what step 23 hit with `Microsoft.VisualStudio.Text.Logic`.
+- **Step 25: the whole top-level type is decompiled, not the member alone,** so the member is seen in context as
+  in ILSpy. It is written read-only to `%TEMP%\RoslynQuery\Decompiled\<assembly>-<version>\<type>.cs` with CRLF
+  line endings, so it opens in the ordinary editor; a later write replaces it.
+- **Step 25: a metadata row with a single call site now gets a `Locations` row.** Double-click on a metadata row
+  opens its decompiled source, which would otherwise have left that one call site in your own code unreachable.
+  Source rows are unchanged. `AHierarchyRowFromMetadata_IsMarkedAndNotNavigable` was renamed
+  `...HasNoSourceLocation`, since metadata rows are now navigable.
+- **Step 25 extras: `MetadataAssemblyLocator` and `InstalledAssemblies`.** The locator maps a metadata row's
+  identity back to its assembly file through `Compilation.GetMetadataReference`, reporting exactly the path the
+  project references - a reference assembly, inside Visual Studio - and leaving resolution to the provider.
+  `InstalledAssemblies` is a test helper shared by the resolver and provider tests.
+- **Step 25: the decompiled file opens as a loose file,** most likely under Miscellaneous Files, so the editor may
+  squiggle types it cannot resolve. Visual Studio's own decompiled view avoids that through an internal workspace
+  this extension cannot reach. Step 26's smoke test should confirm the result is readable regardless.
 - **Step 24's Verify premise was false: a `DialogPage` cannot be loaded in the test process.** The Visual
   Studio shell assemblies are compile-only here (`ExcludeAssets="runtime"`), and even
   `typeof(ReferenceGraphOptions)` fails resolving its base type - the same failure step 23 hit with
