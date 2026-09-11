@@ -31,14 +31,14 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress - phase 1 code complete; phase 2 (steps 15-26) planned, not started
-- **Current step:** 23 - coloured signature rows. Step 22 is code-complete and builds but stays `[~]` until
-  step 26's smoke test exercises it. Then 24-26 in order, then 27-28, which
+- **Current step:** 24 - options page. Step 22 is code-complete and builds but stays `[~]` until
+  step 26's smoke test exercises it. Then 25-26 in order, then 27-28, which
   were added mid-phase and depend on the analyzer plumbing steps 16-20 build. Steps 8, 12 and 14 stay
   `[~]`: their manual smoke test is deliberately deferred into step 26, which rewrites the tree they were
   verifying, and step 26 is re-run once 28 lands.
 - **Branch:** feature/favorites
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `record steps 21 and 22` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `record step 23` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-09-10
 
 ## Goal
@@ -529,7 +529,7 @@ below are shaped the way they are.
   step 26's smoke test.
 - **Commit:** `drop the usage filter and wire the analyzer tree into the tool window`
 
-### 23. Coloured, ILSpy-spelled signature rows `[ ]`
+### 23. Coloured, ILSpy-spelled signature rows `[x]`
 
 - **Files:** `RoslynQuery/ReferenceGraph/ReferenceGraphDisplay.cs`,
   `RoslynQuery/ToolWindow/SymbolDisplayPartsConverter.cs` (new),
@@ -661,6 +661,9 @@ turning them away, and only locals, parameters and type parameters actually need
   `Contains` analyzer kind, and extend `ReferenceAnalyzers.For`: namespace gets `UsedBy` + `Contains`
   (its member types and sub-namespaces, straight off `GetMembers`); local function gets `Uses` + `UsedBy`;
   lambda gets `Uses` **only**, because the probe measured `Used By` at a permanent zero.
+  Also refine their row spelling: step 23's composed signature qualifies them by containing type, which reads
+  as `Local.Helper(int) : int` and, for a lambda, `Local.lambda expression : int`. Qualify by the enclosing
+  member instead, so a local function or lambda says which method it lives in.
   Accepting local functions as graph targets is a deliberate side effect: a call to one becomes a real row
   under `Uses`, which it never did before.
 - **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then
@@ -719,6 +722,38 @@ turning them away, and only locals, parameters and type parameters actually need
   answers empty (see the probe findings). The exclusion keys off the containing type's kind instead.
 - **Step 15: a static class does not get `Instantiated By`.** Not called out in the step text; it cannot be
   constructed, so the branch could only ever be empty.
+- **Step 23: the flat `DisplayText` keeps its short spelling; the ILSpy spelling is a separate `Signature`.**
+  About 90 engine assertions pin *which* symbols a branch finds, not how a row is spelled, and rewriting them
+  all to `N.Leaf.Draw() : void` would couple every engine test to rendering. The short label also stays the
+  sort key and the status-line text, so rows sort by simple name rather than by their rendered, namespace-
+  qualified text.
+- **Step 23: the signature is stored as detached `SignaturePart`s, not `SymbolDisplayPart`s.** A
+  `SymbolDisplayPart` carries its `Symbol`, which would pin the compilation the node was designed never to
+  hold.
+- **Step 23: rows are composed, not rendered by one `SymbolDisplayFormat`.** A format applies one
+  qualification style to the container, the parameters and the return type alike, while ILSpy qualifies only
+  the container. Probed spellings, now pinned by `ReferenceGraphDisplayTests`:
+  `Outer.Inner.Ops.Plain(ref int, out long, in decimal, params string[]) : void`,
+  `string.Format(string, object) : string` (a keyword container, exactly as ILSpy writes
+  `decimal.DecCalc...`), `Outer.Inner.Ops.explicit operator int(Ops)` with no suffix because a conversion
+  already names its type, and `Outer.Inner.Color.Red` without the redundant `: Color`. Member names render
+  bold, as ILSpy's rows do.
+- **Step 23: built as an attached property plus a pure map, not the planned `SymbolDisplayPartsConverter`.**
+  An `IValueConverter` cannot populate `TextBlock.Inlines`, which is not bindable. `SignatureText.Parts` builds
+  the runs; `SignatureClassification` maps each part kind to Roslyn's own classification name and is what the
+  pure-function tests cover.
+- **Step 23: `SignatureText` takes a brush-resolver delegate instead of calling `ClassificationBrushes`.** The
+  first version called it directly, and every STA rendering test failed with
+  `FileNotFoundException: Microsoft.VisualStudio.Text.Logic, Version=17.0.0.0`: JIT-compiling the render path
+  pulled in the editor assemblies, so the step's "still renders outside a VS host" claim was false. The control
+  now plugs `ClassificationBrushes.For` in when it loads. The same change removed a new VSTHRD010 warning at its
+  source rather than suppressing it.
+- **Step 23: colours come from the editor's `"text"` format map, unverified inside Visual Studio.** On a theme or
+  Fonts and Colors change, `ClassificationFormatMappingChanged` clears the brush cache and the control calls
+  `Tree.Items.Refresh()`; expansion survives because `IsExpanded` is bound two-way to the node. Step 26's smoke
+  test is the first time either is seen.
+- **Step 23: the test project references `PresentationCore`, `PresentationFramework` and `WindowsBase`
+  explicitly.** `UseWPF` on the extension project does not flow framework references to its dependents.
 - **Step 22 is build-verified only, so it stays `[~]`.** The filter toggle, its popup and all six checkboxes
   are gone, the window dispatches every analyzer row through `ReferenceGraphEngine.RunAsync`, and an empty
   branch now gets no children instead of a `No references.` row. None of that has run inside Visual Studio;
