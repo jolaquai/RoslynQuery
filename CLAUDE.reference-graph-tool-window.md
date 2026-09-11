@@ -331,6 +331,21 @@ below are shaped the way they are.
 - Cost, measured on mscorlib: ~120 ms once to construct the decompiler for an assembly, then 0-9 ms per
   member. A whole type is 216 ms for `System.String` (200 KB of output) and 1.9 s for a cold
   `MemoryStream` including construction. Per-assembly caching makes this comfortably interactive.
+- **Visual Studio already ships the decompiler, which removes most of that risk.** Measured on
+  Visual Studio 2026 18.11 (`18.11.12202.211`, Insiders): `ICSharpCode.Decompiler 9.1.0.7988`
+  (public key token `d4bfe873e7598c49`) sits in `Common7\IDE\CommonExtensions\Microsoft\VBCSharp\LanguageServices`
+  and `\Core`, and `devenv.exe.config` redirects `0.0.0.0-9.1.0.7988` to it. Its own dependencies
+  (`System.Memory 4.0.1.1`, `System.Reflection.Metadata` and `System.Collections.Immutable 6.0.0.0`,
+  `System.Runtime.CompilerServices.Unsafe 6.0.0.0`) all fall inside devenv's redirect ranges
+  (`System.Memory` to 4.0.5.0, the other two to 10.0.0.10). Every API the probe used exists in 9.1 with a
+  compatible shape: `IdStringProvider.FindEntity(string, ITypeResolveContext)` and `GetIdString(IEntity)`,
+  `CSharpDecompiler.DecompileAsString(EntityHandle[])` and `DecompileTypeAsString(FullTypeName)`,
+  `PEFile(string, ...)` over `MetadataFile`, `UniversalAssemblyResolver(string, bool, string, ...)` and
+  `SimpleTypeResolveContext(IModule)`. The 9.1.0.7988 package is on nuget.org. Compiling against it and
+  excluding its runtime assets means the extension binds to the copy devenv has already unified, instead of
+  shipping 11.x beside it. The accepted cost is the same one Roslyn already carries here: a future Visual
+  Studio that moves its bundled decompiler forward redirects this reference upward, which is fine only while
+  the handful of APIs above stay put.
 - **Assembly unification is the real risk, not the API.** The probe hard-failed at runtime with
   `FileLoadException: System.Memory, Version=4.0.2.0` until `System.Memory` was pinned to 4.6.3;
   the transitively-resolved 4.5.5 ships assembly version 4.0.1.2. In-proc this is worse, because devenv
@@ -563,11 +578,14 @@ below are shaped the way they are.
   `RoslynQuery/Navigation/DecompiledSourceProvider.cs` (new),
   `RoslynQuery/ToolWindow/ReferenceGraphToolWindowControl.xaml.cs`,
   `RoslynQuery.Tests/Navigation/DecompiledSourceProviderTests.cs` (new)
-- **Do:** **Start with a load probe and stop if it fails.** Add `ICSharpCode.Decompiler` 11.0.0.9375 to
-  the VSIX, deploy to the experimental instance, and confirm it loads and decompiles a member in-proc.
-  The probe already hard-failed once outside VS on `System.Memory` unification (fixed by pinning 4.6.3),
-  and devenv carries its own `System.Memory`, `System.Collections.Immutable` and
-  `System.Reflection.Metadata` under its own redirects, so this is the step's real risk. If it cannot be
+- **Do:** **Start with a load probe and stop if it fails.** Reference `ICSharpCode.Decompiler`
+  **9.1.0.7988 with `ExcludeAssets="runtime"`**, the same way this project already compiles against Roslyn
+  5.6.0 and lets devenv supply its own - see the finding below: Visual Studio already ships exactly that
+  decompiler build and redirects every older version to it, so the extension never has to carry one.
+  Deploy to the experimental instance and confirm a member decompiles in-proc before building anything on it.
+  What remains to verify is only that the redirect target is resolvable from this extension's load context
+  (devenv's config entry carries no `codeBase`; the assembly sits under `VBCSharp\LanguageServices`, which
+  Roslyn's own package puts on the probing path) - which is the one thing no out-of-process probe can answer. If it cannot be
   made to load reliably, **mark this step `[!]` and leave metadata rows non-navigable** rather than
   shipping a half-working navigation - the whole point of the feature is seeing implementations, and a
   fallback to the signature-only `[from metadata]` view does not deliver that.
