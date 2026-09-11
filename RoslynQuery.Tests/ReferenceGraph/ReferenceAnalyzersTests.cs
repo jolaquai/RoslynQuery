@@ -281,6 +281,15 @@ public class ReferenceAnalyzersTests
     }
 
     [Fact]
+    public async Task Namespace_GetsUsedByAndContains()
+    {
+        var compilation = await CompilationAsync();
+        var ns = compilation.GlobalNamespace.GetNamespaceMembers().Single(n => n.Name == "N");
+
+        Assert.Equal([ReferenceAnalyzerKind.UsedBy, ReferenceAnalyzerKind.Contains], ReferenceAnalyzers.For(ns));
+    }
+
+    [Fact]
     public void Headers_UseIlspyWording()
     {
         Assert.Equal("Used By", ReferenceAnalyzerKind.UsedBy.Header());

@@ -48,8 +48,15 @@ internal static class SymbolResolver
         return null;
     }
 
-    public static bool IsSupportedRoot(ISymbol symbol)
+    /// <summary>What a caret may root a graph at. Wider than <see cref="IsGraphTarget"/>: a namespace can be analysed but is never a row.</summary>
+    public static bool IsSupportedRoot(ISymbol symbol) =>
+        IsGraphTarget(symbol) || symbol is INamespaceSymbol { IsGlobalNamespace: false };
+
+    /// <summary>What becomes a row in a branch, and where an incoming occurrence is attributed.</summary>
+    public static bool IsGraphTarget(ISymbol symbol)
     {
+        if (symbol is null) return false;
+
         if (symbol is IMethodSymbol method
             && (method.MethodKind == MethodKind.AnonymousFunction || method.MethodKind == MethodKind.LocalFunction))
             return false;

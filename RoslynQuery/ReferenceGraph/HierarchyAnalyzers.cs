@@ -110,6 +110,17 @@ internal static class HierarchyAnalyzers
         return await ToNodesAsync(applicable, solution, parent, sorted: true, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>A namespace's sub-namespaces, then its types, each alphabetical.</summary>
+    public static Task<IReadOnlyList<ReferenceGraphNode>> FindContainsAsync(
+        ISymbol symbol, Solution solution, ReferenceGraphNode parent, CancellationToken cancellationToken)
+    {
+        if (!(symbol is INamespaceSymbol ns)) return Task.FromResult<IReadOnlyList<ReferenceGraphNode>>([]);
+
+        var members = Order(ns.GetNamespaceMembers()).Concat(Order(ns.GetTypeMembers()));
+
+        return ToNodesAsync(members, solution, parent, sorted: false, cancellationToken);
+    }
+
     private static async Task<IReadOnlyList<ReferenceGraphNode>> ToNodesAsync(
         IEnumerable<ISymbol> symbols, Solution solution, ReferenceGraphNode parent, bool sorted,
         CancellationToken cancellationToken)

@@ -15,7 +15,8 @@ internal enum ReferenceAnalyzerKind
     Implements,
     ImplementedBy,
     DerivedTypes,
-    ExtensionMethods
+    ExtensionMethods,
+    Contains
 }
 
 internal static class ReferenceAnalyzerKinds
@@ -37,6 +38,7 @@ internal static class ReferenceAnalyzerKinds
             case ReferenceAnalyzerKind.ImplementedBy: return "Implemented By";
             case ReferenceAnalyzerKind.DerivedTypes: return "Derived Types";
             case ReferenceAnalyzerKind.ExtensionMethods: return "Extension Methods";
+            case ReferenceAnalyzerKind.Contains: return "Contains";
             default: return kind.ToString();
         }
     }

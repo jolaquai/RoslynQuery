@@ -113,6 +113,24 @@ public class SymbolResolverTests
         Assert.Null(await ResolveAsync("class C { void M() { void $$Inner() { } Inner(); } }"));
 
     [Fact]
+    public async Task Resolve_OnANamespaceDeclarationName_ReturnsTheNamespace()
+    {
+        var symbol = await ResolveAsync("namespace Outer.$$Inner { class C { } }");
+
+        Assert.Equal(SymbolKind.Namespace, symbol.Kind);
+        Assert.Equal("Inner", symbol.Name);
+    }
+
+    [Fact]
+    public async Task Resolve_OnANamespaceInAUsingDirective_ReturnsTheNamespace()
+    {
+        var symbol = await ResolveAsync("using System.$$IO;\r\nclass C { }");
+
+        Assert.Equal(SymbolKind.Namespace, symbol.Kind);
+        Assert.Equal("IO", symbol.Name);
+    }
+
+    [Fact]
     public async Task Resolve_OnCrefInDocComment_ReturnsTheCrefTargetNotTheEnclosingMember()
     {
         var symbol = await ResolveAsync(

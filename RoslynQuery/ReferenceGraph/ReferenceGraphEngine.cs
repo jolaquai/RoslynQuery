@@ -84,6 +84,9 @@ internal static class ReferenceGraphEngine
             case ReferenceAnalyzerKind.ExtensionMethods:
                 return HierarchyAnalyzers.FindExtensionMethodsAsync(symbol, solution, parent, cancellationToken);
 
+            case ReferenceAnalyzerKind.Contains:
+                return HierarchyAnalyzers.FindContainsAsync(symbol, solution, parent, cancellationToken);
+
             // Throwing, not returning empty: an unwired kind is a bug, and a silent empty branch would
             // look exactly like a symbol that genuinely has no answers.
             default:
@@ -104,15 +107,18 @@ internal static class ReferenceGraphEngine
         ReferenceGraphNode parent,
         CancellationToken cancellationToken)
     {
-        var (mask, occurrenceFilter) = ConfigFor(analyzer);
+        var (mask, occurrenceFilter) = ConfigFor(analyzer, target);
 
         return FindIncomingAsync(target, solution, documents, mask, occurrenceFilter, analyzer, parent, cancellationToken);
     }
 
-    private static (ReferenceUsageKind Mask, Func<SyntaxNode, bool> Filter) ConfigFor(ReferenceAnalyzerKind analyzer)
+    private static (ReferenceUsageKind Mask, Func<SyntaxNode, bool> Filter) ConfigFor(ReferenceAnalyzerKind analyzer, ISymbol target)
     {
         switch (analyzer)
         {
+            // Every occurrence of a namespace classifies as a type reference, which the member mask excludes.
+            case ReferenceAnalyzerKind.UsedBy when target is INamespaceSymbol:
+                return (ReferenceUsageKind.TypeReference, null);
             case ReferenceAnalyzerKind.UsedBy:
                 return (ReferenceUsageKind.Invocation | ReferenceUsageKind.Read | ReferenceUsageKind.Write, null);
             case ReferenceAnalyzerKind.ReadBy:
@@ -263,7 +269,7 @@ internal static class ReferenceGraphEngine
             var kind = ReferenceUsageClassifier.Classify(node, symbol);
             if ((kind & filter) == ReferenceUsageKind.None) continue;
 
-            if (!SymbolResolver.IsSupportedRoot(symbol)) continue;
+            if (!SymbolResolver.IsGraphTarget(symbol)) continue;
 
             groups.Add(symbol, solution, document.Project.Id, ReferenceLocationInfo.Create(document, text, node.Span, kind));
         }
@@ -345,7 +351,7 @@ internal static class ReferenceGraphEngine
 
     private static ISymbol Normalize(ISymbol symbol)
     {
-        while (symbol != null && !SymbolResolver.IsSupportedRoot(symbol)) symbol = symbol.ContainingSymbol;
+        while (symbol != null && !SymbolResolver.IsGraphTarget(symbol)) symbol = symbol.ContainingSymbol;
 
         // An accessor is shown as the property or event it belongs to, the way Call Hierarchy does.
         if (symbol is IMethodSymbol method && method.AssociatedSymbol != null) return method.AssociatedSymbol;

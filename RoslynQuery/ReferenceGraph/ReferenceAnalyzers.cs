@@ -42,6 +42,9 @@ internal static class ReferenceAnalyzers
             case INamedTypeSymbol type:
                 return Type(type);
 
+            case INamespaceSymbol _:
+                return [ReferenceAnalyzerKind.UsedBy, ReferenceAnalyzerKind.Contains];
+
             default:
                 return [];
         }
