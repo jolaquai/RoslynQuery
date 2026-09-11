@@ -26,6 +26,7 @@ namespace RoslynQuery;
 [ProvideToolWindow(typeof(QueryToolWindow), Style = VsDockStyle.Tabbed, Window = "{D78612C7-9962-4B83-95D9-268046DAD23A}")]
 [ProvideToolWindow(typeof(ReferenceGraphToolWindow), Style = VsDockStyle.Tabbed, Window = "{D78612C7-9962-4B83-95D9-268046DAD23A}")]
 [ProvideOptionPage(typeof(RoslynQueryOptions), "RoslynQuery", "General", 0, 0, true)]
+[ProvideOptionPage(typeof(ReferenceGraphOptions), "RoslynQuery", "Reference Graph", 0, 0, true)]
 // Without this, "View Reference Graph" stays greyed out until a window is opened by hand: nothing
 // else loads the package, so its BeforeQueryStatus never runs.
 [ProvideAutoLoad(CSharpEditorContextGuidString, PackageAutoLoadFlags.BackgroundLoad)]
