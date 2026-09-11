@@ -20,7 +20,7 @@ public class ReferenceGraphOptionsTests
     private static readonly string[] Switches = ["EnableIlAnalysis", "EnableReverseIlAnalysis"];
 
     private static ClassDeclarationSyntax Page() =>
-        CSharpSyntaxTree.ParseText(RepositoryFiles.Read(OptionsPath)).GetRoot()
+        CSharpSyntaxTree.ParseText(RepositoryFiles.Read(OptionsPath), cancellationToken: TestContext.Current.CancellationToken).GetRoot(TestContext.Current.CancellationToken)
             .DescendantNodes().OfType<ClassDeclarationSyntax>().Single(c => c.Identifier.Text == "ReferenceGraphOptions");
 
     private static PropertyDeclarationSyntax Property(string name) =>
@@ -80,7 +80,7 @@ public class ReferenceGraphOptionsTests
     [Fact]
     public void ThePackage_RegistersThePageUnderRoslynQuery()
     {
-        var registration = CSharpSyntaxTree.ParseText(RepositoryFiles.Read(PackagePath)).GetRoot()
+        var registration = CSharpSyntaxTree.ParseText(RepositoryFiles.Read(PackagePath), cancellationToken: TestContext.Current.CancellationToken).GetRoot(TestContext.Current.CancellationToken)
             .DescendantNodes().OfType<AttributeSyntax>()
             .Where(a => a.Name.ToString() == "ProvideOptionPage")
             .Select(a => a.ArgumentList.Arguments.Select(x => x.ToString()).ToArray())
@@ -99,7 +99,7 @@ public class ReferenceGraphOptionsTests
         var readers = Directory.EnumerateFiles(source, "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Contains(@"\obj\") && !f.Contains(@"\bin\"))
             .Where(f => !f.EndsWith(OptionsPath, StringComparison.OrdinalIgnoreCase))
-            .Where(f => CSharpSyntaxTree.ParseText(File.ReadAllText(f)).GetRoot()
+            .Where(f => CSharpSyntaxTree.ParseText(File.ReadAllText(f), cancellationToken: TestContext.Current.CancellationToken).GetRoot(TestContext.Current.CancellationToken)
                 .DescendantNodes().OfType<IdentifierNameSyntax>()
                 .Any(id => Switches.Contains(id.Identifier.Text)))
             .ToList();
