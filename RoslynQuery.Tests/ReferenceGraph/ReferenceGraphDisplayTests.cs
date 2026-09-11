@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading.Tasks;
 
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 using RoslynQuery.ReferenceGraph;
 
@@ -113,6 +114,58 @@ public class ReferenceGraphDisplayTests
         var compilation = await CompilationAsync();
 
         var parts = ReferenceGraphDisplay.SignatureOf(Find(compilation, label));
+
+        Assert.Equal(expected, string.Concat(parts.Select(p => p.Text)));
+    }
+
+    private const string NestedSource = """
+        namespace Outer.Inner
+        {
+            public class Generic<TItem>
+            {
+                public TItem Pick<TOther>(TItem candidate, ref int count)
+                {
+                    var running = count;
+                    int Helper(int seed) => seed + running;
+                    System.Func<int, int> lambda = x => x + Helper(x);
+                    return candidate;
+                }
+            }
+        }
+        """;
+
+    private static async Task<ISymbol> NestedAsync(string label)
+    {
+        var document = TestSolutions.Create(("Nested.cs", NestedSource)).Projects.Single().Documents.Single();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var model = await document.GetSemanticModelAsync(cancellationToken);
+        var root = await document.GetSyntaxRootAsync(cancellationToken);
+        var lambda = root.DescendantNodes().OfType<SimpleLambdaExpressionSyntax>().Single();
+
+        switch (label)
+        {
+            case "local": return model.GetDeclaredSymbol(root.DescendantNodes().OfType<VariableDeclaratorSyntax>().First(v => v.Identifier.Text == "running"), cancellationToken);
+            case "parameter": return model.GetDeclaredSymbol(root.DescendantNodes().OfType<ParameterSyntax>().First(p => p.Identifier.Text == "count"), cancellationToken);
+            case "method type parameter": return model.GetDeclaredSymbol(root.DescendantNodes().OfType<TypeParameterSyntax>().First(p => p.Identifier.Text == "TOther"), cancellationToken);
+            case "type type parameter": return model.GetDeclaredSymbol(root.DescendantNodes().OfType<TypeParameterSyntax>().First(p => p.Identifier.Text == "TItem"), cancellationToken);
+            case "local function": return model.GetDeclaredSymbol(root.DescendantNodes().OfType<LocalFunctionStatementSyntax>().Single(), cancellationToken);
+            case "lambda": return model.GetSymbolInfo(lambda, cancellationToken).Symbol;
+            case "lambda parameter": return model.GetDeclaredSymbol(lambda.Parameter, cancellationToken);
+            default: throw new ArgumentException("Unknown label: " + label);
+        }
+    }
+
+    [Theory]
+    [InlineData("local", "Outer.Inner.Generic<TItem>.Pick.running : int")]
+    [InlineData("parameter", "Outer.Inner.Generic<TItem>.Pick.count : int")]
+    [InlineData("method type parameter", "Outer.Inner.Generic<TItem>.Pick.TOther")]
+    [InlineData("type type parameter", "Outer.Inner.Generic<TItem>.TItem")]
+    [InlineData("local function", "Outer.Inner.Generic<TItem>.Pick.Helper(int) : int")]
+    [InlineData("lambda", "Outer.Inner.Generic<TItem>.Pick.lambda(int) : int")]
+    [InlineData("lambda parameter", "Outer.Inner.Generic<TItem>.Pick.lambda.x : int")]
+    public async Task Signature_QualifiesALocalDeclarationByTheMembersAroundIt(string label, string expected)
+    {
+        var parts = ReferenceGraphDisplay.SignatureOf(await NestedAsync(label));
 
         Assert.Equal(expected, string.Concat(parts.Select(p => p.Text)));
     }
