@@ -31,14 +31,14 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress - phase 1 code complete; phase 2 (steps 15-26) planned, not started
-- **Current step:** 24 - options page. Step 22 is code-complete and builds but stays `[~]` until
-  step 26's smoke test exercises it. Then 25-26 in order, then 27-28, which
+- **Current step:** 25 - decompiled-source navigation. Step 22 is code-complete and builds but stays `[~]`
+  until step 26's smoke test exercises it. Then 26, then 27-28, which
   were added mid-phase and depend on the analyzer plumbing steps 16-20 build. Steps 8, 12 and 14 stay
   `[~]`: their manual smoke test is deliberately deferred into step 26, which rewrites the tree they were
   verifying, and step 26 is re-run once 28 lands.
 - **Branch:** feature/favorites
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `record step 23` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `record step 24` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-09-10
 
 ## Goal
@@ -346,6 +346,19 @@ below are shaped the way they are.
   shipping 11.x beside it. The accepted cost is the same one Roslyn already carries here: a future Visual
   Studio that moves its bundled decompiler forward redirects this reference upward, which is fine only while
   the handful of APIs above stay put.
+- **The release workflow forbids shipping the decompiler at all.** `.github/workflows/release.yml` has a
+  "Verify VSIX payload" step that fails the build if the VSIX contains any DLL other than `RoslynQuery.dll`,
+  because a bundled `Microsoft.CodeAnalysis.*` would duplicate an assembly identity inside devenv. Bundling
+  ICSharpCode.Decompiler 11.x would have failed CI on the first push, independent of whether it loaded, so
+  compiling against the copy Visual Studio ships is not merely the lower-risk option but the only one that
+  releases.
+- **The 9.1.0.7988 package itself was probed, not just Visual Studio's copy.** A console referencing the
+  package compiles the design's exact calls unchanged - `new PEFile(path)`,
+  `new UniversalAssemblyResolver(path, false, framework)` (the added trailing parameters are optional),
+  `IdStringProvider.FindEntity`, `DecompileAsString`, `DecompileTypeAsString` - and decompiles real bodies from
+  mscorlib: `MemoryStream.Read` as 62 lines of statements, every documentation id round-tripping through
+  `GetIdString`. Cost: 85 ms to construct, 935 ms for the first member while the type system warms up, then
+  0-23 ms per member; all of `System.String` in 200 ms.
 - **Assembly unification is the real risk, not the API.** The probe hard-failed at runtime with
   `FileLoadException: System.Memory, Version=4.0.2.0` until `System.Memory` was pinned to 4.6.3;
   the transitively-resolved 4.5.5 ships assembly version 4.0.1.2. In-proc this is worse, because devenv
@@ -551,11 +564,12 @@ below are shaped the way they are.
   a VS host and is left to the smoke test.
 - **Commit:** `render signature rows with syntax colouring`
 
-### 24. Reference Graph options page `[ ]`
+### 24. Reference Graph options page `[x]`
 
-- **Files:** `RoslynQuery/Options/ReferenceGraphOptionsPage.cs` (new),
+- **Files:** `RoslynQuery/Options/ReferenceGraphOptions.cs` (new),
   `RoslynQuery/RoslynQueryPackage.cs`,
-  `RoslynQuery.Tests/Options/ReferenceGraphOptionsPageTests.cs` (new)
+  `RoslynQuery.Tests/Options/ReferenceGraphOptionsTests.cs` (new),
+  `RoslynQuery.Tests/Infrastructure/RepositoryFiles.cs` (new)
 - **Do:** A `DialogPage` registered with `[ProvideOptionPage]` under a `RoslynQuery` category, named
   `Reference Graph`, carrying two boolean settings: **Enable IL analysis** (would let `Uses` continue
   past the source boundary by decoding the callee's IL body) and **Enable reverse IL analysis** (would
@@ -566,10 +580,11 @@ below are shaped the way they are.
   calling into your code is rare, that the option therefore earns its keep only in unusual situations,
   and that it costs a full scan of every referenced assembly.
 - **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then
-  `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceGraphOptionsPageTests"` passes. Cover: both
-  properties default to false; both are marked read-only/disabled; the descriptions are non-empty (the
-  warning text is the point of the reverse-IL one). A `DialogPage` is constructible outside a VS host,
-  so this needs no shell.
+  `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.ReferenceGraphOptionsTests"` passes. The page is checked
+  **as source**, not loaded: see the deviation - a `DialogPage` cannot be loaded in the test process. Cover:
+  both switches default to false, are `[ReadOnly(true)]`, and ignore any persisted value; both descriptions
+  say the setting is not yet available and the reverse-IL one carries the warning; the package registers the
+  page under RoslynQuery; and nothing outside the page references either switch.
 - **Commit:** `add a reference graph options page with the deferred il analysis switches`
 
 ### 25. Navigate metadata rows to decompiled source `[ ]`
@@ -722,6 +737,29 @@ turning them away, and only locals, parameters and type parameters actually need
   answers empty (see the probe findings). The exclusion keys off the containing type's kind instead.
 - **Step 15: a static class does not get `Instantiated By`.** Not called out in the step text; it cannot be
   constructed, so the branch could only ever be empty.
+- **Step 24's Verify premise was false: a `DialogPage` cannot be loaded in the test process.** The Visual
+  Studio shell assemblies are compile-only here (`ExcludeAssets="runtime"`), and even
+  `typeof(ReferenceGraphOptions)` fails resolving its base type - the same failure step 23 hit with
+  `Microsoft.VisualStudio.Text.Logic`, and the reason `RoslynQueryOptions` has never had a test. The page is
+  therefore checked as source: `ReferenceGraphOptionsTests` parses it with Roslyn and asserts the attributes,
+  the inert accessors, the description text, and the package's `ProvideOptionPage` registration.
+- **Step 24: a test enforces "non-functional".** `NothingOutsideThePage_ReferencesTheSwitches` parses every
+  `.cs` under `RoslynQuery/` and fails if anything outside the page names either switch, so wiring one up
+  early cannot happen by accident.
+- **Step 24: the switches are inert in code, not merely greyed out.** `get => false; set { }` sits under
+  `[ReadOnly(true)]`, so a value persisted by a later build, or hand-edited into the settings store, still
+  reads back false.
+- **Step 24 extra: `RepositoryFiles`, a test helper that finds this checkout.** It walks up from
+  `AppContext.BaseDirectory` to `RoslynQuery.slnx`. `[CallerFilePath]` was the alternative, but SourceLink path
+  mapping can rewrite it to a non-existent `/_/` path; CI runs the test exe from inside the checkout, so the walk
+  finds the solution there as well.
+- **Step 24: named `ReferenceGraphOptions`, not `ReferenceGraphOptionsPage`,** to match the existing
+  `RoslynQueryOptions`. The generated pkgdef was checked and carries
+  `ToolsOptionsPages\RoslynQuery\Reference Graph`. The page's appearance - greyed switches, readable
+  warning - is left to step 26's smoke test, which already lists it.
+- **Step 24: fixed the one warning its tests introduced** (xUnit1051) by passing the test cancellation token to
+  `CSharpSyntaxTree.ParseText` as well as `SyntaxTree.GetRoot` - covering only `GetRoot` left the analyzer
+  still flagging `ParseText` - leaving the build back at its four pre-existing warnings.
 - **Step 23: the flat `DisplayText` keeps its short spelling; the ILSpy spelling is a separate `Signature`.**
   About 90 engine assertions pin *which* symbols a branch finds, not how a row is spelled, and rewriting them
   all to `N.Leaf.Draw() : void` would couple every engine test to rendering. The short label also stays the
