@@ -39,7 +39,7 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
   verifying, and step 26 is re-run once 28 lands.
 - **Branch:** feature/favorites
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `record step 28` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `record step 26 progress` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-09-10
 
 ## Goal
@@ -636,7 +636,7 @@ below are shaped the way they are.
   instead of crashing, and this step becomes `[!]`. Folded into step 26's smoke test.
 - **Commit:** `navigate metadata rows to decompiled source`
 
-### 26. README and the full smoke test `[ ]`
+### 26. README and the full smoke test `[~]`
 
 - **Files:** `README.md`
 - **Do:** Rewrite the Reference Graph section for the analyzer model: the branch set per symbol kind,
@@ -655,6 +655,10 @@ below are shaped the way they are.
   with real bodies** (step 25); signature colouring survives a Tools > Options theme switch; the options
   page appears with both switches visibly disabled.
   **Re-run this step's verify after step 28**, which adds root kinds this documentation has to cover.
+- **Progress:** README rewritten for the analyzer model, steps 27-28 included, as
+  `document the analyzer model in the readme`; `ReadmeExampleTests` still passes. The manual F5 smoke test above has
+  **not** been run - it needs a human at a running Visual Studio, and it is now the only thing between this phase and
+  done. Walking it also closes steps 8, 12, 14, 22 and 25, which all stay `[~]` until then.
 - **Commit:** `document the analyzer model and finish the smoke test`
 
 ### Steps added after phase 2 was planned
@@ -763,6 +767,9 @@ first version of this table said otherwise; see the correction under **Deviation
   answers empty (see the probe findings). The exclusion keys off the containing type's kind instead.
 - **Step 15: a static class does not get `Instantiated By`.** Not called out in the step text; it cannot be
   constructed, so the branch could only ever be empty.
+- **Step 26: the README's intro and Contents changed too.** Both still described the two-direction model, and
+  Contents linked the removed `Usage kinds` section. Separately, the existing Contents entry `[Replace](#replace)`
+  points at a heading that does not exist; that predates this phase and was left alone as out of scope.
 - **Step 28: a positional identity carries a synthetic `DeclarationId`, `@:<FILE PATH>|start|length|kind|name`.**
   Every path that compares, sorts or recursion-checks identities - `GroupSet`, `HasAncestor`, the row sort's
   tie-break - keeps working unchanged. The path is upper-cased so a multi-targeted project's copies of one file still
