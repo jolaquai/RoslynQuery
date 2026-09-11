@@ -6,8 +6,9 @@ Two Visual Studio tool windows over Roslyn.
 `IOperation` in a scope you pick, jumps to a double-clicked match, and can replace what it finds.
 `View > Other Windows > Roslyn Query`.
 
-**Reference Graph** roots a lazily-expandable tree on the member or type at the caret, showing what
-references it and what it references, recursively.
+**Reference Graph** analyzes the symbol at the caret the way ILSpy's Analyze pane does: a tree of what
+uses it, what it uses, what overrides, implements and derives from it, and more, where every result can
+be analyzed in turn.
 `View > Other Windows > Reference Graph`, or right-click in the editor.
 
 ## Contents
@@ -21,8 +22,10 @@ references it and what it references, recursively.
     - [Favorites](#favorites)
   - [Replace](#replace)
   - [Reference Graph](#reference-graph)
+    - [Branches](#branches)
+    - [Symbols from referenced assemblies](#symbols-from-referenced-assemblies)
     - [Scope](#scope)
-    - [Usage kinds](#usage-kinds)
+    - [Settings](#settings)
   - [Building](#building)
 
 ## Using it
@@ -232,61 +235,98 @@ itself was flush-left or otherwise unindented.
 
 ## Reference Graph
 
-A second window, styled after the built-in Call Hierarchy but generalized to every kind of
-reference rather than just calls.
+A second window, modelled on ILSpy's **Analyze** pane: pick a symbol and it grows a tree of everything
+that relates to it, and every result in that tree can be analyzed in turn.
 
-Right-click a method, constructor, property, field, event or type in the editor and choose
-**View Reference Graph**, or open the window empty from `View > Other Windows > Reference Graph`.
+Right-click a symbol in the editor and choose **View Reference Graph**, or open the window empty from
+`View > Other Windows > Reference Graph`. Almost anything the caret can sit on works as a root: a
+method, constructor, operator, property, indexer, field, event or type, and also a namespace, a local,
+a parameter, a type parameter, a local function or a lambda.
 
-Each invocation adds a root at the top of the list rather than replacing what is there, so the
-window keeps a history; **Clear** empties it, and Del removes just the selected root. Every root
-has two branches:
+Each invocation adds a root at the top of the list rather than replacing what is there, so the window
+keeps a history; **Clear** empties it, and Del removes just the selected root.
 
-| Branch                | What is under it                       |
-| --------------------- | -------------------------------------- |
-| `References To 'X'`   | The declarations that reference `X`    |
-| `References From 'X'` | The declarations `X` itself references |
+### Branches
 
-Every row expands the same way, recursively, staying in the direction its branch started in. A row
-is one declaration, not one call site: its second line reads `3 refs (1 invocation, 2 reads)`. A row
-backed by more than one occurrence opens onto a `Locations (3)` branch listing each of them, ahead of
-the rows the graph continues into.
+Under a symbol sit the branches that apply to it, and only those - a static method offers two, an
+override offers several. Opening a branch runs its search, and the header then reads
+`Used By (18 in 931 ms)`: how many results it found and how long that took. A branch that finds
+nothing keeps its header but loses its expander.
 
-Double-click a row, or select it and press Enter, to jump to it - the individual location rows go to
-that exact occurrence, and a row with only one occurrence goes straight there. A row whose symbol
-already appears above it in the tree is marked `(recursive)` and does not expand further, so a cycle
-terminates instead of looping.
+| Branch            | What is under it                                                        | Offered on                                                            |
+| ----------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Uses              | What the symbol's own declaration references                            | Members, types, local functions, lambdas                              |
+| Used By           | The declarations that reference it                                      | Methods, properties, events, types, namespaces, type parameters, local functions |
+| Read By           | The declarations that read it                                           | Fields, enum members, locals, parameters                              |
+| Assigned By       | The declarations that write it                                          | Fields, locals, parameters                                            |
+| Instantiated By   | The declarations that construct it                                      | Classes, structs, delegates                                           |
+| Exposed By        | The members whose signature names it - a parameter, return or member type, or a base list | Types                                      |
+| Applied To        | The declarations it is applied to as an attribute                       | Attribute classes                                                     |
+| Overrides         | The member it overrides, then that member's own base, nearest first     | Overrides                                                             |
+| Overridden By     | Every override below it                                                 | Virtual, abstract and unsealed override members                       |
+| Implements        | The interface members it implements                                     | Members that implement an interface                                   |
+| Implemented By    | The members or types that implement it                                  | Interfaces and interface members                                      |
+| Derived Types     | Every class or interface that derives from it                           | Classes and interfaces                                                |
+| Extension Methods | The extension methods that apply to it                                  | Types                                                                 |
+| Contains          | Its sub-namespaces, then its types                                      | Namespaces                                                            |
+
+Every result is a symbol of its own and offers its own branches, so the tree can be followed as far as
+it goes: from a method into what it uses, from one of those into what uses it, and on from there. A
+result whose symbol already appears above it is marked `(recursive)` and offers nothing further, so a
+cycle terminates instead of looping.
+
+A result is one declaration, not one call site; its second line reads `3 refs (1 invocation, 2 reads)`.
+A result backed by more than one occurrence opens onto a `Locations (3)` row listing each of them,
+ahead of its branches. A branch shows every result it finds: the tree is virtualized, and a collapsed
+remainder row would be a dead end you could not expand.
+
+Rows are spelled the way ILSpy spells them, `System.IO.MemoryStream.Read(byte[], int, int) : int`, in
+the editor's own colours, and a local, parameter, local function or lambda is qualified by the members
+around it.
+
+Double-click a row, or select it and press Enter, to jump to it; a location row goes to that exact
+occurrence. A compound assignment such as `x += 1`, or a `ref` argument, is both a read and a write
+and shows under both; `++`, `--`, an `out` argument and `+=` on an event count as writes. A `cref` in
+a doc comment is never counted as a use.
+
+A row for a local, parameter, type parameter, local function or lambda is tied to where it is declared
+in the file, since nothing else identifies it. Editing the file above that declaration makes the row
+stale: **Refresh** then reports it as gone, and it has to be rooted again.
+
+### Symbols from referenced assemblies
+
+Results are not limited to your own code. `Overrides`, `Overridden By`, `Implements`,
+`Implemented By` and `Derived Types` search referenced assemblies too, so `Derived Types` on `Stream`
+lists `MemoryStream` and the rest. Such a row is marked `(metadata)`. It offers every branch except
+`Uses`, since there is no source to read what it uses, and its `Used By` and similar branches find the
+uses in your own code.
+
+Double-clicking a metadata row opens its **decompiled source**, positioned on the member, in a read-only
+editor tab. A project references reference assemblies, which carry no method bodies, so the window
+first finds the implementation behind one - in the shared runtime for .NET, in the GAC for .NET
+Framework, beside it under `lib` for a NuGet package - and when there is none it says so rather than
+show an empty stub. Decompilation uses the ICSharpCode.Decompiler that Visual Studio itself ships. The
+decompiled file opens as an ordinary file, so the editor may underline types it cannot resolve. A
+metadata row's call sites in your own code stay reachable through its `Locations` row.
 
 ### Scope
 
-The **scope** combo - current document, current project, my solution - narrows `References To`
-only. `References From` is read out of the root's own declarations and never searches outside them,
-so there is nothing for a scope to narrow. Scope is measured from the declaration of the row being
-expanded, not from wherever the caret happens to be at the time.
+The **scope** combo - current document, current project, my solution - narrows the branches that
+search: `Used By`, `Read By`, `Assigned By`, `Instantiated By`, `Exposed By` and `Applied To` to the
+documents it covers, and `Overridden By`, `Implements`, `Implemented By` and `Derived Types` to the
+projects it covers. `Uses` is read out of the row's own declaration, and `Overrides`,
+`Extension Methods` and `Contains` are not narrowed at all. Scope is measured from the declaration of
+the row being expanded, not from wherever the caret happens to be at the time.
 
-### Usage kinds
+**Refresh** and changing the scope re-read every expanded branch. **Stop** cancels whatever is in
+flight and clears every expanded branch, since a cancelled search may have left it stale; expand a
+branch again to re-read it.
 
-The **Filter** button opens a checkbox flyout, one box per kind of reference:
+### Settings
 
-| Kind            | What it matches                                                                              |
-| --------------- | -------------------------------------------------------------------------------------------- |
-| Invocations     | The callee of a call                                                                         |
-| Reads           | Anything read, including a method group                                                      |
-| Writes          | An assignment target, an `out`/`ref` argument, `++`/`--`, `+=` on events                     |
-| Constructions   | `new T(...)`, a `this()`/`base()` initializer, an attribute                                  |
-| Type references | A parameter or return type, a base type, a cast, `typeof`, a type argument, a `catch` clause |
-| Doc comments    | A `cref` inside a `<see>`/`<seealso>`/etc. XML doc comment                                    |
-
-Invocations, reads, writes and constructions start on; type references and doc comments start off,
-since a cref is documentation rather than a real code path and a type root's type references
-otherwise swamp everything else. Ticking or unticking a box re-reads every expanded row
-immediately, as does **Refresh** and changing the scope. **Stop** cancels whatever is in flight and
-clears every expanded row, since a cancelled fetch may have left them stale; expand a row again to
-re-read it.
-
-A compound assignment is both a read and a write, and is counted under each. A branch shows every
-row it finds: the tree is virtualized, and a collapsed remainder row would be a dead end you could
-not expand.
+`Tools > Options > RoslynQuery > Reference Graph` holds two settings for IL analysis, which would read
+the IL of framework methods so that `Uses` could continue past your source and `Used By` could report
+framework callers. Neither is available yet: both are shown disabled and do nothing.
 
 ## Building
 
