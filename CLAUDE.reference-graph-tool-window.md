@@ -31,7 +31,7 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress - phase 1 code complete; phase 2 (steps 15-26) planned, not started
-- **Current step:** 27 - namespace roots, then 28, which now also carries local functions and lambdas. Steps 22 and 25 are
+- **Current step:** 28 - positional identity for locals, parameters, type parameters, local functions and lambdas. Steps 22 and 25 are
   code-complete but stay `[~]` until step 26's smoke test exercises them inside Visual Studio, and step 26
   itself moves last, after 28, since its README has to describe 27-28 too. Steps 27-28, which
   were added mid-phase and depend on the analyzer plumbing steps 16-20 build. Steps 8, 12 and 14 stay
@@ -39,7 +39,7 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
   verifying, and step 26 is re-run once 28 lands.
 - **Branch:** feature/favorites
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `correct the local function and lambda identity finding` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `record step 27` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-09-10
 
 ## Goal
@@ -678,7 +678,7 @@ So only namespaces were blocked by nothing but `SymbolResolver.IsSupportedRoot` 
 functions and lambdas need the positional identity exactly as locals, parameters and type parameters do - the
 first version of this table said otherwise; see the correction under **Deviations**.
 
-### 27. Namespace roots `[ ]`
+### 27. Namespace roots `[x]`
 
 - **Files:** `RoslynQuery/ReferenceGraph/SymbolResolver.cs`,
   `RoslynQuery/ReferenceGraph/ReferenceAnalyzerKind.cs`,
@@ -763,6 +763,13 @@ first version of this table said otherwise; see the correction under **Deviation
   answers empty (see the probe findings). The exclusion keys off the containing type's kind instead.
 - **Step 15: a static class does not get `Instantiated By`.** Not called out in the step text; it cannot be
   constructed, so the branch could only ever be empty.
+- **Step 27: `IsGraphTarget` also drives incoming attribution, for now.** `Walk` and `Normalize` both switched to
+  it, so "what becomes a row" and "where an incoming occurrence is attributed" are still one set. Step 28 separates
+  them, because local functions become rows there but must not capture attribution from the member around them.
+- **Step 27: `Used By` on a namespace counts `TypeReference` occurrences only.** A `cref` to a namespace classifies
+  as `Documentation` and stays excluded, the same as for every other `Used By`.
+- **Step 27: a namespace row navigates to its first declaration,** which for a block-scoped namespace is the
+  `namespace` line itself; a namespace declared across several files shows whichever declaration Roslyn lists first.
 - **Correction to the step 27/28 probe: local functions and lambdas cannot use doc-comment identities.** The first
   probe recorded their `DocumentationCommentId` as resolving, but it only checked that a lookup returned something,
   not that it returned the same symbol. Re-measured with a symbol count and an equality check,
