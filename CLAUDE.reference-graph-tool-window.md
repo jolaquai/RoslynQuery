@@ -31,7 +31,7 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress - phase 1 code complete; phase 2 (steps 15-26) planned, not started
-- **Current step:** 28 - positional identity for locals, parameters, type parameters, local functions and lambdas. Steps 22 and 25 are
+- **Current step:** 26 - README and the full smoke test. Every automatable step is done; what remains needs a human at a running Visual Studio. Steps 22 and 25 are
   code-complete but stay `[~]` until step 26's smoke test exercises them inside Visual Studio, and step 26
   itself moves last, after 28, since its README has to describe 27-28 too. Steps 27-28, which
   were added mid-phase and depend on the analyzer plumbing steps 16-20 build. Steps 8, 12 and 14 stay
@@ -39,7 +39,7 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
   verifying, and step 26 is re-run once 28 lands.
 - **Branch:** feature/favorites
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `record step 27` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `record step 28` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-09-10
 
 ## Goal
@@ -707,7 +707,7 @@ first version of this table said otherwise; see the correction under **Deviation
   namespace rows; a namespace identity round-trips; the global namespace is not a root.
 - **Commit:** `add namespace roots`
 
-### 28. Positional identity for locals, parameters, type parameters, local functions and lambdas `[ ]`
+### 28. Positional identity for locals, parameters, type parameters, local functions and lambdas `[x]`
 
 - **Files:** `RoslynQuery/ReferenceGraph/SymbolIdentity.cs`,
   `RoslynQuery/ReferenceGraph/SymbolResolver.cs`,
@@ -763,6 +763,31 @@ first version of this table said otherwise; see the correction under **Deviation
   answers empty (see the probe findings). The exclusion keys off the containing type's kind instead.
 - **Step 15: a static class does not get `Instantiated By`.** Not called out in the step text; it cannot be
   constructed, so the branch could only ever be empty.
+- **Step 28: a positional identity carries a synthetic `DeclarationId`, `@:<FILE PATH>|start|length|kind|name`.**
+  Every path that compares, sorts or recursion-checks identities - `GroupSet`, `HasAncestor`, the row sort's
+  tie-break - keeps working unchanged. The path is upper-cased so a multi-targeted project's copies of one file still
+  collapse to one identity, and the `@:` prefix means no documentation id can ever equal one.
+- **Step 28: resolution is exact span or nothing; the planned `SpanMapper` step could not work.** Mapping a span
+  forward needs the snapshot it was taken from, and a node deliberately holds no Roslyn object. The only snapshot the
+  window keeps is the *last expansion's*, not the one each identity was created against, so mapping through it would
+  shift spans by the wrong edits. Instead the symbol must still be declared at exactly the recorded span with the same
+  kind and name: an edit above the declaration makes the row stale ("no longer exists") rather than landing it on a
+  neighbouring declaration. `AfterAnEditAboveTheDeclaration_ResolutionReturnsNullRatherThanANeighbour` pins it, and the
+  README tells the user.
+- **Step 28: three predicates, where step 27 had two.** `IsSupportedRoot` is what a caret may root at; `IsGraphTarget`
+  is what becomes a row (members, types, local functions); `IsAttributionTarget` is where an incoming occurrence is
+  credited, and never a local function or lambda. `AnOccurrenceInsideALocalFunction_IsAttributedToTheMemberAroundIt`
+  pins the separation.
+- **Step 28: `Used By` on a type parameter needed the same mask fix as a namespace,** since every occurrence of one
+  classifies as `TypeReference`.
+- **Step 28: locals and parameters offer `Assigned By` then `Read By`,** the order fields already use, rather than the
+  plan's `ReadBy` + `AssignedBy`.
+- **Step 28: a local declaration is spelled through the members around it,** e.g.
+  `Outer.Inner.Generic<TItem>.Pick.lambda.x : int`, with `lambda` standing in for the unnamed method and an accessor
+  shown by its property's name. Locals, parameters and type parameters render by name alone: the member format's
+  parameter options would otherwise print `ref int count` and repeat the type the `: int` suffix already shows.
+- **Step 28: the caret error now reads "Nothing at the caret can root a reference graph."** The old list of member
+  kinds no longer described what can be rooted.
 - **Step 27: `IsGraphTarget` also drives incoming attribution, for now.** `Walk` and `Normalize` both switched to
   it, so "what becomes a row" and "where an incoming occurrence is attributed" are still one set. Step 28 separates
   them, because local functions become rows there but must not capture attribution from the member around them.
