@@ -82,10 +82,20 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         var componentModel = Package.GetGlobalService(typeof(SComponentModel)) as IComponentModel;
         _workspace = componentModel?.GetService<VisualStudioWorkspace>();
 
+        ClassificationBrushes.Initialize(componentModel);
+        ClassificationBrushes.Changed += OnClassificationsChanged;
+        SignatureText.BrushResolver = ClassificationBrushes.For;
+
         if (_workspace is null) SetError("No Roslyn workspace is available. Open a solution and reopen this window.");
         else StatusText.Text = "Right-click a member or type in the editor and choose View Reference Graph.";
 
         _ready = true;
+    }
+
+    private void OnClassificationsChanged(object sender, EventArgs e)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        Tree.Items.Refresh();
     }
 
     internal void AddRoot(ISymbol symbol, Solution solution)
@@ -106,7 +116,8 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         }
 
         var root = ReferenceGraphNode.CreateRoot(
-            ReferenceGraphDisplay.Of(symbol), identity, SymbolGlyphs.For(symbol), ReferenceAnalyzers.For(symbol));
+            ReferenceGraphDisplay.Of(symbol), identity, SymbolGlyphs.For(symbol), ReferenceAnalyzers.For(symbol),
+            ReferenceGraphDisplay.SignatureOf(symbol));
 
         _roots.Insert(0, root);
         SetError(null);

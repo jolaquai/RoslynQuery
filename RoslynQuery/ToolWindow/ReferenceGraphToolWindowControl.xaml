@@ -38,7 +38,7 @@
                 <imaging:CrispImage Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center"
                                     Moniker="{Binding Glyph, Converter={StaticResource GlyphMoniker}}" />
 
-                <TextBlock Text="{Binding DisplayText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                <TextBlock local:SignatureText.Parts="{Binding Signature}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                            Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}" />
 
                 <TextBlock Text="{Binding SecondaryText}" Margin="10,0,0,0" Style="{StaticResource Meta}" />

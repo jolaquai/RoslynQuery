@@ -31,4 +31,11 @@
     <ProjectReference Include="..\RoslynQuery\RoslynQuery.csproj" />
   </ItemGroup>
 
+  <!-- UseWPF on the extension project does not flow framework references to its dependents. -->
+  <ItemGroup>
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="WindowsBase" />
+  </ItemGroup>
+
 </Project>
