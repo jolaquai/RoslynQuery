@@ -31,13 +31,14 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress - phase 1 code complete; phase 2 (steps 15-26) planned, not started
-- **Current step:** 21 - metadata rows. Then 22-26 in order, then 27-28, which
+- **Current step:** 23 - coloured signature rows. Step 22 is code-complete and builds but stays `[~]` until
+  step 26's smoke test exercises it. Then 24-26 in order, then 27-28, which
   were added mid-phase and depend on the analyzer plumbing steps 16-20 build. Steps 8, 12 and 14 stay
   `[~]`: their manual smoke test is deliberately deferred into step 26, which rewrites the tree they were
   verifying, and step 26 is re-run once 28 lands.
 - **Branch:** feature/favorites
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `dispatch analyzers through one entry point and report counts` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `record steps 21 and 22` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-09-10
 
 ## Goal
@@ -478,7 +479,7 @@ below are shaped the way they are.
   true; the count in `SecondaryText` matches `Children.Count` excluding the locations branch.
 - **Commit:** `dispatch analyzers through one entry point and report counts`
 
-### 21. Metadata rows: identity, glyphs, and honest dead ends `[ ]`
+### 21. Metadata rows: identity, glyphs, and honest dead ends `[x]`
 
 - **Files:** `RoslynQuery/ReferenceGraph/SymbolIdentity.cs`,
   `RoslynQuery/ReferenceGraph/ReferenceAnalyzers.cs`,
@@ -501,7 +502,7 @@ below are shaped the way they are.
   source symbol in the fixture and true for `System.IO.Stream.Read`.
 - **Commit:** `mark metadata rows and drop the branches they cannot answer`
 
-### 22. UI: drop the filter, wire the alternating tree `[ ]`
+### 22. UI: drop the filter, wire the alternating tree `[~]`
 
 - **Files:** `RoslynQuery/ToolWindow/ReferenceGraphToolWindowControl.xaml` / `.xaml.cs`
 - **Do:** Delete the `Filter` toggle, its popup, all six checkboxes, `CurrentFilter` and `Flag`. The
@@ -700,6 +701,29 @@ turning them away, and only locals, parameters and type parameters actually need
   answers empty (see the probe findings). The exclusion keys off the containing type's kind instead.
 - **Step 15: a static class does not get `Instantiated By`.** Not called out in the step text; it cannot be
   constructed, so the branch could only ever be empty.
+- **Step 22 is build-verified only, so it stays `[~]`.** The filter toggle, its popup and all six checkboxes
+  are gone, the window dispatches every analyzer row through `ReferenceGraphEngine.RunAsync`, and an empty
+  branch now gets no children instead of a `No references.` row. None of that has run inside Visual Studio;
+  there is no WPF host in the test suite. Step 26's smoke test is what flips it.
+- **Step 22: the phase-1 engine overloads that take a usage filter survive, unused by the window.** The
+  original `ReferenceGraphEngineIncomingTests`/`OutgoingTests` call them with explicit masks, and they are
+  still the most direct way to test the classifier through the engine. The dispatch always passes the full
+  mask to the outgoing walk.
+- **Step 22: the scope combo's tooltip now names the branches it narrows** (`Used By`, `Read By`,
+  `Assigned By`, `Instantiated By`, `Exposed By`, `Applied To`) and says outright that the hierarchy branches
+  also search referenced assemblies, so nobody expects "Current document" to stop `Derived Types` from
+  listing `MemoryStream`.
+- **Step 21: `IsFromMetadata` lives on `SymbolIdentity`, not on a new node parameter.** It travels with the
+  identity through every place a row is built - incoming, outgoing and hierarchy - without widening
+  `CreateSymbol` again, and `SymbolIdentity` equality still compares on the declaration id alone, so it
+  cannot split one symbol into two rows.
+- **Step 21: the static test is `IsMetadataSymbol`, keyed on `Locations`.** A property and a method cannot
+  share a name in C#. `Locations` rather than `DeclaringSyntaxReferences`, because an implicit constructor
+  has no declaring syntax yet is plainly source; `IsFromMetadata_IsFalseForAnImplicitlyDeclaredSourceSymbol`
+  pins it.
+- **Step 21: metadata rows are marked with a `(metadata)` suffix, not a different glyph.** The suffix sits
+  beside `(recursive)` in the row template and landed with step 22's XAML changes. Swapping the glyph would
+  have hidden whether the row is a class, a method or a property, which is still worth seeing.
 - **Step 20 added `AnalyzerResult.cs`, which the step's file list did not mention.** The elapsed time has to
   cross a thread boundary: `RunAsync` runs on the background scheduler and the node it describes may only be
   mutated on the UI thread, so the timing comes back as data and `ReferenceGraphNode.ApplyResults` writes the
