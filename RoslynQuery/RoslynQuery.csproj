@@ -64,6 +64,10 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.6.0" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" Version="5.6.0" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VisualStudio.LanguageServices" Version="4.14.0" ExcludeAssets="runtime" />
+
+    <!-- Compile-only, pinned to the build Visual Studio ships and redirects every older version to. The
+         release workflow also fails any VSIX that carries a DLL besides RoslynQuery.dll. -->
+    <PackageReference Include="ICSharpCode.Decompiler" Version="9.1.0.7988" ExcludeAssets="runtime" />
   </ItemGroup>
 
 </Project>
