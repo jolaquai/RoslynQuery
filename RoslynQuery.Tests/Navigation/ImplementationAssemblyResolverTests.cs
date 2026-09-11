@@ -11,24 +11,6 @@ namespace RoslynQuery.Tests;
 // Runs against the reference and implementation assemblies installed on the machine; a test skips where its layout is absent.
 public class ImplementationAssemblyResolverTests
 {
-    private static readonly string FrameworkReferences = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-        @"Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2");
-
-    private static string NetReferencePack(string file)
-    {
-        var packs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"dotnet\packs\Microsoft.NETCore.App.Ref");
-        if (!Directory.Exists(packs)) return null;
-
-        return Directory.EnumerateDirectories(packs)
-            .Where(v => Directory.Exists(Path.Combine(v, "ref")))
-            .SelectMany(v => Directory.EnumerateDirectories(Path.Combine(v, "ref")))
-            .Select(tfm => Path.Combine(tfm, file))
-            .Where(File.Exists)
-            .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
-            .FirstOrDefault();
-    }
-
     private static (string Reference, string Lib) NuGetReferenceWithLib()
     {
         var root = Environment.GetEnvironmentVariable("NUGET_PACKAGES");
@@ -71,7 +53,7 @@ public class ImplementationAssemblyResolverTests
     [InlineData("WindowsBase.dll")]
     public void ANetFrameworkReferenceAssembly_ResolvesToAnImplementationOfTheSameName(string relative)
     {
-        var reference = Path.Combine(FrameworkReferences, relative);
+        var reference = InstalledAssemblies.NetFrameworkReference(relative);
         Assert.SkipUnless(File.Exists(reference), ".NET Framework 4.7.2 reference assemblies are not installed.");
         Assert.True(ImplementationAssemblyResolver.IsReferenceAssembly(reference));
 
@@ -85,7 +67,7 @@ public class ImplementationAssemblyResolverTests
     [Fact]
     public void ANetReferencePackAssembly_ResolvesIntoTheSharedRuntime()
     {
-        var reference = NetReferencePack("System.Runtime.dll");
+        var reference = InstalledAssemblies.NetReferencePack("System.Runtime.dll");
         Assert.SkipUnless(reference != null, "No .NET reference pack is installed.");
 
         var resolved = ImplementationAssemblyResolver.Resolve(reference);
@@ -99,7 +81,7 @@ public class ImplementationAssemblyResolverTests
     [Fact]
     public void ANetReferenceAssemblyOutsideItsPack_IsNeverMatchedToTheNetFrameworkGac()
     {
-        var reference = NetReferencePack("System.Runtime.dll");
+        var reference = InstalledAssemblies.NetReferencePack("System.Runtime.dll");
         Assert.SkipUnless(reference != null, "No .NET reference pack is installed.");
 
         var directory = Path.Combine(Path.GetTempPath(), "RoslynQueryTests", Guid.NewGuid().ToString("N"));
