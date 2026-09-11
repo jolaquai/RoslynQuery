@@ -135,7 +135,8 @@ internal static class HierarchyAnalyzers
                 ReferenceAnalyzers.For(symbol),
                 locations,
                 parent,
-                analyzable: !recursive);
+                analyzable: !recursive,
+                signature: ReferenceGraphDisplay.SignatureOf(symbol));
 
             node.IsRecursive = recursive;
             nodes.Add(node);

@@ -32,6 +32,7 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
     private bool _isRecursive;
     private bool _isExpanded;
     private bool _isLoading;
+    private IReadOnlyList<SignaturePart> _signature;
 
     private ReferenceGraphNode(
         string displayText,
@@ -86,6 +87,10 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
         set => Set(ref _displayText, value);
     }
 
+    /// <summary>The classified spelling a row renders; anything but a symbol row renders its display text as one run.</summary>
+    public IReadOnlyList<SignaturePart> Signature =>
+        _signature ?? [new SignaturePart(SymbolDisplayPartKind.Text, DisplayText)];
+
     public string SecondaryText
     {
         get => _secondaryText;
@@ -122,10 +127,11 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
         IReadOnlyList<ReferenceAnalyzerKind> analyzers,
         IReadOnlyList<ReferenceLocationInfo> locations = null,
         ReferenceGraphNode parent = null,
-        bool analyzable = true)
+        bool analyzable = true,
+        IReadOnlyList<SignaturePart> signature = null)
     {
         var node = new ReferenceGraphNode(displayText, identity, glyph, NodeRole.Symbol, locations: locations, parent: parent)
-        { IsLoaded = true };
+        { IsLoaded = true, _signature = signature };
 
         if (node.Locations.Count > 1) node.Children.Add(node.BuildLocationsBranch());
 
@@ -148,9 +154,10 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
     }
 
     public static ReferenceGraphNode CreateRoot(
-        string displayText, SymbolIdentity identity, SymbolGlyph glyph, IReadOnlyList<ReferenceAnalyzerKind> analyzers)
+        string displayText, SymbolIdentity identity, SymbolGlyph glyph, IReadOnlyList<ReferenceAnalyzerKind> analyzers,
+        IReadOnlyList<SignaturePart> signature = null)
     {
-        var root = CreateSymbol(displayText, identity, glyph, analyzers);
+        var root = CreateSymbol(displayText, identity, glyph, analyzers, signature: signature);
         root.IsExpanded = true;
 
         return root;

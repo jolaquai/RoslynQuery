@@ -409,7 +409,8 @@ internal static class ReferenceGraphEngine
                     parent,
                     // A node whose symbol already sits above it would expand into the same subtree
                     // forever, so it offers no branches and says so instead.
-                    analyzable: !recursive);
+                    analyzable: !recursive,
+                    signature: ReferenceGraphDisplay.SignatureOf(group.Symbol));
 
                 node.IsRecursive = recursive;
                 nodes.Add(node);
