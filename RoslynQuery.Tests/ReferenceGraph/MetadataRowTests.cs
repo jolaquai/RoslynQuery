@@ -121,7 +121,7 @@ public class MetadataRowTests
     }
 
     [Fact]
-    public async Task AHierarchyRowFromMetadata_IsMarkedAndNotNavigable()
+    public async Task AHierarchyRowFromMetadata_IsMarkedAndHasNoSourceLocation()
     {
         var (solution, compilation) = await FixtureAsync();
 
@@ -165,5 +165,23 @@ public class MetadataRowTests
         Assert.DoesNotContain(ReferenceAnalyzerKind.Uses, branches);
         Assert.Contains(ReferenceAnalyzerKind.DerivedTypes, branches);
         Assert.Contains(ReferenceAnalyzerKind.UsedBy, branches);
+    }
+
+    /// <summary>Double-click on a metadata row opens its decompiled source, so its one call site needs a row of its own.</summary>
+    [Fact]
+    public async Task AMetadataRowWithOneCallSite_KeepsTheCallSiteReachable()
+    {
+        var solution = TestSolutions.Create(("Caller.cs", "class C { string M() => string.Format(\"{0}\", 1); }"));
+        var compilation = await solution.Projects.Single().GetCompilationAsync(TestContext.Current.CancellationToken);
+        var method = compilation.GetTypeByMetadataName("C").GetMembers("M").Single();
+
+        var result = await ReferenceGraphEngine.RunAsync(
+            ReferenceAnalyzerKind.Uses, method, solution, null, null, TestContext.Current.CancellationToken);
+
+        var format = Assert.Single(result.Rows, r => r.DisplayText.StartsWith("string.Format"));
+
+        Assert.True(format.IsFromMetadata);
+        Assert.Single(format.Locations);
+        Assert.Equal(NodeRole.Locations, format.Children[0].Role);
     }
 }

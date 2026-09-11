@@ -159,7 +159,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         if (Ancestor<TreeViewItem>(source)?.DataContext is not ReferenceGraphNode node) return;
 
         // A branch row has nowhere to navigate to, so leave the event alone and let it expand.
-        if (node.DocumentId is null) return;
+        if (node.DocumentId is null && !node.IsFromMetadata) return;
 
         e.Handled = true;
 
@@ -170,7 +170,8 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => node.IsExpanded = wasExpanded));
 #pragma warning restore VSTHRD001, VSTHRD110
 
-        Navigate(node);
+        if (node.IsFromMetadata) NavigateToDecompiled(node);
+        else Navigate(node);
     }
 
     private void OnTreeKeyDown(object sender, KeyEventArgs e)
@@ -188,10 +189,12 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         }
 
         if (e.Key != Key.Enter || _workspace is null) return;
-        if (Tree.SelectedItem is not ReferenceGraphNode node || node.DocumentId is null) return;
+        if (Tree.SelectedItem is not ReferenceGraphNode node || (node.DocumentId is null && !node.IsFromMetadata)) return;
 
         e.Handled = true;
-        Navigate(node);
+
+        if (node.IsFromMetadata) NavigateToDecompiled(node);
+        else Navigate(node);
     }
 
     private static T Ancestor<T>(DependencyObject node) where T : DependencyObject
@@ -222,6 +225,89 @@ public partial class ReferenceGraphToolWindowControl : UserControl
             SetError(DocumentNavigator.Navigate(ServiceProvider.GlobalProvider, target));
         }).FileAndForget("vs/roslynquery/referencegraph/navigate");
 #pragma warning restore VSSDK007
+    }
+
+    private void NavigateToDecompiled(ReferenceGraphNode node)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        var identity = node.Identity;
+        var solution = _workspace.CurrentSolution;
+        var name = node.DisplayText;
+
+        SetError(null);
+        StatusText.Text = $"Decompiling {name}...";
+
+#pragma warning disable VSSDK007
+        ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+        {
+            await TaskScheduler.Default;
+
+            NavigationTarget target = null;
+            string failure = null;
+
+            try
+            {
+                var assembly = await MetadataAssemblyLocator.PathOfAsync(identity, solution, CancellationToken.None).ConfigureAwait(false);
+
+                if (assembly is null)
+                {
+                    failure = $"No assembly file backs {name}, so there is nothing to decompile.";
+                }
+                else
+                {
+                    var source = DecompiledSourceProvider.Decompile(assembly, identity.DeclarationId);
+
+                    if (!source.Succeeded)
+                    {
+                        failure = source.Failure;
+                    }
+                    else
+                    {
+                        var path = DecompiledSourceFiles.Write(
+                            DecompiledSourceFiles.DefaultRoot, source.AssemblyName, source.AssemblyVersion, source.TypeFullName, source.Text);
+
+                        target = new NavigationTarget
+                        {
+                            FilePath = path,
+                            Line = source.Line,
+                            Column = source.Column,
+                            EndLine = source.Line,
+                            EndColumn = source.Column
+                        };
+                    }
+                }
+            }
+            catch (Exception ex) when (IsDecompilerUnavailable(ex))
+            {
+                failure = "The decompiler Visual Studio ships could not be loaded, so metadata rows cannot be opened: " + ex.Message;
+            }
+            catch (Exception ex)
+            {
+                failure = $"Decompiling {name} failed: {ex.GetType().Name}: {ex.Message}";
+            }
+
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            SetError(failure ?? DocumentNavigator.Navigate(ServiceProvider.GlobalProvider, target));
+            StatusText.Text = failure is null ? $"Opened decompiled {name}." : string.Empty;
+        }).FileAndForget("vs/roslynquery/referencegraph/decompile");
+#pragma warning restore VSSDK007
+    }
+
+    private static bool IsDecompilerUnavailable(Exception exception)
+    {
+        var missing = (exception as System.IO.FileNotFoundException)?.FileName ?? (exception as System.IO.FileLoadException)?.FileName;
+
+        if (missing != null)
+        {
+            return missing.StartsWith("ICSharpCode.Decompiler", StringComparison.OrdinalIgnoreCase)
+                || missing.StartsWith("System.Reflection.Metadata", StringComparison.OrdinalIgnoreCase)
+                || missing.StartsWith("System.Collections.Immutable", StringComparison.OrdinalIgnoreCase)
+                || missing.StartsWith("System.Memory", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return exception is TypeLoadException || exception is MissingMethodException || exception is TypeInitializationException;
     }
 
     private void OnRefreshClick(object sender, RoutedEventArgs e)

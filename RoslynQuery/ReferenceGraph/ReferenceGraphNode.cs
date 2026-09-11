@@ -133,7 +133,8 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
         var node = new ReferenceGraphNode(displayText, identity, glyph, NodeRole.Symbol, locations: locations, parent: parent)
         { IsLoaded = true, _signature = signature };
 
-        if (node.Locations.Count > 1) node.Children.Add(node.BuildLocationsBranch());
+        // A metadata row opens decompiled source on double-click, so even a single call site needs a row of its own.
+        if (node.Locations.Count > 1 || (node.IsFromMetadata && node.Locations.Count == 1)) node.Children.Add(node.BuildLocationsBranch());
 
         if (analyzable && analyzers != null)
             foreach (var kind in analyzers)
