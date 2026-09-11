@@ -2,6 +2,7 @@ using System.Linq;
 using System.Threading.Tasks;
 
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 using RoslynQuery.ReferenceGraph;
 
@@ -287,6 +288,66 @@ public class ReferenceAnalyzersTests
         var ns = compilation.GlobalNamespace.GetNamespaceMembers().Single(n => n.Name == "N");
 
         Assert.Equal([ReferenceAnalyzerKind.UsedBy, ReferenceAnalyzerKind.Contains], ReferenceAnalyzers.For(ns));
+    }
+
+    private const string LocalsSource = """
+        class Holder<TItem>
+        {
+            int Pick(int count)
+            {
+                var running = count;
+                int Helper(int seed) => seed + running;
+                System.Func<int, int> lambda = x => x;
+                return Helper(running);
+            }
+        }
+        """;
+
+    private static async Task<(SemanticModel Model, SyntaxNode Root)> LocalsAsync()
+    {
+        var document = TestSolutions.Create(("Locals.cs", LocalsSource)).Projects.Single().Documents.Single();
+
+        return (await document.GetSemanticModelAsync(TestContext.Current.CancellationToken),
+            await document.GetSyntaxRootAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task LocalAndParameter_GetAssignedByAndReadBy()
+    {
+        var (model, root) = await LocalsAsync();
+        var local = model.GetDeclaredSymbol(root.DescendantNodes().OfType<VariableDeclaratorSyntax>().First(v => v.Identifier.Text == "running"), TestContext.Current.CancellationToken);
+        var parameter = model.GetDeclaredSymbol(root.DescendantNodes().OfType<ParameterSyntax>().First(p => p.Identifier.Text == "count"), TestContext.Current.CancellationToken);
+
+        Assert.Equal([ReferenceAnalyzerKind.AssignedBy, ReferenceAnalyzerKind.ReadBy], ReferenceAnalyzers.For(local));
+        Assert.Equal([ReferenceAnalyzerKind.AssignedBy, ReferenceAnalyzerKind.ReadBy], ReferenceAnalyzers.For(parameter));
+    }
+
+    [Fact]
+    public async Task TypeParameter_GetsUsedBy()
+    {
+        var (model, root) = await LocalsAsync();
+        var typeParameter = model.GetDeclaredSymbol(root.DescendantNodes().OfType<TypeParameterSyntax>().Single(), TestContext.Current.CancellationToken);
+
+        Assert.Equal([ReferenceAnalyzerKind.UsedBy], ReferenceAnalyzers.For(typeParameter));
+    }
+
+    [Fact]
+    public async Task LocalFunction_GetsUsesAndUsedBy()
+    {
+        var (model, root) = await LocalsAsync();
+        var function = model.GetDeclaredSymbol(root.DescendantNodes().OfType<LocalFunctionStatementSyntax>().Single(), TestContext.Current.CancellationToken);
+
+        Assert.Equal([ReferenceAnalyzerKind.Uses, ReferenceAnalyzerKind.UsedBy], ReferenceAnalyzers.For(function));
+    }
+
+    /// <summary>Nothing can refer to a lambda, so it offers Uses alone.</summary>
+    [Fact]
+    public async Task Lambda_GetsUsesOnly()
+    {
+        var (model, root) = await LocalsAsync();
+        var lambda = model.GetSymbolInfo(root.DescendantNodes().OfType<SimpleLambdaExpressionSyntax>().Single(), TestContext.Current.CancellationToken).Symbol;
+
+        Assert.Equal([ReferenceAnalyzerKind.Uses], ReferenceAnalyzers.For(lambda));
     }
 
     [Fact]

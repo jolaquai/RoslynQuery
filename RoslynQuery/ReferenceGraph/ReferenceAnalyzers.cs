@@ -27,6 +27,20 @@ internal static class ReferenceAnalyzers
                 when method.MethodKind == MethodKind.Constructor || method.MethodKind == MethodKind.StaticConstructor:
                 return [ReferenceAnalyzerKind.Uses, ReferenceAnalyzerKind.UsedBy];
 
+            case IMethodSymbol method when method.MethodKind == MethodKind.LocalFunction:
+                return [ReferenceAnalyzerKind.Uses, ReferenceAnalyzerKind.UsedBy];
+
+            // Nothing can refer to a lambda, so Used By could only ever be empty.
+            case IMethodSymbol method when method.MethodKind == MethodKind.AnonymousFunction:
+                return [ReferenceAnalyzerKind.Uses];
+
+            case ILocalSymbol _:
+            case IParameterSymbol _:
+                return [ReferenceAnalyzerKind.AssignedBy, ReferenceAnalyzerKind.ReadBy];
+
+            case ITypeParameterSymbol _:
+                return [ReferenceAnalyzerKind.UsedBy];
+
             // An enum member is a field that cannot be written, so Assigned By could only ever be empty.
             case IFieldSymbol enumMember when enumMember.ContainingType?.TypeKind == TypeKind.Enum:
                 return [ReferenceAnalyzerKind.Uses, ReferenceAnalyzerKind.ReadBy];

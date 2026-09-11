@@ -93,24 +93,50 @@ public class SymbolResolverTests
     }
 
     [Fact]
-    public async Task Resolve_OnLocalDeclaration_ReturnsNull() =>
-        Assert.Null(await ResolveAsync("class C { void M() { int $$local = 1; } }"));
+    public async Task Resolve_OnLocalDeclaration_ReturnsTheLocal()
+    {
+        var symbol = await ResolveAsync("class C { void M() { int $$local = 1; } }");
+
+        Assert.Equal(SymbolKind.Local, symbol.Kind);
+        Assert.Equal("local", symbol.Name);
+    }
+
+    /// <summary>The local is the answer, not the method around it.</summary>
+    [Fact]
+    public async Task Resolve_OnLocalUsage_ReturnsTheLocalNotTheEnclosingMethod() =>
+        Assert.Equal(SymbolKind.Local, (await ResolveAsync("class C { void M() { int local = 1; local = $$local + 1; } }")).Kind);
 
     [Fact]
-    public async Task Resolve_OnLocalUsage_DoesNotFallBackToEnclosingMethod() =>
-        Assert.Null(await ResolveAsync("class C { void M() { int local = 1; local = $$local + 1; } }"));
+    public async Task Resolve_OnArgumentThatIsALocal_ReturnsTheLocalNotTheCall() =>
+        Assert.Equal(SymbolKind.Local, (await ResolveAsync("class C { void M() { int local = 1; Take($$local); } void Take(int x) { } }")).Kind);
 
     [Fact]
-    public async Task Resolve_OnArgumentThatIsALocal_DoesNotDriftToTheCall() =>
-        Assert.Null(await ResolveAsync("class C { void M() { int local = 1; Take($$local); } void Take(int x) { } }"));
+    public async Task Resolve_OnParameterDeclaration_ReturnsTheParameter()
+    {
+        var symbol = await ResolveAsync("class C { void M(int $$p) { } }");
+
+        Assert.Equal(SymbolKind.Parameter, symbol.Kind);
+        Assert.Equal("p", symbol.Name);
+    }
 
     [Fact]
-    public async Task Resolve_OnParameterDeclaration_ReturnsNull() =>
-        Assert.Null(await ResolveAsync("class C { void M(int $$p) { } }"));
+    public async Task Resolve_OnLocalFunctionName_ReturnsTheLocalFunction() =>
+        Assert.Equal(MethodKind.LocalFunction, Assert.IsAssignableFrom<IMethodSymbol>(
+            await ResolveAsync("class C { void M() { void $$Inner() { } Inner(); } }")).MethodKind);
 
     [Fact]
-    public async Task Resolve_OnLocalFunctionName_ReturnsNull() =>
-        Assert.Null(await ResolveAsync("class C { void M() { void $$Inner() { } Inner(); } }"));
+    public async Task Resolve_OnALambdaArrow_ReturnsTheLambda() =>
+        Assert.Equal(MethodKind.AnonymousFunction, Assert.IsAssignableFrom<IMethodSymbol>(
+            await ResolveAsync("class C { void M() { System.Func<int, int> f = x =$$> x; } }")).MethodKind);
+
+    [Fact]
+    public async Task Resolve_OnATypeParameterDeclaration_ReturnsTheTypeParameter()
+    {
+        var symbol = await ResolveAsync("class C<$$T> { }");
+
+        Assert.Equal(SymbolKind.TypeParameter, symbol.Kind);
+        Assert.Equal("T", symbol.Name);
+    }
 
     [Fact]
     public async Task Resolve_OnANamespaceDeclarationName_ReturnsTheNamespace()

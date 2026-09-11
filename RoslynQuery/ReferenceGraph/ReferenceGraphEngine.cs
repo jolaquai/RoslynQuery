@@ -116,8 +116,8 @@ internal static class ReferenceGraphEngine
     {
         switch (analyzer)
         {
-            // Every occurrence of a namespace classifies as a type reference, which the member mask excludes.
-            case ReferenceAnalyzerKind.UsedBy when target is INamespaceSymbol:
+            // Every occurrence of a namespace or a type parameter classifies as a type reference, which the member mask excludes.
+            case ReferenceAnalyzerKind.UsedBy when target is INamespaceSymbol || target is ITypeParameterSymbol:
                 return (ReferenceUsageKind.TypeReference, null);
             case ReferenceAnalyzerKind.UsedBy:
                 return (ReferenceUsageKind.Invocation | ReferenceUsageKind.Read | ReferenceUsageKind.Write, null);
@@ -351,7 +351,7 @@ internal static class ReferenceGraphEngine
 
     private static ISymbol Normalize(ISymbol symbol)
     {
-        while (symbol != null && !SymbolResolver.IsGraphTarget(symbol)) symbol = symbol.ContainingSymbol;
+        while (symbol != null && !SymbolResolver.IsAttributionTarget(symbol)) symbol = symbol.ContainingSymbol;
 
         // An accessor is shown as the property or event it belongs to, the way Call Hierarchy does.
         if (symbol is IMethodSymbol method && method.AssociatedSymbol != null) return method.AssociatedSymbol;

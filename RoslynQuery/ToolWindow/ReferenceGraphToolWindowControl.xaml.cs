@@ -104,7 +104,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
 
         if (symbol is null || solution is null)
         {
-            SetError("There is no method, property, field, event or type at the caret.");
+            SetError("Nothing at the caret can root a reference graph.");
             return;
         }
 
