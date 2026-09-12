@@ -142,6 +142,27 @@ public class ReferenceGraphOptionsTests
     }
 
     [Fact]
+    public void TheDefaultScope_IsAStoredScopeKindStartingAtCurrentProject()
+    {
+        var property = Property("DefaultScope");
+
+        Assert.Equal("ScopeKind", property.Type.ToString());
+        Assert.Equal("ScopeKind.Project", Attribute(property, "DefaultValue").ArgumentList.Arguments[0].ToString());
+        Assert.Equal("ScopeKind.Project", property.Initializer?.Value.ToString());
+        Assert.Equal("Tool Window Defaults", ((LiteralExpressionSyntax)Attribute(property, "Category").ArgumentList.Arguments[0].Expression).Token.ValueText);
+    }
+
+    /// <summary>Mirrors the query window, whose combos all start on their configured default.</summary>
+    [Fact]
+    public void TheWindow_StartsItsScopeComboOnTheConfiguredDefault()
+    {
+        var control = RepositoryFiles.Read(@"RoslynQuery\ToolWindow\ReferenceGraphToolWindowControl.xaml.cs");
+
+        Assert.Contains("options?.DefaultScope ?? ScopeKind.Project", control);
+        Assert.DoesNotContain("ScopeCombo.SelectedIndex = 1;", control);
+    }
+
+    [Fact]
     public void ApplyingThePage_ReArmsTheIlspySearch()
     {
         var apply = Page().Members.OfType<MethodDeclarationSyntax>().Single(m => m.Identifier.Text == "OnApply");
