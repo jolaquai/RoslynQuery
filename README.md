@@ -179,17 +179,32 @@ points at, so an eviction only guarantees that re-running that predicate emits a
 assembly for text that already has one. A cap there would accelerate the leak it looks like it
 bounds, and it would do it worst to the queries you return to most.
 
+That is also why the row's own drop button only hides the row. The compiled delegate stays cached, so
+pasting the same predicate back in later costs nothing and leaks nothing. Hidden rows come back on the
+next Visual Studio session, since the cache behind them is per-process anyway.
+
 ### Favorites
 
-Hovering a sidebar row reveals a star. Starring one writes it to
-`%LocalAppData%\RoslynQuery\favorites.tsv`, and favorites are listed above the rest of the sidebar
-on every load, whether or not the compile cache still holds them. That is a text-only record: a
-restored favorite compiles on its first run of a session like any other predicate.
+Hovering a sidebar row reveals three buttons: a star, a pencil and a cross.
+
+The **star** writes the row to `%LocalAppData%\RoslynQuery\favorites.tsv`, and favorites are listed
+above the rest of the sidebar on every load, whether or not the compile cache still holds them. That is
+a text-only record: a restored favorite compiles on its first run of a session like any other predicate.
 
 There is no limit and nothing is evicted: every star is a deliberate click, so the only thing a cap
 could do is throw away a query you meant to keep. They are listed most recently starred first. The
 list re-sorts on the next run rather than under the cursor, so an accidental star can be clicked
 straight back off.
+
+The **pencil** renames the row in place. The box starts on the text the row currently shows, so a name
+is an edit of the predicate rather than a blank field; Enter commits, Escape abandons, and clicking away
+commits. A named row shows the name where the predicate was and keeps the predicate as its tooltip, and
+double-clicking still restores the predicate itself. Clearing the box, or typing the predicate back
+verbatim, drops the name. A name is stored next to the star, so it lasts across restarts while the row
+is starred and only for the session otherwise.
+
+The **cross** drops the row from the sidebar, unstarring it if it was starred. It deliberately leaves
+the compiled delegate in the cache; see above.
 
 The **Replace** tab sits next to Search and shares its Find box, Target, Scope and Cap - there is
 one query, and Replace runs it itself rather than requiring a prior Search run.
