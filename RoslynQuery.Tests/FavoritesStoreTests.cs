@@ -239,13 +239,28 @@ public sealed class FavoritesStoreTests : IDisposable
     }
 
     [Theory]
+    // A version this extension does not know, a foreign format, and two stamps that are not a version at all.
     [InlineData("roslynquery-favorites\t99")]
-    [InlineData("roslynquery-favorites\t1")]
-    public void Load_UnrecognizedHeader_YieldsNothing(string header)
+    [InlineData("roslynquery-favorites\t0")]
+    [InlineData("something-else\t1")]
+    [InlineData("roslynquery-favorites")]
+    [InlineData("roslynquery-favorites\tx")]
+    [InlineData("roslynquery-favorites\t1\textra")]
+    public void Load_AStampItCannotRead_YieldsNothing(string header)
     {
         WriteRaw(header + "\r\nSyntaxNode\tExpression\tn != null\t\r\n");
 
         Assert.Empty(FavoritesStore.All);
+    }
+
+    [Fact]
+    public void Load_TheCurrentStamp_IsVersionOne()
+    {
+        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
+
+        var lines = File.ReadAllLines(Path.Combine(_directory, "favorites.tsv"));
+
+        Assert.Equal("roslynquery-favorites\t1", lines[0]);
     }
 
     [Fact]
@@ -290,7 +305,7 @@ public sealed class FavoritesStoreTests : IDisposable
         Assert.Null(Assert.Single(FavoritesStore.All).Name);
     }
 
-    private const string Header = "roslynquery-favorites\t2";
+    private const string Header = "roslynquery-favorites\t1";
 
     private void WriteRaw(string contents)
     {
