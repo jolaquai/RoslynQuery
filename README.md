@@ -17,10 +17,15 @@ be analyzed in turn.
   - [Contents](#contents)
   - [Using it](#using-it)
     - [Examples](#examples)
+      - [SyntaxNode, syntax only](#syntaxnode-syntax-only)
+      - [SyntaxNode, with the semantic model](#syntaxnode-with-the-semantic-model)
+      - [SyntaxNode, statement bodies](#syntaxnode-statement-bodies)
+      - [SyntaxToken](#syntaxtoken)
+      - [IOperation](#ioperation)
+      - [Using `doc` and `await`](#using-doc-and-await)
     - [Keys](#keys)
     - [Query history](#query-history)
     - [Favorites](#favorites)
-  - [Replace](#replace)
   - [Reference Graph](#reference-graph)
     - [Branches](#branches)
     - [Symbols from referenced assemblies](#symbols-from-referenced-assemblies)
@@ -41,6 +46,8 @@ be analyzed in turn.
 >
 > The fastest loop is: put the caret on an example of what you are hunting, read the node type out of the
 > Syntax Visualizer, then write the `is`-pattern for it.
+>
+> For concrete examples (which the tests project in this repo compile-check), refer to the [Examples](#examples) below.
 
 The window has two tabs, **Search** and **Replace**, sharing one Find box and one set of
 Target/Scope/Cap/Generated settings between them. Search browses and navigates; Replace, described
@@ -51,7 +58,7 @@ Pick a **Target**, pick a **Scope**, type a predicate, press Enter (or Run).
 The signature line above the box tells you what is in scope:
 
 | Target      | Predicate signature                                                          |
-| ----------- | ----------------------------------------------------------------------------- |
+| ----------- | ---------------------------------------------------------------------------- |
 | SyntaxNode  | `async ValueTask<object> (SyntaxNode n, SemanticModel model, Document doc)`  |
 | SyntaxToken | `async ValueTask<object> (SyntaxToken t, SemanticModel model, Document doc)` |
 | IOperation  | `async ValueTask<object> (IOperation op, SemanticModel model, Document doc)` |
@@ -431,22 +438,22 @@ override offers several. Opening a branch runs its search, and the header then r
 `Used By (18 in 931 ms)`: how many results it found and how long that took. A branch that finds
 nothing keeps its header but loses its expander.
 
-| Branch            | What is under it                                                        | Offered on                                                            |
-| ----------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Uses              | What the symbol's own declaration references                            | Members, types, local functions, lambdas                              |
-| Used By           | The declarations that reference it                                      | Methods, properties, events, types, namespaces, type parameters, local functions |
-| Read By           | The declarations that read it                                           | Fields, enum members, locals, parameters                              |
-| Assigned By       | The declarations that write it                                          | Fields, locals, parameters                                            |
-| Instantiated By   | The declarations that construct it                                      | Classes, structs, delegates                                           |
-| Exposed By        | The members whose signature names it - a parameter, return or member type, or a base list | Types                                      |
-| Applied To        | The declarations it is applied to as an attribute                       | Attribute classes                                                     |
-| Overrides         | The member it overrides, then that member's own base, nearest first     | Overrides                                                             |
-| Overridden By     | Every override below it                                                 | Virtual, abstract and unsealed override members                       |
-| Implements        | The interface members it implements                                     | Members that implement an interface                                   |
-| Implemented By    | The members or types that implement it                                  | Interfaces and interface members                                      |
-| Derived Types     | Every class or interface that derives from it                           | Classes and interfaces                                                |
-| Extension Methods | The extension methods that apply to it                                  | Types                                                                 |
-| Contains          | Its sub-namespaces, then its types                                      | Namespaces                                                            |
+| Branch            | What is under it                                                                          | Offered on                                                                       |
+| ----------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Uses              | What the symbol's own declaration references                                              | Members, types, local functions, lambdas                                         |
+| Used By           | The declarations that reference it                                                        | Methods, properties, events, types, namespaces, type parameters, local functions |
+| Read By           | The declarations that read it                                                             | Fields, enum members, locals, parameters                                         |
+| Assigned By       | The declarations that write it                                                            | Fields, locals, parameters                                                       |
+| Instantiated By   | The declarations that construct it                                                        | Classes, structs, delegates                                                      |
+| Exposed By        | The members whose signature names it - a parameter, return or member type, or a base list | Types                                                                            |
+| Applied To        | The declarations it is applied to as an attribute                                         | Attribute classes                                                                |
+| Overrides         | The member it overrides, then that member's own base, nearest first                       | Overrides                                                                        |
+| Overridden By     | Every override below it                                                                   | Virtual, abstract and unsealed override members                                  |
+| Implements        | The interface members it implements                                                       | Members that implement an interface                                              |
+| Implemented By    | The members or types that implement it                                                    | Interfaces and interface members                                                 |
+| Derived Types     | Every class or interface that derives from it                                             | Classes and interfaces                                                           |
+| Extension Methods | The extension methods that apply to it                                                    | Types                                                                            |
+| Contains          | Its sub-namespaces, then its types                                                        | Namespaces                                                                       |
 
 Every result is a symbol of its own and offers its own branches, so the tree can be followed as far as
 it goes: from a method into what it uses, from one of those into what uses it, and on from there. A
@@ -515,13 +522,13 @@ The scope the window starts on is configurable; see `Default scope` below.
 
 `Tools > Options > RoslynQuery > Reference Graph` holds:
 
-| Setting | Meaning |
-| --- | --- |
-| `Default scope` | The scope the Scope box starts on each time the window loads. Defaults to `Current project`. |
-| `Open metadata symbols in` | `Open in ILSpy` (the default) or `Decompile in Visual Studio`. |
-| `ILSpy path` | Full path to `ILSpy.exe`. Empty means search for one once per session. A path that does not exist raises a message box rather than being ignored. |
-| `Enable IL analysis` | Not available yet - shown disabled, does nothing. |
-| `Enable reverse IL analysis` | Not available yet - shown disabled, does nothing. |
+| Setting                      | Meaning                                                                                                                                           |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Default scope`              | The scope the Scope box starts on each time the window loads. Defaults to `Current project`.                                                      |
+| `Open metadata symbols in`   | `Open in ILSpy` (the default) or `Decompile in Visual Studio`.                                                                                    |
+| `ILSpy path`                 | Full path to `ILSpy.exe`. Empty means search for one once per session. A path that does not exist raises a message box rather than being ignored. |
+| `Enable IL analysis`         | Not available yet - shown disabled, does nothing.                                                                                                 |
+| `Enable reverse IL analysis` | Not available yet - shown disabled, does nothing.                                                                                                 |
 
 The two IL analysis settings would read the IL of framework methods so that `Uses` could continue past
 your source and `Used By` could report framework callers.
