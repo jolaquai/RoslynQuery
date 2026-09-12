@@ -309,9 +309,10 @@ it says so rather than open an empty stub. A metadata row's call sites in your o
 through its `Locations` row.
 
 ILSpy is found automatically: a standalone install first, then the copy inside the ILSpy extension for
-Visual Studio. Set `ILSpy path` if yours lives somewhere else. Launches reuse one ILSpy window rather
-than opening a new one each time. When no ILSpy is installed at all, the row is decompiled in Visual
-Studio instead and the status line says so.
+Visual Studio. That search runs once per session, so set `ILSpy path` if yours lives somewhere else.
+Launches reuse one ILSpy window rather than opening a new one each time. When no ILSpy can be found, or
+when `ILSpy path` points at something that is not there, a message box says so rather than quietly
+decompiling instead; changing either setting re-runs the search.
 
 Switching `Open metadata symbols in` to Visual Studio opens **decompiled source** in a read-only editor
 tab instead, decompiled by the ICSharpCode.Decompiler that Visual Studio itself ships. That file opens
@@ -330,14 +331,17 @@ the row being expanded, not from wherever the caret happens to be at the time.
 flight and clears every expanded branch, since a cancelled search may have left it stale; expand a
 branch again to re-read it.
 
+The scope the window starts on is configurable; see `Default scope` below.
+
 ### Settings
 
 `Tools > Options > RoslynQuery > Reference Graph` holds:
 
 | Setting | Meaning |
 | --- | --- |
+| `Default scope` | The scope the Scope box starts on each time the window loads. Defaults to `Current project`. |
 | `Open metadata symbols in` | `Open in ILSpy` (the default) or `Decompile in Visual Studio`. |
-| `ILSpy path` | Full path to `ILSpy.exe`. Empty means search for one; a path that does not exist is reported rather than ignored. |
+| `ILSpy path` | Full path to `ILSpy.exe`. Empty means search for one once per session. A path that does not exist raises a message box rather than being ignored. |
 | `Enable IL analysis` | Not available yet - shown disabled, does nothing. |
 | `Enable reverse IL analysis` | Not available yet - shown disabled, does nothing. |
 
