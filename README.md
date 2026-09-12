@@ -108,14 +108,9 @@ if (m is null) return false;
 return m.Body?.Statements.Count > 20;
 ```
 
-Predicates are compiled `async`, so you can `await` inside one:
-
-```csharp
-(await doc.GetSyntaxRootAsync()).DescendantNodes().Count() > 500
-```
-
-Awaiting is worth it only for something a predicate cannot get synchronously - it runs once per
-node, so an `await` on a hot path costs you across the whole scope.
+Predicates are compiled `async`, so you can `await` inside one. Awaiting is worth it only for something
+a predicate cannot get synchronously - it runs once per node, so an `await` on a hot path costs you
+across the whole scope. There is an example under [Examples](#examples).
 
 Scopes: containing member, containing type, current document, current project, solution. The three
 narrow ones are resolved from the caret in the last active code window.
