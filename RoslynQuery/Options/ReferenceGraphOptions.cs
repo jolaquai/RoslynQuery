@@ -3,12 +3,20 @@ using System.ComponentModel;
 using Microsoft.VisualStudio.Shell;
 
 using RoslynQuery.Navigation;
+using RoslynQuery.Query;
 
 namespace RoslynQuery.Options;
 
 /// <summary>Tools &gt; Options &gt; RoslynQuery &gt; Reference Graph.</summary>
 public sealed class ReferenceGraphOptions : DialogPage
 {
+    [Category("Tool Window Defaults")]
+    [DisplayName("Default scope")]
+    [Description("The scope the Reference Graph window's Scope box starts on each time it loads.")]
+    [DefaultValue(ScopeKind.Project)]
+    [TypeConverter(typeof(ReferenceGraphScopeConverter))]
+    public ScopeKind DefaultScope { get; set; } = ScopeKind.Project;
+
     [Category("Metadata symbols")]
     [DisplayName("Open metadata symbols in")]
     [Description("What opens when you activate a row that came from a referenced assembly. ILSpy shows the symbol in its own assembly tree, where the whole assembly is browsable. Visual Studio decompiles the containing type into a temporary file and opens that in the editor. When no ILSpy can be found, Visual Studio is used and the status line says so.")]

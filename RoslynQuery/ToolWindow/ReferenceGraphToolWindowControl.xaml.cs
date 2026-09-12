@@ -74,13 +74,19 @@ public partial class ReferenceGraphToolWindowControl : UserControl
 
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        ScopeCombo.ItemsSource = new[]
+        var options = Options();
+
+        var scopeChoices = new[]
         {
             new Choice<ScopeKind>("Current document", ScopeKind.Document),
             new Choice<ScopeKind>("Current project", ScopeKind.Project),
             new Choice<ScopeKind>("My solution", ScopeKind.Solution)
         };
-        ScopeCombo.SelectedIndex = 1;
+        ScopeCombo.ItemsSource = scopeChoices;
+
+        // A persisted scope the combo does not offer falls back to Current project rather than to index 0.
+        var scope = Array.FindIndex(scopeChoices, c => c.Value == (options?.DefaultScope ?? ScopeKind.Project));
+        ScopeCombo.SelectedIndex = scope >= 0 ? scope : 1;
 
         var componentModel = Package.GetGlobalService(typeof(SComponentModel)) as IComponentModel;
         _workspace = componentModel?.GetService<VisualStudioWorkspace>();
