@@ -68,6 +68,13 @@ The signature line above the box tells you what is in scope:
 `Microsoft.CodeAnalysis`, `.CSharp`, `.CSharp.Syntax`, `.Operations` and `.Text` are already
 imported.
 
+The index and range operators work: `parameters[^1]` for the last parameter, `text[1..3]` for a slice.
+The extension targets .NET Framework, which has no `System.Index` or `System.Range`, so each predicate
+carries its own copy of those two types. One gap comes with that: slicing an *array* (`chars[1..3]`)
+needs a compiler helper only the framework itself can supply and fails to compile. Indexing an array
+from the end (`chars[^1]`) is fine, as is slicing a `string` or an `ImmutableArray`, and LINQ
+(`.Skip(1).Take(2)`) covers the rest.
+
 Despite the `object` return, a predicate is still ordinarily written as a plain `bool`
 expression/body - `true` means match, `false` and `null` both mean no match. The one other thing
 you can return is the parameter's own type (`SyntaxNode` for a SyntaxNode search, `SyntaxToken` for
@@ -158,6 +165,14 @@ Counting members finds types that have outgrown their file:
 
 ```csharp
 n is ClassDeclarationSyntax c && c.Members.OfType<MethodDeclarationSyntax>().Count() > 20
+```
+
+`^1` reaches the last element without the `Count - 1` dance. A method whose last parameter is
+`CancellationToken`, the convention most analyzers want enforced:
+
+```csharp
+n is MethodDeclarationSyntax ct && ct.ParameterList.Parameters.Count > 0
+    && ct.ParameterList.Parameters[^1].Type?.ToString() == "CancellationToken"
 ```
 
 Trivia hangs off nodes as well as tokens, so a `TODO` anywhere in a file is one query:
