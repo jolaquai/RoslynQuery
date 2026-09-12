@@ -17,6 +17,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.LanguageServices;
 using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Threading;
 
 using RoslynQuery.Navigation;
@@ -242,7 +243,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         return RoslynQueryPackage.Instance?.GetDialogPage(typeof(ReferenceGraphOptions)) as ReferenceGraphOptions;
     }
 
-    /// <summary>ILSpy is the default, but a configured path that is wrong is reported rather than worked around.</summary>
+    /// <summary>A missing ILSpy is raised rather than worked around: silently decompiling instead hides that the setting is wrong.</summary>
     private void NavigateToMetadata(ReferenceGraphNode node)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
@@ -257,19 +258,20 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         var configured = options?.IlspyPath;
         var ilspy = IlspyLocator.Find(configured);
 
-        if (ilspy != null)
+        if (ilspy is null)
         {
-            NavigateInIlspy(node, ilspy);
+            VsShellUtilities.ShowMessageBox(
+                ServiceProvider.GlobalProvider,
+                IlspyLocator.NotFoundMessage(configured),
+                "Reference Graph",
+                OLEMSGICON.OLEMSGICON_WARNING,
+                OLEMSGBUTTON.OLEMSGBUTTON_OK,
+                OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
+
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(configured))
-        {
-            SetError($"No ILSpy is at the configured path '{configured.Trim()}'. Correct it under Tools > Options > RoslynQuery > Reference Graph, or switch that page to Visual Studio.");
-            return;
-        }
-
-        NavigateToDecompiled(node, "No installed ILSpy was found.");
+        NavigateInIlspy(node, ilspy);
     }
 
     private void NavigateInIlspy(ReferenceGraphNode node, string ilspyPath)
@@ -321,7 +323,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
 #pragma warning restore VSSDK007
     }
 
-    private void NavigateToDecompiled(ReferenceGraphNode node, string note = null)
+    private void NavigateToDecompiled(ReferenceGraphNode node)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
@@ -384,9 +386,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
             SetError(failure ?? DocumentNavigator.Navigate(ServiceProvider.GlobalProvider, target));
-            StatusText.Text = failure is null
-                ? note is null ? $"Opened decompiled {name}." : $"{note} Opened decompiled {name} instead."
-                : string.Empty;
+            StatusText.Text = failure is null ? $"Opened decompiled {name}." : string.Empty;
         }).FileAndForget("vs/roslynquery/referencegraph/decompile");
 #pragma warning restore VSSDK007
     }

@@ -2,6 +2,8 @@ using System.ComponentModel;
 
 using Microsoft.VisualStudio.Shell;
 
+using RoslynQuery.Navigation;
+
 namespace RoslynQuery.Options;
 
 /// <summary>Tools &gt; Options &gt; RoslynQuery &gt; Reference Graph.</summary>
@@ -40,5 +42,12 @@ public sealed class ReferenceGraphOptions : DialogPage
     {
         get => false;
         set { }
+    }
+
+    /// <summary>Clearing or changing the path has to re-arm the one-shot autodetect.</summary>
+    protected override void OnApply(PageApplyEventArgs e)
+    {
+        base.OnApply(e);
+        IlspyLocator.Reset();
     }
 }

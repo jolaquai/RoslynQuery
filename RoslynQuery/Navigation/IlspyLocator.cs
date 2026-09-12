@@ -5,12 +5,38 @@ using System.Runtime.InteropServices;
 
 namespace RoslynQuery.Navigation;
 
-/// <summary>Finds an installed ILSpy. A standalone install wins over the copy inside the ILSpy extension for Visual Studio, which Visual Studio replaces on its own schedule.</summary>
+/// <summary>
+/// Finds ILSpy: the configured executable when one is set, otherwise one autodetected search, whose result
+/// is kept until <see cref="Reset"/>. A standalone install wins over the copy inside the ILSpy extension for
+/// Visual Studio, which Visual Studio replaces on its own schedule.
+/// </summary>
 internal static class IlspyLocator
 {
     private const string Executable = "ILSpy.exe";
 
-    /// <summary>The configured path when one is set, otherwise the first install found, otherwise null.</summary>
+    private const string Remedy =
+        "Set 'ILSpy path' under Tools > Options > RoslynQuery > Reference Graph, or change "
+        + "'Open metadata symbols in' to 'Decompile in Visual Studio'.";
+
+    private static readonly object Gate = new object();
+
+    private static bool _searched;
+    private static string _found;
+
+    /// <summary>Counts autodetect passes, so a test can prove the search runs once.</summary>
+    internal static int Searches { get; private set; }
+
+    /// <summary>Arms the autodetect again, for when the configured path changes or is cleared.</summary>
+    public static void Reset()
+    {
+        lock (Gate)
+        {
+            _searched = false;
+            _found = null;
+        }
+    }
+
+    /// <summary>The ILSpy to launch, or null when neither the configured path nor any install exists.</summary>
     public static string Find(string configured)
     {
         if (!string.IsNullOrWhiteSpace(configured))
@@ -19,6 +45,26 @@ internal static class IlspyLocator
             return Exists(trimmed) ? trimmed : null;
         }
 
+        lock (Gate)
+        {
+            if (_searched) return _found;
+
+            _searched = true;
+            Searches++;
+            _found = Search();
+
+            return _found;
+        }
+    }
+
+    /// <summary>What to tell the user when <see cref="Find"/> came back empty.</summary>
+    public static string NotFoundMessage(string configured) =>
+        string.IsNullOrWhiteSpace(configured)
+            ? "No ILSpy installation was found.\r\n\r\n" + Remedy
+            : "There is no ILSpy at the configured path:\r\n\r\n" + configured.Trim() + "\r\n\r\n" + Remedy;
+
+    private static string Search()
+    {
         foreach (var candidate in Candidates())
             if (Exists(candidate))
                 return candidate;
@@ -53,8 +99,8 @@ internal static class IlspyLocator
         if (programData != null) yield return Path.Combine(programData, "chocolatey", "lib", "ilspy", "tools", Executable);
 
         if (localAppData != null)
-            foreach (var path in Under(Path.Combine(localAppData, "Microsoft", "WinGet", "Packages"), Executable))
-                yield return path;
+            foreach (var directory in Directories(Path.Combine(localAppData, "Microsoft", "WinGet", "Packages")))
+                yield return Path.Combine(directory, Executable);
 
         foreach (var path in OnSearchPath()) yield return path;
 
@@ -115,12 +161,6 @@ internal static class IlspyLocator
 
         yield return Path.Combine(directory, native, "ILSpy", Executable);
         yield return Path.Combine(directory, native == "x64" ? "arm64" : "x64", "ILSpy", Executable);
-    }
-
-    private static IEnumerable<string> Under(string root, string fileName)
-    {
-        foreach (var directory in Directories(root))
-            yield return Path.Combine(directory, fileName);
     }
 
     private static IEnumerable<string> Directories(string path)
