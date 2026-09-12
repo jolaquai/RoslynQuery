@@ -264,6 +264,108 @@ public class CachedPredicateItemTests
     }
 
     [Fact]
+    public void BeginEdit_OnAnUnnamedRow_SeedsTheWholePredicate()
+    {
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null");
+
+        item.BeginEdit();
+
+        Assert.True(item.IsEditing);
+        Assert.Equal("n != null", item.EditText);
+    }
+
+    [Fact]
+    public void BeginEdit_OnANamedRow_SeedsTheName()
+    {
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null", name: "Named");
+
+        item.BeginEdit();
+
+        Assert.Equal("Named", item.EditText);
+    }
+
+    /// <summary>Display is truncated, so seeding from it would turn a clipped predicate into the row's name.</summary>
+    [Fact]
+    public void BeginEdit_OnALongPredicate_SeedsTheUntruncatedText()
+    {
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, LongExpression());
+
+        item.BeginEdit();
+
+        Assert.Equal(item.Pretty, item.EditText);
+        Assert.DoesNotContain("...", item.EditText);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void CommitEdit_AnEmptiedBox_BringsTheDefaultBack(string emptied)
+    {
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null", name: "Named");
+
+        item.BeginEdit();
+        item.EditText = emptied;
+        item.CommitEdit();
+
+        Assert.Null(item.Name);
+        Assert.Equal("n != null", item.Display);
+        Assert.Null(item.Tooltip);
+        Assert.False(item.IsEditing);
+    }
+
+    [Fact]
+    public void CommitEdit_ThePredicateTypedBackUnchanged_IsNotAName()
+    {
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null", name: "Named");
+
+        item.BeginEdit();
+        item.EditText = "  n != null  ";
+        item.CommitEdit();
+
+        Assert.Null(item.Name);
+        Assert.Equal("n != null", item.Display);
+    }
+
+    /// <summary>Seeding untruncated is only half of it: committing that seed unchanged must also leave no name.</summary>
+    [Fact]
+    public void CommitEdit_ALongPredicateLeftUnchanged_IsNotAName()
+    {
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, LongExpression());
+
+        item.BeginEdit();
+        item.CommitEdit();
+
+        Assert.Null(item.Name);
+        Assert.Null(item.Tooltip);
+    }
+
+    [Fact]
+    public void CommitEdit_ARealName_IsKeptTrimmed()
+    {
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null");
+
+        item.BeginEdit();
+        item.EditText = "  Non-null nodes  ";
+        item.CommitEdit();
+
+        Assert.Equal("Non-null nodes", item.Name);
+        Assert.Equal("Non-null nodes", item.Display);
+        Assert.Equal("n != null", item.Tooltip);
+    }
+
+    [Fact]
+    public void AbandoningAnEdit_LeavesTheNameAlone()
+    {
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null", name: "Named");
+
+        item.BeginEdit();
+        item.EditText = "abandoned";
+        item.IsEditing = false;
+
+        Assert.Equal("Named", item.Name);
+    }
+
+    [Fact]
     public void Constructor_CanStartFavorited()
     {
         var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null", isFavorite: true);

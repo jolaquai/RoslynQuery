@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 
 using Microsoft.CodeAnalysis.CSharp;
@@ -62,7 +63,18 @@ public class SidebarRowActionTests
     {
         var commit = Method(ControlPath, "CommitRename").ToString();
 
+        Assert.Contains("item.CommitEdit()", commit);
         Assert.Contains("item.IsFavorite", commit);
         Assert.Contains("FavoritesStore.Rename", commit);
+    }
+
+    /// <summary>A dropped row is hidden, not forgotten, so running its query again has to bring it back.</summary>
+    [Fact]
+    public void RunningAQuery_UnhidesItsRow()
+    {
+        var run = Method(ControlPath, "RunCoreAsync").ToString();
+        var before = run.Substring(0, run.IndexOf("await TaskScheduler.Default", StringComparison.Ordinal));
+
+        Assert.Contains("_hiddenRows.Remove(PredicateCompiler.KeyFor(target, expression))", before);
     }
 }

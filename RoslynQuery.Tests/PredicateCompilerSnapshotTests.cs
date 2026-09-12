@@ -29,6 +29,53 @@ public class PredicateCompilerSnapshotTests
             e => e.Kind == TargetKind.SyntaxNode && e.Mode == PredicateMode.Expression && e.Text.Contains(token.ToString()));
     }
 
+    // KeyFor is what lets the sidebar match a row to a cache entry without compiling. If it ever stops
+    // agreeing with the key Compile stores, a dropped history row silently stays dropped forever, so these
+    // match whole keys rather than a token substring.
+    [Theory]
+    [InlineData(TargetKind.SyntaxNode, "true   ||   {0} == -1")]
+    [InlineData(TargetKind.SyntaxToken, "true||{0}==-1")]
+    [InlineData(TargetKind.Operation, "return true || {0} == -1;")]
+    public void KeyFor_MatchesTheKeyCompileStored(TargetKind kind, string template)
+    {
+        var text = string.Format(template, UniqueToken());
+
+        PredicateCompiler.Compile(kind, text);
+
+        Assert.Contains(PredicateCompiler.KeyFor(kind, text), PredicateCompiler.Snapshot());
+    }
+
+    /// <summary>The same predicate spelled differently is one cache entry, so it has to be one key too.</summary>
+    [Fact]
+    public void KeyFor_IgnoresSpellingTheSameWayTheCacheDoes()
+    {
+        var token = UniqueToken();
+
+        Assert.Equal(
+            PredicateCompiler.KeyFor(TargetKind.SyntaxNode, $"true || {token} == -1"),
+            PredicateCompiler.KeyFor(TargetKind.SyntaxNode, $"true||{token}==-1"));
+    }
+
+    [Fact]
+    public void KeyFor_DetectsBodyModeTheSameWayCompileDoes()
+    {
+        var token = UniqueToken();
+
+        Assert.Equal(PredicateMode.Body, PredicateCompiler.KeyFor(TargetKind.SyntaxNode, $"return {token} != -1;").Mode);
+        Assert.Equal(PredicateMode.Expression, PredicateCompiler.KeyFor(TargetKind.SyntaxNode, $"{token} != -1").Mode);
+    }
+
+    [Fact]
+    public void KeyFor_SeparatesTargetKinds()
+    {
+        var token = UniqueToken();
+        var text = $"true || {token} == -1";
+
+        Assert.NotEqual(
+            PredicateCompiler.KeyFor(TargetKind.SyntaxNode, text),
+            PredicateCompiler.KeyFor(TargetKind.SyntaxToken, text));
+    }
+
     [Fact]
     public void Snapshot_MostRecentlyCompiledExpressionComesFirst()
     {
