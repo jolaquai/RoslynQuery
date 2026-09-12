@@ -301,13 +301,21 @@ lists `MemoryStream` and the rest. Such a row is marked `(metadata)`. It offers 
 `Uses`, since there is no source to read what it uses, and its `Used By` and similar branches find the
 uses in your own code.
 
-Double-clicking a metadata row opens its **decompiled source**, positioned on the member, in a read-only
-editor tab. A project references reference assemblies, which carry no method bodies, so the window
-first finds the implementation behind one - in the shared runtime for .NET, in the GAC for .NET
-Framework, beside it under `lib` for a NuGet package - and when there is none it says so rather than
-show an empty stub. Decompilation uses the ICSharpCode.Decompiler that Visual Studio itself ships. The
-decompiled file opens as an ordinary file, so the editor may underline types it cannot resolve. A
-metadata row's call sites in your own code stay reachable through its `Locations` row.
+Double-clicking a metadata row opens the symbol in **ILSpy**, positioned on the member. Either way of
+opening one needs the implementation assembly: a project references reference assemblies, which carry
+no method bodies, so the window first finds the implementation behind one - in the shared runtime for
+.NET, in the GAC for .NET Framework, beside it under `lib` for a NuGet package - and when there is none
+it says so rather than open an empty stub. A metadata row's call sites in your own code stay reachable
+through its `Locations` row.
+
+ILSpy is found automatically: a standalone install first, then the copy inside the ILSpy extension for
+Visual Studio. Set `ILSpy path` if yours lives somewhere else. Launches reuse one ILSpy window rather
+than opening a new one each time. When no ILSpy is installed at all, the row is decompiled in Visual
+Studio instead and the status line says so.
+
+Switching `Open metadata symbols in` to Visual Studio opens **decompiled source** in a read-only editor
+tab instead, decompiled by the ICSharpCode.Decompiler that Visual Studio itself ships. That file opens
+as an ordinary file, so the editor may underline types it cannot resolve.
 
 ### Scope
 
@@ -324,9 +332,17 @@ branch again to re-read it.
 
 ### Settings
 
-`Tools > Options > RoslynQuery > Reference Graph` holds two settings for IL analysis, which would read
-the IL of framework methods so that `Uses` could continue past your source and `Used By` could report
-framework callers. Neither is available yet: both are shown disabled and do nothing.
+`Tools > Options > RoslynQuery > Reference Graph` holds:
+
+| Setting | Meaning |
+| --- | --- |
+| `Open metadata symbols in` | `Open in ILSpy` (the default) or `Decompile in Visual Studio`. |
+| `ILSpy path` | Full path to `ILSpy.exe`. Empty means search for one; a path that does not exist is reported rather than ignored. |
+| `Enable IL analysis` | Not available yet - shown disabled, does nothing. |
+| `Enable reverse IL analysis` | Not available yet - shown disabled, does nothing. |
+
+The two IL analysis settings would read the IL of framework methods so that `Uses` could continue past
+your source and `Used By` could report framework callers.
 
 ## Building
 
