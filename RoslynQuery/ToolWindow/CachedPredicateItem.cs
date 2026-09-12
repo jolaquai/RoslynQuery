@@ -107,6 +107,23 @@ internal sealed class CachedPredicateItem : INotifyPropertyChanged
 
     public string Subtitle => Mode == PredicateMode.Body ? Kind + " (body)" : Kind.ToString();
 
+    /// <summary>
+    /// Starts an in-place rename. The editor seeds from the whole predicate rather than <see cref="Display"/>,
+    /// which is truncated: committing that unchanged would turn a clipped predicate into the row's name.
+    /// </summary>
+    public void BeginEdit()
+    {
+        EditText = _name ?? Pretty;
+        IsEditing = true;
+    }
+
+    /// <summary>Applies the editor's text. An emptied box, or the predicate typed back unchanged, means no name.</summary>
+    public void CommitEdit()
+    {
+        Name = string.Equals(_editText?.Trim(), Pretty, StringComparison.Ordinal) ? null : _editText;
+        IsEditing = false;
+    }
+
     private static string Normalize(string name) => string.IsNullOrWhiteSpace(name) ? null : name.Trim();
 
     private static string Truncate(string text) =>
