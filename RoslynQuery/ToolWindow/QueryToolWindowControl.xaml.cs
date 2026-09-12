@@ -276,8 +276,7 @@ public partial class QueryToolWindowControl : UserControl
 
         if ((sender as FrameworkElement)?.DataContext is not CachedPredicateItem item) return;
 
-        item.EditText = item.Display;
-        item.IsEditing = true;
+        item.BeginEdit();
     }
 
     /// <summary>
@@ -340,9 +339,7 @@ public partial class QueryToolWindowControl : UserControl
         // Escape already ended the edit, and collapsing the editor then raises LostKeyboardFocus.
         if (!item.IsEditing) return;
 
-        var name = item.EditText;
-        item.Name = string.Equals(name?.Trim(), item.Pretty, StringComparison.Ordinal) ? null : name;
-        item.IsEditing = false;
+        item.CommitEdit();
 
         if (item.IsFavorite) FavoritesStore.Rename(item.Kind, item.Mode, item.Text, item.Name);
     }
@@ -525,6 +522,10 @@ public partial class QueryToolWindowControl : UserControl
         var active = ScopeResolver.GetActiveContext(ServiceProvider.GlobalProvider);
         var solution = _workspace.CurrentSolution;
         _ranAgainst = new WeakReference<Solution>(solution);
+
+        // Running a dropped query is how it comes back: the row was hidden, not forgotten. Still on the
+        // UI thread here, which is the only thread _hiddenRows is touched from.
+        _hiddenRows.Remove(PredicateCompiler.KeyFor(target, expression));
 
         await TaskScheduler.Default;
 
