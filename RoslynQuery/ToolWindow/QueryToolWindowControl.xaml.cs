@@ -47,6 +47,9 @@ public partial class QueryToolWindowControl : UserControl
         """;
     private readonly ObservableCollection<QueryHit> _hits = [];
     private readonly ObservableCollection<CachedPredicateItem> _cachedPredicates = [];
+
+    // Rows the user dropped. Session-scoped on purpose: the compiler cache behind them is per-process too.
+    private readonly HashSet<(TargetKind Kind, PredicateMode Mode, string Text)> _hiddenRows = [];
     private readonly ObservableCollection<ReplacementItem> _replacements = [];
 
     private IComponentModel _componentModel;
@@ -262,8 +265,85 @@ public partial class QueryToolWindowControl : UserControl
         if ((sender as FrameworkElement)?.DataContext is not CachedPredicateItem item) return;
 
         item.IsFavorite = !item.IsFavorite;
-        if (item.IsFavorite) FavoritesStore.Add(item.Kind, item.Mode, item.Text);
+        if (item.IsFavorite) FavoritesStore.Add(item.Kind, item.Mode, item.Text, item.Name);
         else FavoritesStore.Remove(item.Kind, item.Mode, item.Text);
+    }
+
+    private void OnRenameClick(object sender, RoutedEventArgs e)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        if ((sender as FrameworkElement)?.DataContext is not CachedPredicateItem item) return;
+
+        item.EditText = item.Display;
+        item.IsEditing = true;
+    }
+
+    /// <summary>
+    /// Dropping a row never touches <see cref="PredicateCompiler"/>'s cache: on net472 the emitted assembly
+    /// cannot be unloaded, so evicting it reclaims nothing and re-running the same text would leak a second one.
+    /// </summary>
+    private void OnRemoveRowClick(object sender, RoutedEventArgs e)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        if ((sender as FrameworkElement)?.DataContext is not CachedPredicateItem item) return;
+
+        // Unstarred as well as hidden: a starred row would otherwise come back on the next refresh.
+        if (item.IsFavorite) FavoritesStore.Remove(item.Kind, item.Mode, item.Text);
+
+        _hiddenRows.Add((item.Kind, item.Mode, item.Text));
+        _cachedPredicates.Remove(item);
+    }
+
+    /// <summary>Not Loaded: a virtualizing list reuses the same editor, which loads once but is shown many times.</summary>
+    private void OnRenameEditorVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        var editor = (TextBox)sender;
+        if (!editor.IsVisible) return;
+
+        editor.Focus();
+        editor.SelectAll();
+    }
+
+    private void OnRenameEditorKeyDown(object sender, KeyEventArgs e)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        if (((TextBox)sender).DataContext is not CachedPredicateItem item) return;
+
+        if (e.Key == Key.Enter)
+        {
+            e.Handled = true;
+            CommitRename(item);
+        }
+        else if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            item.IsEditing = false;
+        }
+    }
+
+    private void OnRenameEditorLostFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        if (((TextBox)sender).DataContext is CachedPredicateItem item) CommitRename(item);
+    }
+
+    /// <summary>A name matching the predicate, or an emptied box, clears the label rather than storing it.</summary>
+    private void CommitRename(CachedPredicateItem item)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        // Escape already ended the edit, and collapsing the editor then raises LostKeyboardFocus.
+        if (!item.IsEditing) return;
+
+        var name = item.EditText;
+        item.Name = string.Equals(name?.Trim(), item.Pretty, StringComparison.Ordinal) ? null : name;
+        item.IsEditing = false;
+
+        if (item.IsFavorite) FavoritesStore.Rename(item.Kind, item.Mode, item.Text, item.Name);
     }
 
     private static bool IsWithinButton(object originalSource)
@@ -313,12 +393,12 @@ public partial class QueryToolWindowControl : UserControl
         ThreadHelper.ThrowIfNotOnUIThread();
 
         _cachedPredicates.Clear();
-        var seen = new HashSet<(TargetKind, PredicateMode, string)>();
+        var seen = new HashSet<(TargetKind, PredicateMode, string)>(_hiddenRows);
 
-        foreach (var (kind, mode, text) in FavoritesStore.All)
+        foreach (var entry in FavoritesStore.All)
         {
-            if (seen.Add((kind, mode, text)))
-                _cachedPredicates.Add(new CachedPredicateItem(kind, mode, text, isFavorite: true));
+            if (seen.Add((entry.Kind, entry.Mode, entry.Text)))
+                _cachedPredicates.Add(new CachedPredicateItem(entry.Kind, entry.Mode, entry.Text, isFavorite: true, name: entry.Name));
         }
 
         foreach (var (kind, mode, text) in PredicateCompiler.Snapshot())
