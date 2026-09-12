@@ -74,6 +74,6 @@ internal static class ReplaceTemplate
             }
         }
 
-        return sw.ToString();
+        return sw.ToString() + ExpressionSupport.IndexRangeSupport;
     }
 }
