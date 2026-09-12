@@ -30,6 +30,18 @@ be analyzed in turn.
 
 ## Using it
 
+> [!TIP]
+> These queries are plain Roslyn, so anything you learn about Roslyn applies here directly.
+> - [Get started with syntax analysis](https://learn.microsoft.com/en-us/dotnet/csharp/roslyn-sdk/get-started/syntax-analysis) - nodes, tokens and trivia, which is what a `SyntaxNode` or `SyntaxToken` query matches on.
+> - [Get started with semantic analysis](https://learn.microsoft.com/en-us/dotnet/csharp/roslyn-sdk/get-started/semantic-analysis) - symbols and binding, which is what the `model` parameter gives you.
+> - [Syntax Visualizer](https://learn.microsoft.com/en-us/dotnet/csharp/roslyn-sdk/syntax-visualizer) - `View > Other Windows > Syntax Visualizer`. Put the caret on code you want to match and it names the node type and `SyntaxKind` to write.
+> - [SharpLab](https://sharplab.io) - paste code, pick "Syntax Tree" from the results menu, and read the tree without leaving the browser.
+> - [SyntaxKind](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.csharp.syntaxkind) - every kind `IsKind` can test for.
+> - [dotnet/roslyn](https://github.com/dotnet/roslyn) - the source, when a doc page does not answer it.
+>
+> The fastest loop is: put the caret on an example of what you are hunting, read the node type out of the
+> Syntax Visualizer, then write the `is`-pattern for it.
+
 The window has two tabs, **Search** and **Replace**, sharing one Find box and one set of
 Target/Scope/Cap/Generated settings between them. Search browses and navigates; Replace, described
 below, additionally writes matches back.
@@ -96,30 +108,169 @@ narrow ones are resolved from the caret in the last active code window.
 
 ### Examples
 
+Each of these is a complete predicate: paste one into the Find box, set Target to match, and run.
+
+#### SyntaxNode, syntax only
+
+The cheapest kind of query. `IsKind` tests a node's `SyntaxKind` directly, which is the one-liner form of
+"what did the Syntax Visualizer call this":
+
 ```csharp
 n.IsKind(SyntaxKind.IfStatement)
 ```
 
+An `is`-pattern both tests the node type and gives you a typed variable to keep querying through. This one
+finds calls with more arguments than anyone wants to read at a call site:
+
 ```csharp
 n is InvocationExpressionSyntax i && i.ArgumentList.Arguments.Count > 4
 ```
+
+Naming conventions are syntax, so they need no semantic model. An `async` method whose name does not end in
+`Async`:
 
 ```csharp
 n is MethodDeclarationSyntax m && m.Modifiers.Any(SyntaxKind.AsyncKeyword)
     && !m.Identifier.Text.EndsWith("Async")
 ```
 
+Extended property patterns reach through several properties at once, which keeps a shape test readable.
+An empty `catch` block, the classic swallowed exception:
+
+```csharp
+n is CatchClauseSyntax { Block.Statements.Count: 0 }
+```
+
+A single-statement `if` with no braces, the shape that makes a later edit land outside the `if`:
+
+```csharp
+n is IfStatementSyntax { Else: null, Statement: not BlockSyntax }
+```
+
+Counting members finds types that have outgrown their file:
+
+```csharp
+n is ClassDeclarationSyntax c && c.Members.OfType<MethodDeclarationSyntax>().Count() > 20
+```
+
+Trivia hangs off nodes as well as tokens, so a `TODO` anywhere in a file is one query:
+
+```csharp
+n.GetLeadingTrivia().Any(tr => tr.ToString().Contains("TODO"))
+```
+
+#### SyntaxNode, with the semantic model
+
+`model` answers what a name actually binds to, which syntax alone cannot. Every call to a static method,
+regardless of how it was spelled:
+
+```csharp
+n is IdentifierNameSyntax id && model.GetSymbolInfo(id).Symbol is IMethodSymbol { IsStatic: true }
+```
+
+Symbols carry attributes, so deprecated usage is findable without grepping for names:
+
+```csharp
+n is IdentifierNameSyntax dep
+    && model.GetSymbolInfo(dep).Symbol is ISymbol s
+    && s.GetAttributes().Any(a => a.AttributeClass?.Name == "ObsoleteAttribute")
+```
+
+`GetTypeInfo` gives the type of an expression, which is how you find conversions the compiler inserts for
+you. A `struct` being boxed into `object`:
+
+```csharp
+n is ExpressionSyntax ex
+    && model.GetTypeInfo(ex) is { Type.IsValueType: true, ConvertedType.SpecialType: SpecialType.System_Object }
+```
+
+Resolving the declaring symbol lets you filter on accessibility, which is not in the syntax at all once
+defaults are involved:
+
+```csharp
+n is PropertyDeclarationSyntax prop
+    && model.GetDeclaredSymbol(prop) is { DeclaredAccessibility: Accessibility.Public, SetMethod: not null }
+```
+
+#### SyntaxNode, statement bodies
+
+Anything that needs a local, a loop or an early return is written as a body ending in `return`. Mode is
+detected from the text, so there is nothing to switch:
+
+```csharp
+var m = n as MethodDeclarationSyntax;
+if (m is null) return false;
+return m.Body?.Statements.Count > 20;
+```
+
+A body is also the readable way to write a multi-step semantic query:
+
+```csharp
+if (n is not InvocationExpressionSyntax call) return false;
+if (model.GetSymbolInfo(call).Symbol is not IMethodSymbol method) return false;
+return method.Name == "ToString" && method.Parameters.Length == 0;
+```
+
+Returning a node instead of `true` reports a different location as the hit. Here the match is the `await`,
+but the result is the method containing it, so the list is one row per method rather than per `await`:
+
+```csharp
+if (!n.IsKind(SyntaxKind.AwaitExpression)) return false;
+return n.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+```
+
+#### SyntaxToken
+
+Tokens are the level below nodes: keywords, identifiers, literals, punctuation. Long string literals:
+
 ```csharp
 t.IsKind(SyntaxKind.StringLiteralToken) && t.ValueText.Length > 200
 ```
+
+Identifiers too short to mean anything:
+
+```csharp
+t.IsKind(SyntaxKind.IdentifierToken) && t.ValueText.Length == 1
+```
+
+Tokens are where trivia actually lives, so commented-out code is a token query:
+
+```csharp
+t.LeadingTrivia.Any(tr => tr.IsKind(SyntaxKind.SingleLineCommentTrivia))
+```
+
+#### IOperation
+
+Operations are the semantic tree: the compiler's view after binding, where implicit conversions and
+defaulted arguments are explicit. Boxing, as the compiler sees it:
 
 ```csharp
 op is IConversionOperation c && c.GetConversion().IsBoxing
 ```
 
+Extension method calls, which look like instance calls in syntax and only separate here:
+
 ```csharp
-n is IdentifierNameSyntax id && model.GetSymbolInfo(id).Symbol is IMethodSymbol { IsStatic: true }
+op is IInvocationOperation { TargetMethod.IsExtensionMethod: true }
 ```
+
+Arguments you did not write, which is how a defaulted parameter shows up:
+
+```csharp
+op is IArgumentOperation { ArgumentKind: ArgumentKind.DefaultValue }
+```
+
+#### Using `doc` and `await`
+
+`doc` is the whole document, and predicates are compiled `async`, so anything the document can answer is
+available. Files big enough to be worth splitting:
+
+```csharp
+(await doc.GetSyntaxRootAsync()).DescendantNodes().Count() > 500
+```
+
+Remember this runs once per node in scope, so prefer a syntax test first and reach for `doc` only when
+nothing cheaper will do.
 
 ### Keys
 
