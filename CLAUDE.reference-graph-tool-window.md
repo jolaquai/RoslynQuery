@@ -31,12 +31,13 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 ## Status
 
 - **State:** in-progress - phases 1 and 2 are code complete; every remaining step waits on one manual smoke test
-- **Current step:** 29 - opening metadata rows in ILSpy. Code, tests and docs are done. Steps 8, 12, 14,
-  22, 25, 26 and 29 all stay `[~]` on the same blocker: a manual smoke test in a running Visual Studio,
-  which no automated agent can perform. Nothing else is left to write.
+- **Current step:** 30 - the message box for a missing ILSpy and the configurable scope default. Code,
+  tests and docs are done. Steps 8, 12, 14, 22, 25, 26, 29 and 30 all stay `[~]` on the same blocker: a
+  manual smoke test in a running Visual Studio, which no automated agent can perform. Nothing else is
+  left to write.
 - **Branch:** feature/favorites
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `record step 29` (verify with `git log -1 --format=%s`)
+- **Last synced commit subject:** `record step 30` (verify with `git log -1 --format=%s`)
 - **Last updated:** 2026-09-12
 
 ## Goal
@@ -786,7 +787,54 @@ first version of this table said otherwise; see the correction under **Deviation
 - **Progress:** code, tests and README are done and committed. The step stays `[~]` until the manual
   half runs inside Visual Studio, alongside step 26's checklist.
 
+### 30. Raise a message box instead of falling back, and make the scope default configurable `[~]`
+
+- **Files:** `RoslynQuery/Navigation/IlspyLocator.cs`,
+  `RoslynQuery/Options/ReferenceGraphScopeConverter.cs` (new),
+  `RoslynQuery/Options/ReferenceGraphOptions.cs`,
+  `RoslynQuery/ToolWindow/ReferenceGraphToolWindowControl.xaml.cs`,
+  `RoslynQuery.Tests/Options/OptionConverterTests.cs` (new),
+  `RoslynQuery.Tests/Navigation/IlspyLocatorTests.cs`,
+  `RoslynQuery.Tests/Options/ReferenceGraphOptionsTests.cs`, `README.md`
+- **Do:** Two corrections to step 29, both from the user.
+  First, step 29 decompiled in Visual Studio whenever no ILSpy was found and said so in the status line.
+  That is wrong: it hides a misconfigured setting behind working behaviour. A missing ILSpy now raises a
+  message box through `VsShellUtilities.ShowMessageBox` and navigates nowhere, for both a configured path
+  that does not exist and no install at all. `IlspyLocator.NotFoundMessage` words both cases and names the
+  two ways out, and the autodetect became one-shot - it runs once while no path is configured, caches the
+  result including a negative one, and `ReferenceGraphOptions.OnApply` calls `IlspyLocator.Reset()` so
+  clearing or changing the path re-arms it without restarting Visual Studio. The dead `note` parameter on
+  `NavigateToDecompiled` goes away with the fallback.
+  Second, the scope combo hardcoded `SelectedIndex = 1`. It now starts on `DefaultScope`, mirroring how
+  `QueryToolWindowControl` starts every combo on its configured default. `ScopeKind` carries two scopes
+  this window does not offer, so `ReferenceGraphScopeConverter` restricts the options grid to the three it
+  does, worded exactly as the combo words them; a persisted scope outside those three falls back to
+  `Current project` rather than to index 0.
+- **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then
+  `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.OptionConverterTests"`,
+  `-class "RoslynQuery.Tests.IlspyLocatorTests"` and
+  `-class "RoslynQuery.Tests.ReferenceGraphOptionsTests"` pass. Cover: both converters round-trip every
+  value through the label the grid shows and still read a bare enum name; the scope converter offers
+  exactly the three scopes and is exclusive; the search runs once across repeated calls, `Reset` arms it
+  again, and a configured path never starts one; both message wordings name the settings page and the
+  Visual Studio alternative. Then the manual half: a wrong `ILSpy path` raises the box rather than
+  decompiling, an uninstalled ILSpy does the same, and the window opens on the configured scope.
+- **Commits:** `raise a message box when no ilspy can be found`,
+  `cover the one-shot ilspy search and its message`, `make the reference graph scope default configurable`,
+  `cover the option converters and the scope default`,
+  `document the scope default and the missing ilspy message`
+- **Progress:** code, tests and README are done and committed. The step stays `[~]` until the manual half
+  runs inside Visual Studio, alongside step 26's checklist.
+
 ## Deviations
+
+- **Step 30 drops step 29's fallback to decompiling.** Step 29 treated a missing ILSpy as recoverable and
+  decompiled in Visual Studio instead, noting it in the status line. The user rejected that: a setting
+  that silently does something else is worse than one that stops. The fallback is gone entirely, so the
+  Visual Studio path is now reached only by choosing it.
+- **Step 30: `Math.Max` was the wrong fallback for the combo index.** `Array.FindIndex` returns -1 when
+  the persisted scope is not offered, and `Math.Max(index, 1)` also rewrote a legitimate index 0
+  (`Current document`) to 1. Caught before commit; the guard is an explicit `index >= 0` test.
 
 - **Step 29: the ILSpy launch needs no decompiler.** `ImplementationAssemblyResolver` reads PE metadata
   with `System.Reflection.Metadata` alone, so opening a row in ILSpy does not touch the
