@@ -305,6 +305,95 @@ public sealed class FavoritesStoreTests : IDisposable
         Assert.Null(Assert.Single(FavoritesStore.All).Name);
     }
 
+    private const string FutureFile = "roslynquery-favorites\t99\r\nSyntaxNode\tExpression\tfrom the future\t\r\n";
+
+    private string Favorites => Path.Combine(_directory, "favorites.tsv");
+
+    [Fact]
+    public void ANewerFile_IsMovedAsideRatherThanRead()
+    {
+        WriteRaw(FutureFile);
+
+        Assert.Empty(FavoritesStore.All);
+        Assert.False(File.Exists(Favorites));
+        Assert.Equal(FutureFile, File.ReadAllText(Favorites + ".v99.bak"));
+    }
+
+    [Fact]
+    public void ANewerFile_IsReportedOnce()
+    {
+        WriteRaw(FutureFile);
+
+        _ = FavoritesStore.All;
+        var warning = FavoritesStore.TakeWarning();
+
+        Assert.NotNull(warning);
+        Assert.Contains("version 99", warning);
+        Assert.Contains("understands 1", warning);
+        Assert.Contains(".v99.bak", warning);
+        Assert.Null(FavoritesStore.TakeWarning());
+    }
+
+    [Fact]
+    public void AfterANewerFileIsMovedAside_StarringStartsAFreshFile()
+    {
+        WriteRaw(FutureFile);
+        _ = FavoritesStore.All;
+
+        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "mine");
+        Reload();
+
+        Assert.Equal(["mine"], FavoritesStore.All.Select(e => e.Text));
+        Assert.True(File.Exists(Favorites + ".v99.bak"));
+    }
+
+    [Fact]
+    public void ASecondNewerFile_NeverClobbersTheFirstBackup()
+    {
+        WriteRaw(FutureFile);
+        _ = FavoritesStore.All;
+
+        WriteRaw("roslynquery-favorites\t99\r\nSyntaxNode\tExpression\tsecond\t\r\n");
+        _ = FavoritesStore.All;
+
+        Assert.Equal(FutureFile, File.ReadAllText(Favorites + ".v99.bak"));
+        Assert.Contains("second", File.ReadAllText(Favorites + ".v99-2.bak"));
+    }
+
+    /// <summary>Backing the file up is what makes writing safe, so a backup that fails has to stop the write.</summary>
+    [Fact]
+    public void ANewerFileThatCannotBeMoved_StopsEveryWriteInstead()
+    {
+        WriteRaw(FutureFile);
+
+        // Shares reading so the file still parses, but withholds delete, which is what File.Move needs.
+        using (File.Open(Favorites, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            _ = FavoritesStore.All;
+
+            var warning = FavoritesStore.TakeWarning();
+            Assert.NotNull(warning);
+            Assert.Contains("will not be saved", warning);
+
+            FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "mine");
+        }
+
+        Assert.Equal(FutureFile, File.ReadAllText(Favorites));
+    }
+
+    [Fact]
+    public void AFileAtTheCurrentVersion_IsNeverMovedAside()
+    {
+        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "mine");
+        Reload();
+
+        _ = FavoritesStore.All;
+
+        Assert.Null(FavoritesStore.TakeWarning());
+        Assert.True(File.Exists(Favorites));
+        Assert.Empty(Directory.GetFiles(_directory, "*.bak"));
+    }
+
     private const string Header = "roslynquery-favorites\t1";
 
     private void WriteRaw(string contents)
