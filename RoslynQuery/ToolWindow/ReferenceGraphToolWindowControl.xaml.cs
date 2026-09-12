@@ -10,6 +10,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Media3D;
 using System.Windows.Threading;
 
 using Microsoft.CodeAnalysis;
@@ -197,9 +198,16 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         else Navigate(node);
     }
 
+    /// <summary>
+    /// A click on <see cref="SignatureText"/> can originate from a <c>Run</c>, a <see cref="FrameworkContentElement"/>
+    /// with no place in the visual tree; <see cref="VisualTreeHelper.GetParent"/> throws on it, so such nodes climb via
+    /// the logical tree until reaching a <see cref="Visual"/> the visual tree can take over from.
+    /// </summary>
     private static T Ancestor<T>(DependencyObject node) where T : DependencyObject
     {
-        for (; node != null; node = VisualTreeHelper.GetParent(node))
+        for (; node != null; node = node is Visual or Visual3D
+                 ? VisualTreeHelper.GetParent(node)
+                 : LogicalTreeHelper.GetParent(node))
             if (node is T match) return match;
 
         return null;
