@@ -20,6 +20,7 @@ using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Threading;
 
 using RoslynQuery.Navigation;
+using RoslynQuery.Options;
 using RoslynQuery.Query;
 using RoslynQuery.ReferenceGraph;
 
@@ -171,7 +172,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => node.IsExpanded = wasExpanded));
 #pragma warning restore VSTHRD001, VSTHRD110
 
-        if (node.IsFromMetadata) NavigateToDecompiled(node);
+        if (node.IsFromMetadata) NavigateToMetadata(node);
         else Navigate(node);
     }
 
@@ -194,7 +195,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
 
         e.Handled = true;
 
-        if (node.IsFromMetadata) NavigateToDecompiled(node);
+        if (node.IsFromMetadata) NavigateToMetadata(node);
         else Navigate(node);
     }
 
@@ -235,7 +236,92 @@ public partial class ReferenceGraphToolWindowControl : UserControl
 #pragma warning restore VSSDK007
     }
 
-    private void NavigateToDecompiled(ReferenceGraphNode node)
+    private static ReferenceGraphOptions Options()
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        return RoslynQueryPackage.Instance?.GetDialogPage(typeof(ReferenceGraphOptions)) as ReferenceGraphOptions;
+    }
+
+    /// <summary>ILSpy is the default, but a configured path that is wrong is reported rather than worked around.</summary>
+    private void NavigateToMetadata(ReferenceGraphNode node)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        var options = Options();
+        if (options != null && options.MetadataNavigation == MetadataNavigationMode.VisualStudio)
+        {
+            NavigateToDecompiled(node);
+            return;
+        }
+
+        var configured = options?.IlspyPath;
+        var ilspy = IlspyLocator.Find(configured);
+
+        if (ilspy != null)
+        {
+            NavigateInIlspy(node, ilspy);
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            SetError($"No ILSpy is at the configured path '{configured.Trim()}'. Correct it under Tools > Options > RoslynQuery > Reference Graph, or switch that page to Visual Studio.");
+            return;
+        }
+
+        NavigateToDecompiled(node, "No installed ILSpy was found.");
+    }
+
+    private void NavigateInIlspy(ReferenceGraphNode node, string ilspyPath)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        var identity = node.Identity;
+        var solution = _workspace.CurrentSolution;
+        var name = node.DisplayText;
+
+        SetError(null);
+        StatusText.Text = $"Opening {name} in ILSpy...";
+
+#pragma warning disable VSSDK007
+        ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+        {
+            await TaskScheduler.Default;
+
+            string failure;
+
+            try
+            {
+                var assembly = await MetadataAssemblyLocator.PathOfAsync(identity, solution, CancellationToken.None).ConfigureAwait(false);
+
+                if (assembly is null)
+                {
+                    failure = $"No assembly file backs {name}, so there is nothing for ILSpy to open.";
+                }
+                else
+                {
+                    // ILSpy drops reference assemblies before it looks an id up, so it has to be handed the implementation.
+                    var implementation = ImplementationAssemblyResolver.Resolve(assembly);
+
+                    failure = implementation is null
+                        ? $"Only a reference assembly backs {name}, and no implementation assembly was found behind it."
+                        : IlspyLauncher.Launch(ilspyPath, implementation, identity.DeclarationId);
+                }
+            }
+            catch (Exception ex)
+            {
+                failure = $"Opening {name} in ILSpy failed: {ex.GetType().Name}: {ex.Message}";
+            }
+
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            SetError(failure);
+            StatusText.Text = failure is null ? $"Opened {name} in ILSpy." : string.Empty;
+        }).FileAndForget("vs/roslynquery/referencegraph/ilspy");
+#pragma warning restore VSSDK007
+    }
+
+    private void NavigateToDecompiled(ReferenceGraphNode node, string note = null)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
@@ -298,7 +384,9 @@ public partial class ReferenceGraphToolWindowControl : UserControl
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
             SetError(failure ?? DocumentNavigator.Navigate(ServiceProvider.GlobalProvider, target));
-            StatusText.Text = failure is null ? $"Opened decompiled {name}." : string.Empty;
+            StatusText.Text = failure is null
+                ? note is null ? $"Opened decompiled {name}." : $"{note} Opened decompiled {name} instead."
+                : string.Empty;
         }).FileAndForget("vs/roslynquery/referencegraph/decompile");
 #pragma warning restore VSSDK007
     }
