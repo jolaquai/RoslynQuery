@@ -90,11 +90,12 @@ public class PredicateTemplateBuildTests
     [MemberData(nameof(AllKinds))]
     public void Build_BracesAreBalancedAndProperlyNested(int kindValue)
     {
-        var source = PredicateTemplate.Build((TargetKind)kindValue, "n != null", out _);
+        var source = PredicateTemplate.Build((TargetKind)kindValue, "n != null", out var offset);
 
         Assert.Equal(source.Count(c => c == '{'), source.Count(c => c == '}'));
-        // class body brace, method body brace: exactly two levels of nesting.
-        Assert.Equal(2, source.Count(c => c == '{'));
+        // Class body brace, method body brace: the expression sits exactly two levels deep. Counted over the
+        // prefix rather than the whole file, which also carries the appended Index/Range support.
+        Assert.Equal(2, source.Substring(0, offset).Count(c => c == '{'));
     }
 
     [Theory]
