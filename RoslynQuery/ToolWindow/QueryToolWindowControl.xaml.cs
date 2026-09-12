@@ -127,6 +127,7 @@ public partial class QueryToolWindowControl : UserControl
 
         GeneratedCheckBox.IsChecked = options?.DefaultIncludeGenerated ?? false;
         SetSidebarExpanded(options?.DefaultShowHistory ?? true);
+        GetStartedPanel.Visibility = (options?.ShowGetStartedLink ?? true) ? Visibility.Visible : Visibility.Collapsed;
 
         _componentModel = Package.GetGlobalService(typeof(SComponentModel)) as IComponentModel;
         _workspace = _componentModel?.GetService<VisualStudioWorkspace>();
@@ -268,6 +269,17 @@ public partial class QueryToolWindowControl : UserControl
         item.IsFavorite = !item.IsFavorite;
         if (item.IsFavorite) FavoritesStore.Add(item.Kind, item.Mode, item.Text, item.Name);
         else FavoritesStore.Remove(item.Kind, item.Mode, item.Text);
+    }
+
+    /// <summary>The README section that documents writing a predicate, which is what a new user needs first.</summary>
+    internal const string GetStartedUrl = "https://github.com/jolaquai/RoslynQuery/blob/main/README.md#using-it";
+
+    private void OnGetStartedClick(object sender, RoutedEventArgs e)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        e.Handled = true;
+        VsShellUtilities.OpenSystemBrowser(GetStartedUrl);
     }
 
     private void OnRenameClick(object sender, RoutedEventArgs e)
