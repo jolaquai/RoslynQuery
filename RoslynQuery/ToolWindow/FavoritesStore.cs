@@ -17,6 +17,8 @@ internal static class FavoritesStore
     private static readonly object Gate = new object();
     private static List<Entry> _entries;
     private static string _directoryOverride;
+    private static string _warning;
+    private static bool _refuseToWrite;
 
     /// <summary>One starred predicate. <see cref="Name"/> is null when the row shows the predicate itself.</summary>
     internal readonly struct Entry : IEquatable<Entry>
@@ -59,7 +61,24 @@ internal static class FavoritesStore
             {
                 _directoryOverride = value;
                 _entries = null;
+                _warning = null;
+                _refuseToWrite = false;
             }
+        }
+    }
+
+    /// <summary>
+    /// A complaint the window should show once, or null. Reading it clears it, so the same displaced file is
+    /// only ever reported once per load.
+    /// </summary>
+    public static string TakeWarning()
+    {
+        lock (Gate)
+        {
+            var warning = _warning;
+            _warning = null;
+
+            return warning;
         }
     }
 
@@ -154,7 +173,18 @@ internal static class FavoritesStore
         try
         {
             var path = FilePath;
-            _entries = File.Exists(path) ? FavoritesFormat.Read(File.ReadAllLines(path, Encoding.UTF8)) : [];
+
+            if (!File.Exists(path))
+            {
+                _entries = [];
+                return _entries;
+            }
+
+            var (stamped, entries) = FavoritesFormat.Read(File.ReadAllLines(path, Encoding.UTF8));
+
+            if (stamped > FavoritesFormat.CurrentVersion) MoveAside(path, stamped);
+
+            _entries = entries;
         }
         catch (Exception)
         {
@@ -165,8 +195,43 @@ internal static class FavoritesStore
         return _entries;
     }
 
+    /// <summary>
+    /// Keeps a file a newer extension wrote, by renaming it rather than letting the next star overwrite
+    /// favorites this version cannot read. If it cannot be moved, nothing is written at all this session:
+    /// leaving that file untouched matters more than persisting a star.
+    /// </summary>
+    private static void MoveAside(string path, int stampedVersion)
+    {
+        var backup = path + ".v" + stampedVersion + ".bak";
+        for (var i = 2; File.Exists(backup); i++) backup = path + ".v" + stampedVersion + "-" + i + ".bak";
+
+        try
+        {
+            File.Move(path, backup);
+        }
+        catch (Exception ex)
+        {
+            _refuseToWrite = true;
+            _warning =
+                "Your favorites were written by a newer version of RoslynQuery (file format version "
+                + stampedVersion + "; this version understands " + FavoritesFormat.CurrentVersion + "), and that file could not be moved aside:"
+                + "\r\n\r\n" + ex.Message
+                + "\r\n\r\nFavorites will not be saved this session, so the file stays as it is.";
+
+            return;
+        }
+
+        _warning =
+            "Your favorites were written by a newer version of RoslynQuery (file format version "
+            + stampedVersion + "; this version understands " + FavoritesFormat.CurrentVersion + "), so they could not be read."
+            + "\r\n\r\nThat file has been kept as:\r\n\r\n" + backup
+            + "\r\n\r\nFavorites start empty from here. Delete the new file and rename that one back to return to it.";
+    }
+
     private static void Save(List<Entry> entries)
     {
+        if (_refuseToWrite) return;
+
         try
         {
             var path = FilePath;

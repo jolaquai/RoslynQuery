@@ -46,15 +46,18 @@ internal static class FavoritesFormat
     /// <summary>The version this extension writes, and the top of the upgrade chain it can read.</summary>
     public static readonly FavoritesVersion1 Current = new FavoritesVersion1();
 
+    public static int CurrentVersion => Current.Version;
+
     /// <summary>
     /// Whatever version the file was stamped with, brought up to <see cref="Current"/>. An unreadable stamp
     /// reads as empty rather than throwing, because a corrupt file must never be what breaks the sidebar.
+    /// The stamp comes back too, so a caller can tell "empty" from "written by a newer extension".
     /// </summary>
-    public static List<FavoritesStore.Entry> Read(IReadOnlyList<string> lines)
+    public static (int StampedVersion, List<FavoritesStore.Entry> Entries) Read(IReadOnlyList<string> lines)
     {
         var (version, rows) = VersionedFile.Read(Name, lines);
 
-        return Valid(Current.Read(version, rows));
+        return (version, Valid(Current.Read(version, rows)));
     }
 
     public static string Write(IReadOnlyList<FavoritesStore.Entry> entries)

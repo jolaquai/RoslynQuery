@@ -17,6 +17,7 @@ using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.LanguageServices;
 using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.TextManager.Interop;
 using Microsoft.VisualStudio.Threading;
 
@@ -406,6 +407,28 @@ public partial class QueryToolWindowControl : UserControl
             if (seen.Add((kind, mode, text)))
                 _cachedPredicates.Add(new CachedPredicateItem(kind, mode, text));
         }
+
+        ReportFavoritesWarning();
+    }
+
+    /// <summary>Dispatched rather than shown inline: the first refresh runs while the window is still loading.</summary>
+    private void ReportFavoritesWarning()
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        var warning = FavoritesStore.TakeWarning();
+        if (warning is null) return;
+
+#pragma warning disable VSTHRD001, VSTHRD110
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            VsShellUtilities.ShowMessageBox(
+                ServiceProvider.GlobalProvider,
+                warning,
+                "RoslynQuery favorites",
+                OLEMSGICON.OLEMSGICON_WARNING,
+                OLEMSGBUTTON.OLEMSGBUTTON_OK,
+                OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST)));
+#pragma warning restore VSTHRD001, VSTHRD110
     }
 
     private void UpdateSignature() => SignatureText.Text = PredicateTemplate.Signature(CurrentTarget);
