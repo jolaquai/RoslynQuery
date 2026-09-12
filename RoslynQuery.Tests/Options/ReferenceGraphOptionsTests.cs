@@ -92,6 +92,38 @@ public class ReferenceGraphOptionsTests
     }
 
     [Fact]
+    public void TheMetadataSwitch_DefaultsToIlspyAndIsStored()
+    {
+        var property = Property("MetadataNavigation");
+
+        Assert.Equal("MetadataNavigationMode", property.Type.ToString());
+        Assert.Equal("MetadataNavigationMode.Ilspy", Attribute(property, "DefaultValue").ArgumentList.Arguments[0].ToString());
+        Assert.Equal("MetadataNavigationMode.Ilspy", property.Initializer?.Value.ToString());
+        Assert.DoesNotContain(property.AttributeLists.SelectMany(l => l.Attributes), a => a.Name.ToString() == "ReadOnly");
+        Assert.All(
+            property.AccessorList.Accessors,
+            a => Assert.True(a.Body is null && a.ExpressionBody is null, "the setting has to persist, so neither accessor may be written out"));
+    }
+
+    [Fact]
+    public void ThePage_OffersAPathOverrideForIlspy()
+    {
+        var property = Property("IlspyPath");
+
+        Assert.Equal("string", property.Type.ToString());
+        Assert.Contains("ILSpy.exe", Description("IlspyPath"));
+    }
+
+    [Fact]
+    public void TheMetadataSwitch_IsTheOnlyThingThatPicksBetweenTheTwoWays()
+    {
+        var control = RepositoryFiles.Read(@"RoslynQuery\ToolWindow\ReferenceGraphToolWindowControl.xaml.cs");
+
+        Assert.Contains("MetadataNavigationMode.VisualStudio", control);
+        Assert.Contains("IlspyLocator.Find", control);
+    }
+
+    [Fact]
     public void NothingOutsideThePage_ReferencesTheSwitches()
     {
         var source = Path.Combine(RepositoryFiles.Root, "RoslynQuery");
