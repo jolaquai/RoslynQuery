@@ -192,8 +192,14 @@ above the rest of the sidebar on every load, whether or not the compile cache st
 a text-only record: a restored favorite compiles on its first run of a session like any other predicate.
 
 The file's first line stamps the format version, and a reader upgrades an older file one version at a
-time until it reaches the version the installed extension writes. A file stamped with a version the
-extension does not know, or with no stamp at all, reads as empty rather than failing.
+time until it reaches the version the installed extension writes. A file with no stamp at all, or with a
+stamp that is not a version, reads as empty rather than failing.
+
+A file stamped *newer* than the installed extension understands is never overwritten. It is renamed to
+`favorites.tsv.v<version>.bak` first, favorites start empty, and a message box says where it went; an
+existing backup of the same version is not clobbered either. If that rename fails, nothing is written at
+all for the rest of the session, because keeping the unreadable file intact matters more than saving a
+star into it.
 
 There is no limit and nothing is evicted: every star is a deliberate click, so the only thing a cap
 could do is throw away a query you meant to keep. They are listed most recently starred first. The
