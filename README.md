@@ -191,6 +191,10 @@ The **star** writes the row to `%LocalAppData%\RoslynQuery\favorites.tsv`, and f
 above the rest of the sidebar on every load, whether or not the compile cache still holds them. That is
 a text-only record: a restored favorite compiles on its first run of a session like any other predicate.
 
+The file's first line stamps the format version, and a reader upgrades an older file one version at a
+time until it reaches the version the installed extension writes. A file stamped with a version the
+extension does not know, or with no stamp at all, reads as empty rather than failing.
+
 There is no limit and nothing is evicted: every star is a deliberate click, so the only thing a cap
 could do is throw away a query you meant to keep. They are listed most recently starred first. The
 list re-sorts on the next run rather than under the cursor, so an accidental star can be clicked
