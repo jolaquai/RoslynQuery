@@ -123,6 +123,32 @@ public class ReferenceGraphOptionsTests
         Assert.Contains("IlspyLocator.Find", control);
     }
 
+    /// <summary>A missing ILSpy has to interrupt, not quietly reroute to the decompiler.</summary>
+    [Fact]
+    public void AMissingIlspy_ShowsAMessageBoxAndDoesNotDecompileInstead()
+    {
+        var body = RepositoryFiles.Read(@"RoslynQuery\ToolWindow\ReferenceGraphToolWindowControl.xaml.cs");
+        var method = CSharpSyntaxTree.ParseText(body, cancellationToken: TestContext.Current.CancellationToken)
+            .GetRoot(TestContext.Current.CancellationToken)
+            .DescendantNodes().OfType<MethodDeclarationSyntax>()
+            .Single(m => m.Identifier.Text == "NavigateToMetadata")
+            .ToString();
+
+        var guard = method.Substring(method.IndexOf("is null", StringComparison.Ordinal));
+
+        Assert.Contains("ShowMessageBox", guard);
+        Assert.Contains("NotFoundMessage", guard);
+        Assert.DoesNotContain("NavigateToDecompiled", guard);
+    }
+
+    [Fact]
+    public void ApplyingThePage_ReArmsTheIlspySearch()
+    {
+        var apply = Page().Members.OfType<MethodDeclarationSyntax>().Single(m => m.Identifier.Text == "OnApply");
+
+        Assert.Contains("IlspyLocator.Reset()", apply.Body.ToString());
+    }
+
     [Fact]
     public void NothingOutsideThePage_ReferencesTheSwitches()
     {
