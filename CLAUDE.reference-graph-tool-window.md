@@ -30,17 +30,14 @@ Step states: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked, `[
 
 ## Status
 
-- **State:** in-progress - phase 1 code complete; phase 2 (steps 15-26) planned, not started
-- **Current step:** 26 - README and the full smoke test. Every automatable step is done; what remains needs a human at a running Visual Studio. Steps 22 and 25 are
-  code-complete but stay `[~]` until step 26's smoke test exercises them inside Visual Studio, and step 26
-  itself moves last, after 28, since its README has to describe 27-28 too. Steps 27-28, which
-  were added mid-phase and depend on the analyzer plumbing steps 16-20 build. Steps 8, 12 and 14 stay
-  `[~]`: their manual smoke test is deliberately deferred into step 26, which rewrites the tree they were
-  verifying, and step 26 is re-run once 28 lands.
+- **State:** in-progress - phases 1 and 2 are code complete; every remaining step waits on one manual smoke test
+- **Current step:** 29 - opening metadata rows in ILSpy. Code, tests and docs are done. Steps 8, 12, 14,
+  22, 25, 26 and 29 all stay `[~]` on the same blocker: a manual smoke test in a running Visual Studio,
+  which no automated agent can perform. Nothing else is left to write.
 - **Branch:** feature/favorites
 - **Base commit:** e1c9fd34b4185a1f071a2fc0c9da3e0f51643a15
-- **Last synced commit subject:** `record step 26 progress` (verify with `git log -1 --format=%s`)
-- **Last updated:** 2026-09-10
+- **Last synced commit subject:** `record step 29` (verify with `git log -1 --format=%s`)
+- **Last updated:** 2026-09-12
 
 ## Goal
 
@@ -743,7 +740,68 @@ first version of this table said otherwise; see the correction under **Deviation
   been edited away returns null rather than throwing or resolving to the wrong symbol.
 - **Commit:** `identify locals, parameters and type parameters by position`
 
+### 29. Open metadata rows in ILSpy `[~]`
+
+- **Files:** `RoslynQuery/Options/MetadataNavigationMode.cs` (new),
+  `RoslynQuery/Options/MetadataNavigationModeConverter.cs` (new),
+  `RoslynQuery/Options/ReferenceGraphOptions.cs`,
+  `RoslynQuery/Navigation/IlspyLocator.cs` (new), `RoslynQuery/Navigation/IlspyLauncher.cs` (new),
+  `RoslynQuery/ToolWindow/ReferenceGraphToolWindowControl.xaml.cs`,
+  `RoslynQuery.Tests/Navigation/IlspyLauncherTests.cs` (new),
+  `RoslynQuery.Tests/Navigation/IlspyLocatorTests.cs` (new),
+  `RoslynQuery.Tests/Options/ReferenceGraphOptionsTests.cs`, `README.md`
+- **Do:** Step 25 made a metadata row open decompiled source in an editor tab. That stays, but it moves
+  behind a setting and stops being the default: `Open metadata symbols in` picks `Open in ILSpy`
+  (default) or `Decompile in Visual Studio`, with `ILSpy path` overriding discovery.
+  The launch is `ILSpy.exe --instanceid "<the exe>" @"<response file>"`, the response file holding the
+  implementation assembly on one line and `--navigateto:<documentation id>` on the next. Everything the
+  launch needs already exists: the id is `SymbolIdentity.DeclarationId`, and the implementation assembly is
+  `ImplementationAssemblyResolver.Resolve`, which is not optional here because ILSpy drops reference
+  assemblies from its search set before looking an id up. Discovery prefers a standalone install over the
+  copy inside the ILSpy extension, which Visual Studio replaces on its own schedule. A configured path
+  that does not exist is reported; no install at all falls back to decompiling in Visual Studio and says so.
+- **Measured, ILSpy 11.0.0.9375** (decompiled `ICSharpCode.ILSpy.AppEnv.CommandLineArguments` and
+  `AssemblyTreeModel`, plus `IdStringProvider.FindEntity` run against real assemblies):
+
+  | Question | Answer |
+  | --- | --- |
+  | Navigate option | `-n\|--navigateto <ID>`, an ECMA documentation comment id; `none` and `N:` namespaces also understood |
+  | Other options | `--newinstance`, `--noactivate`, `--instanceid <NAME>`, `-s\|--search`, `-l\|--language`, `-c\|--config` |
+  | Response files | `ResponseFileHandling.ParseArgsAsLineSeparated`, so `@file` holds one argument per line, unquoted |
+  | Reference assemblies | filtered out of the search set, so an id in one resolves to nothing |
+  | Facades | a type resolves as an `ExportedType` handle; a member does not, and ILSpy then chases forwarders itself, up to 16 hops |
+  | What the ILSpy extension does | `--instanceid "<exe>" @"<temp file>"`, arguments `<assemblies...>` + `--navigateto:<id>` |
+- **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then
+  `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.IlspyLauncherTests"`,
+  `-class "RoslynQuery.Tests.IlspyLocatorTests"` and
+  `-class "RoslynQuery.Tests.ReferenceGraphOptionsTests"` pass. Cover: the response file holds one
+  argument per line and quotes nothing; the command line carries the instance id and the response file;
+  stale response files are swept and fresh ones kept; a row with no id and a missing ILSpy are both
+  reported rather than thrown; a configured path is used as is, a missing configured path finds nothing,
+  and no configured path falls back to searching. Then the manual half, in the experimental instance:
+  a metadata row opens in ILSpy on the right member, a second row reuses that same window, switching the
+  setting to Visual Studio restores step 25's editor tab, and a bad `ILSpy path` is reported.
+- **Commits:** `open metadata rows in ilspy by default`, `cover the ilspy locator and launcher`,
+  `cover the metadata navigation setting`, `document opening metadata rows in ilspy`
+- **Progress:** code, tests and README are done and committed. The step stays `[~]` until the manual
+  half runs inside Visual Studio, alongside step 26's checklist.
+
 ## Deviations
+
+- **Step 29: the ILSpy launch needs no decompiler.** `ImplementationAssemblyResolver` reads PE metadata
+  with `System.Reflection.Metadata` alone, so opening a row in ILSpy does not touch the
+  ICSharpCode.Decompiler that Visual Studio ships. That matters because the whole point of preferring
+  ILSpy is to not depend on the in-process decompiler; only the Visual Studio setting does.
+- **Step 29: a facade is enough to hand ILSpy.** `ImplementationAssemblyResolver` resolves a .NET
+  reference assembly into the shared runtime, where `System.Runtime.dll` is a forwarder facade. Measured:
+  `T:System.String` resolves there as an `ExportedType`, and `M:System.String.Format(System.String,System.Object)`
+  does not. That is exactly the entry condition for ILSpy's own `FindMemberViaTypeForwarders`, which
+  then chases the forwarder into `System.Private.CoreLib`, so no forwarder following was added here.
+- **Step 16 crash found during the step 26 smoke test: `Ancestor<T>` threw on a `Run`.**
+  `VisualTreeHelper.GetParent` throws `InvalidOperationException` for a `FrameworkContentElement`, and
+  step 23's signature rows are `Run`s inside a `TextBlock`, so double-clicking the text itself - rather
+  than the space around it - crashed instead of navigating. The walk now climbs the logical tree for
+  anything that is not a `Visual`. Fixed in `fix crash clicking a signature run in the reference graph tree`.
 
 - **Status field records the commit subject, not the hash.** Rule 5 requires the code change and this
   file's update to land in one commit, so a hash recorded in that same commit can never be its own.
