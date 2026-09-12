@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
 using RoslynQuery.Query;
 
 using Xunit;
@@ -5,64 +9,69 @@ using Xunit;
 namespace RoslynQuery.Tests;
 
 /// <summary>
-/// Every predicate printed in README.md, compiled. A documented example that does not compile is
-/// worse than no example, and the README is the one place nothing else exercises - the IOperation
-/// one below shipped broken (<c>IConversionOperation.Conversion</c> is a <c>CommonConversion</c>,
-/// which has no <c>IsBoxing</c>) until this was added.
+/// Every predicate printed in README.md, read out of the README and compiled. A documented example that does
+/// not compile is worse than no example, and the README is the one place nothing else exercises - the
+/// IOperation one (<c>IConversionOperation.Conversion</c> is a <c>CommonConversion</c>, which has no
+/// <c>IsBoxing</c>) shipped broken until this existed.
 /// </summary>
-/// <remarks>Keep in sync with README.md; if an example changes there, change it here.</remarks>
 [Collection(PredicateCompilerCacheCollection.Name)]
 public class ReadmeExampleTests
 {
+    public static IEnumerable<object[]> SyntaxNodeExamples() => ReadmeExamples.For("SyntaxNode");
+
+    public static IEnumerable<object[]> SyntaxTokenExamples() => ReadmeExamples.For("SyntaxToken");
+
+    public static IEnumerable<object[]> OperationExamples() => ReadmeExamples.For("Operation");
+
     [Theory]
-    // Syntax only.
-    [InlineData("n.IsKind(SyntaxKind.IfStatement)")]
-    [InlineData("n is InvocationExpressionSyntax i && i.ArgumentList.Arguments.Count > 4")]
-    [InlineData("n is MethodDeclarationSyntax m && m.Modifiers.Any(SyntaxKind.AsyncKeyword)\r\n    && !m.Identifier.Text.EndsWith(\"Async\")")]
-    [InlineData("n is CatchClauseSyntax { Block.Statements.Count: 0 }")]
-    [InlineData("n is IfStatementSyntax { Else: null, Statement: not BlockSyntax }")]
-    [InlineData("n is ClassDeclarationSyntax c && c.Members.OfType<MethodDeclarationSyntax>().Count() > 20")]
-    [InlineData("n.GetLeadingTrivia().Any(tr => tr.ToString().Contains(\"TODO\"))")]
-    // With the semantic model.
-    [InlineData("n is IdentifierNameSyntax id && model.GetSymbolInfo(id).Symbol is IMethodSymbol { IsStatic: true }")]
-    [InlineData("n is IdentifierNameSyntax dep\r\n    && model.GetSymbolInfo(dep).Symbol is ISymbol s\r\n    && s.GetAttributes().Any(a => a.AttributeClass?.Name == \"ObsoleteAttribute\")")]
-    [InlineData("n is ExpressionSyntax ex\r\n    && model.GetTypeInfo(ex) is { Type.IsValueType: true, ConvertedType.SpecialType: SpecialType.System_Object }")]
-    [InlineData("n is PropertyDeclarationSyntax prop\r\n    && model.GetDeclaredSymbol(prop) is { DeclaredAccessibility: Accessibility.Public, SetMethod: not null }")]
-    // Statement bodies.
-    [InlineData("var m = n as MethodDeclarationSyntax;\r\nif (m is null) return false;\r\nreturn m.Body?.Statements.Count > 20;")]
-    [InlineData("if (n is not InvocationExpressionSyntax call) return false;\r\nif (model.GetSymbolInfo(call).Symbol is not IMethodSymbol method) return false;\r\nreturn method.Name == \"ToString\" && method.Parameters.Length == 0;")]
-    [InlineData("if (!n.IsKind(SyntaxKind.AwaitExpression)) return false;\r\nreturn n.FirstAncestorOrSelf<MethodDeclarationSyntax>();")]
-    [InlineData("if (n.IsKind(SyntaxKind.IfStatement)) return n.FirstAncestorOrSelf<MethodDeclarationSyntax>();\r\nreturn false;")]
-    // doc and await.
-    [InlineData("(await doc.GetSyntaxRootAsync()).DescendantNodes().Count() > 500")]
+    [MemberData(nameof(SyntaxNodeExamples))]
     public void SyntaxNodeExamples_Compile(string text) =>
         Assert.NotNull(PredicateCompiler.Compile(TargetKind.SyntaxNode, text));
 
     [Theory]
-    [InlineData("t.IsKind(SyntaxKind.StringLiteralToken) && t.ValueText.Length > 200")]
-    [InlineData("t.IsKind(SyntaxKind.IdentifierToken) && t.ValueText.Length == 1")]
-    [InlineData("t.LeadingTrivia.Any(tr => tr.IsKind(SyntaxKind.SingleLineCommentTrivia))")]
+    [MemberData(nameof(SyntaxTokenExamples))]
     public void SyntaxTokenExamples_Compile(string text) =>
         Assert.NotNull(PredicateCompiler.Compile(TargetKind.SyntaxToken, text));
 
     [Theory]
-    [InlineData("op is IConversionOperation c && c.GetConversion().IsBoxing")]
-    [InlineData("op is IInvocationOperation { TargetMethod.IsExtensionMethod: true }")]
-    [InlineData("op is IArgumentOperation { ArgumentKind: ArgumentKind.DefaultValue }")]
+    [MemberData(nameof(OperationExamples))]
     public void OperationExamples_Compile(string text) =>
         Assert.NotNull(PredicateCompiler.Compile(TargetKind.Operation, text));
 
+    /// <summary>
+    /// Guards the extractor itself: if it silently stopped finding examples, every test above would pass by
+    /// having nothing to run. The counts only have to be plausible, not exact.
+    /// </summary>
+    [Fact]
+    public void TheExtractor_FindsExamplesForEveryTarget()
+    {
+        var all = ReadmeExamples.All();
+
+        Assert.True(all.Count >= 20, "found only " + all.Count + " examples in the README");
+        Assert.True(all.Count(e => e.Target == "SyntaxNode") >= 10);
+        Assert.True(all.Count(e => e.Target == "SyntaxToken") >= 3);
+        Assert.True(all.Count(e => e.Target == "Operation") >= 3);
+        Assert.All(all, e => Assert.False(string.IsNullOrWhiteSpace(e.Text)));
+    }
+
+    /// <summary>The README claims the mode is detected from the text, so its own sections have to agree.</summary>
     [Theory]
-    // The README claims mode is detected from the text, so the expression examples must not be
-    // taken for bodies and the body examples must not be taken for expressions.
-    [InlineData("n.IsKind(SyntaxKind.IfStatement)", (int)PredicateMode.Expression)]
-    [InlineData("(await doc.GetSyntaxRootAsync()).DescendantNodes().Count() > 500", (int)PredicateMode.Expression)]
-    [InlineData("n is CatchClauseSyntax { Block.Statements.Count: 0 }", (int)PredicateMode.Expression)]
-    [InlineData("n is ExpressionSyntax ex\r\n    && model.GetTypeInfo(ex) is { Type.IsValueType: true, ConvertedType.SpecialType: SpecialType.System_Object }", (int)PredicateMode.Expression)]
-    [InlineData("var m = n as MethodDeclarationSyntax;\r\nif (m is null) return false;\r\nreturn m.Body?.Statements.Count > 20;", (int)PredicateMode.Body)]
-    [InlineData("if (!n.IsKind(SyntaxKind.AwaitExpression)) return false;\r\nreturn n.FirstAncestorOrSelf<MethodDeclarationSyntax>();", (int)PredicateMode.Body)]
-    public void Examples_DetectTheDocumentedMode(string text, int expectedMode) =>
-        Assert.Equal((PredicateMode)expectedMode, ExpressionSupport.DetectMode(text));
+    [MemberData(nameof(BodyExamples))]
+    public void ExamplesUnderTheBodiesHeading_DetectAsBodies(string text) =>
+        Assert.Equal(PredicateMode.Body, ExpressionSupport.DetectMode(text));
+
+    [Theory]
+    [MemberData(nameof(ExpressionExamples))]
+    public void ExamplesUnderTheSyntaxOnlyHeading_DetectAsExpressions(string text) =>
+        Assert.Equal(PredicateMode.Expression, ExpressionSupport.DetectMode(text));
+
+    public static IEnumerable<object[]> BodyExamples() =>
+        ReadmeExamples.All().Where(e => e.IsDocumentedAsBody).Select(e => new object[] { e.Text });
+
+    public static IEnumerable<object[]> ExpressionExamples() =>
+        ReadmeExamples.All()
+            .Where(e => e.Section.IndexOf("syntax only", StringComparison.OrdinalIgnoreCase) >= 0)
+            .Select(e => new object[] { e.Text });
 
     /// <summary>The "Get started" link has to land on a heading that is actually there.</summary>
     [Fact]
