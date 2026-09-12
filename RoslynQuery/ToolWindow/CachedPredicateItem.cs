@@ -19,13 +19,17 @@ internal sealed class CachedPredicateItem : INotifyPropertyChanged
 
     private string _pretty;
     private bool _isFavorite;
+    private bool _isEditing;
+    private string _name;
+    private string _editText;
 
-    public CachedPredicateItem(TargetKind kind, PredicateMode mode, string text, bool isFavorite = false)
+    public CachedPredicateItem(TargetKind kind, PredicateMode mode, string text, bool isFavorite = false, string name = null)
     {
         Kind = kind;
         Mode = mode;
         Text = text;
         _isFavorite = isFavorite;
+        _name = Normalize(name);
     }
 
     public event PropertyChangedEventHandler PropertyChanged;
@@ -41,7 +45,52 @@ internal sealed class CachedPredicateItem : INotifyPropertyChanged
             if (_isFavorite == value) return;
 
             _isFavorite = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsFavorite)));
+            Raise(nameof(IsFavorite));
+        }
+    }
+
+    /// <summary>The label shown instead of the predicate, or null to show the predicate itself.</summary>
+    public string Name
+    {
+        get => _name;
+        set
+        {
+            value = Normalize(value);
+            if (string.Equals(_name, value, StringComparison.Ordinal)) return;
+
+            _name = value;
+            Raise(nameof(Name));
+            Raise(nameof(Display));
+            Raise(nameof(Tooltip));
+        }
+    }
+
+    /// <summary>True while the row's label is being edited in place.</summary>
+    public bool IsEditing
+    {
+        get => _isEditing;
+        set
+        {
+            if (_isEditing == value) return;
+
+            _isEditing = value;
+            Raise(nameof(IsEditing));
+        }
+    }
+
+    /// <summary>
+    /// What the in-place editor holds. Separate from <see cref="Name"/> so abandoning an edit needs no undo,
+    /// and so the recycled editor a virtualizing list hands back cannot show the last abandoned text.
+    /// </summary>
+    public string EditText
+    {
+        get => _editText;
+        set
+        {
+            if (string.Equals(_editText, value, StringComparison.Ordinal)) return;
+
+            _editText = value;
+            Raise(nameof(EditText));
         }
     }
 
@@ -51,9 +100,19 @@ internal sealed class CachedPredicateItem : INotifyPropertyChanged
     /// <summary><see cref="Text"/> re-formatted for human eyes, and what gets restored into the input box.</summary>
     public string Pretty => _pretty ??= Format(Text, Mode);
 
-    public string Display => Pretty.Length > MaxDisplayLength ? Pretty.Substring(0, MaxDisplayLength) + "..." : Pretty;
+    public string Display => _name ?? Truncate(Pretty);
+
+    /// <summary>A renamed row shows no predicate, so the predicate becomes the row's tooltip.</summary>
+    public string Tooltip => _name is null ? null : Truncate(Pretty);
 
     public string Subtitle => Mode == PredicateMode.Body ? Kind + " (body)" : Kind.ToString();
+
+    private static string Normalize(string name) => string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+
+    private static string Truncate(string text) =>
+        text.Length > MaxDisplayLength ? text.Substring(0, MaxDisplayLength) + "..." : text;
+
+    private void Raise(string property) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
 
     private static string Format(string text, PredicateMode mode)
     {
