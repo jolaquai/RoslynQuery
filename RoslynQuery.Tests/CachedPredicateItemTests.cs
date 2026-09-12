@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 
 using RoslynQuery.Query;
@@ -130,6 +131,135 @@ public class CachedPredicateItemTests
         item.IsFavorite = true;
 
         Assert.True(item.IsFavorite);
+        Assert.Equal(1, raised);
+    }
+
+    [Fact]
+    public void Name_ReplacesTheDisplayTextAndMovesThePredicateToTheTooltip()
+    {
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null");
+
+        Assert.Null(item.Tooltip);
+
+        item.Name = "Non-null nodes";
+
+        Assert.Equal("Non-null nodes", item.Display);
+        Assert.Equal("n != null", item.Tooltip);
+        Assert.Equal("n!=null", item.Text);
+        Assert.Equal("n != null", item.Pretty);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Name_ClearedBackToNothing_ShowsThePredicateAgain(string cleared)
+    {
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null") { Name = "Named" };
+
+        item.Name = cleared;
+
+        Assert.Null(item.Name);
+        Assert.Equal("n != null", item.Display);
+        Assert.Null(item.Tooltip);
+    }
+
+    [Fact]
+    public void Name_IsTrimmed()
+    {
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null") { Name = "  padded  " };
+
+        Assert.Equal("padded", item.Name);
+    }
+
+    [Fact]
+    public void Name_RaisesPropertyChangedForEverythingItAffects_OnChangeOnly()
+    {
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
+        var raised = new List<string>();
+        item.PropertyChanged += (s, e) => raised.Add(e.PropertyName);
+
+        item.Name = "Named";
+        item.Name = "Named";
+
+        Assert.Equal(
+            [nameof(CachedPredicateItem.Name), nameof(CachedPredicateItem.Display), nameof(CachedPredicateItem.Tooltip)],
+            raised);
+    }
+
+    [Fact]
+    public void Name_LongerThanTheDisplayLimit_IsShownWhole()
+    {
+        var name = new string('x', 5000);
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null") { Name = name };
+
+        Assert.Equal(name, item.Display);
+    }
+
+    [Fact]
+    public void Tooltip_OfANamedLongPredicate_IsTruncated()
+    {
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, LongExpression()) { Name = "Named" };
+
+        Assert.EndsWith("...", item.Tooltip);
+        Assert.Equal(2003, item.Tooltip.Length);
+    }
+
+    [Fact]
+    public void Constructor_CanStartNamed()
+    {
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null", name: "  Named  ");
+
+        Assert.Equal("Named", item.Name);
+        Assert.Equal("Named", item.Display);
+    }
+
+    [Fact]
+    public void IsEditing_DefaultsToFalseAndRaisesPropertyChangedOnChangeOnly()
+    {
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
+        var raised = 0;
+        item.PropertyChanged += (s, e) =>
+        {
+            Assert.Equal(nameof(CachedPredicateItem.IsEditing), e.PropertyName);
+            raised++;
+        };
+
+        Assert.False(item.IsEditing);
+
+        item.IsEditing = true;
+        item.IsEditing = true;
+
+        Assert.True(item.IsEditing);
+        Assert.Equal(1, raised);
+    }
+
+    [Fact]
+    public void EditText_IsIndependentOfTheName()
+    {
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
+
+        item.EditText = "abandoned";
+
+        Assert.Null(item.Name);
+        Assert.Equal("n != null", item.Display);
+        Assert.Equal("abandoned", item.EditText);
+    }
+
+    [Fact]
+    public void EditText_RaisesPropertyChangedOnChangeOnly()
+    {
+        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
+        var raised = 0;
+        item.PropertyChanged += (s, e) =>
+        {
+            Assert.Equal(nameof(CachedPredicateItem.EditText), e.PropertyName);
+            raised++;
+        };
+
+        item.EditText = "x";
+        item.EditText = "x";
+
         Assert.Equal(1, raised);
     }
 

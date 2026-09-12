@@ -110,10 +110,91 @@ public sealed class FavoritesStoreTests : IDisposable
         Reload();
 
         Assert.Equal(
-            [(TargetKind.SyntaxToken, PredicateMode.Expression, "t.ValueText == \"x\""),
-             (TargetKind.Operation, PredicateMode.Body, "return op != null;")],
+            [new FavoritesStore.Entry(TargetKind.SyntaxToken, PredicateMode.Expression, "t.ValueText == \"x\"", null),
+             new FavoritesStore.Entry(TargetKind.Operation, PredicateMode.Body, "return op != null;", null)],
             FavoritesStore.All);
     }
+
+    [Fact]
+    public void AName_SurvivesAReload()
+    {
+        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null", "Non-null nodes");
+
+        Reload();
+
+        Assert.Equal("Non-null nodes", FavoritesStore.NameOf(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null"));
+    }
+
+    [Fact]
+    public void AName_IsNotPartOfTheKey()
+    {
+        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null", "first");
+        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null", "second");
+
+        var all = FavoritesStore.All;
+
+        Assert.Equal("second", Assert.Single(all).Name);
+    }
+
+    [Fact]
+    public void Rename_RelabelsInPlaceWithoutReordering()
+    {
+        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a");
+        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "b");
+
+        FavoritesStore.Rename(TargetKind.SyntaxNode, PredicateMode.Expression, "a", "Ay");
+        Reload();
+
+        Assert.Equal(["b", "a"], FavoritesStore.All.Select(e => e.Text));
+        Assert.Equal([null, "Ay"], FavoritesStore.All.Select(e => e.Name));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Rename_ToNothing_ClearsTheName(string name)
+    {
+        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a", "Ay");
+
+        FavoritesStore.Rename(TargetKind.SyntaxNode, PredicateMode.Expression, "a", name);
+        Reload();
+
+        Assert.Null(FavoritesStore.NameOf(TargetKind.SyntaxNode, PredicateMode.Expression, "a"));
+    }
+
+    [Fact]
+    public void Rename_AnUnstarredEntry_IsANoOp()
+    {
+        FavoritesStore.Rename(TargetKind.SyntaxNode, PredicateMode.Expression, "a", "Ay");
+
+        Assert.Empty(FavoritesStore.All);
+    }
+
+    [Fact]
+    public void AName_IsTrimmed()
+    {
+        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a", "  padded  ");
+
+        Assert.Equal("padded", FavoritesStore.NameOf(TargetKind.SyntaxNode, PredicateMode.Expression, "a"));
+    }
+
+    [Theory]
+    [InlineData("tab\there")]
+    [InlineData("line\r\nbreak")]
+    [InlineData("back\\slash")]
+    public void AName_WithSeparatorsOrEscapes_RoundTripsThroughDisk(string name)
+    {
+        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a", name);
+
+        Reload();
+
+        Assert.Equal(name, FavoritesStore.NameOf(TargetKind.SyntaxNode, PredicateMode.Expression, "a"));
+    }
+
+    [Fact]
+    public void NameOf_AnUnstarredEntry_IsNull() =>
+        Assert.Null(FavoritesStore.NameOf(TargetKind.SyntaxNode, PredicateMode.Expression, "nope"));
 
     [Fact]
     public void Remove_SurvivesAReload()
@@ -157,10 +238,12 @@ public sealed class FavoritesStoreTests : IDisposable
         Assert.Equal("q0", all[all.Count - 1].Text);
     }
 
-    [Fact]
-    public void Load_UnrecognizedHeader_YieldsNothing()
+    [Theory]
+    [InlineData("roslynquery-favorites\t99")]
+    [InlineData("roslynquery-favorites\t1")]
+    public void Load_UnrecognizedHeader_YieldsNothing(string header)
     {
-        WriteRaw("roslynquery-favorites\t99\r\nSyntaxNode\tExpression\tn != null\r\n");
+        WriteRaw(header + "\r\nSyntaxNode\tExpression\tn != null\t\r\n");
 
         Assert.Empty(FavoritesStore.All);
     }
@@ -175,14 +258,15 @@ public sealed class FavoritesStoreTests : IDisposable
 
     [Theory]
     [InlineData("SyntaxNode\tExpression")]
-    [InlineData("SyntaxNode\tExpression\tn != null\textra")]
-    [InlineData("NotAKind\tExpression\tn != null")]
-    [InlineData("SyntaxNode\tNotAMode\tn != null")]
-    [InlineData("7\tExpression\tn != null")]
-    [InlineData("SyntaxNode\tExpression\t   ")]
+    [InlineData("SyntaxNode\tExpression\tn != null")]
+    [InlineData("SyntaxNode\tExpression\tn != null\tname\textra")]
+    [InlineData("NotAKind\tExpression\tn != null\t")]
+    [InlineData("SyntaxNode\tNotAMode\tn != null\t")]
+    [InlineData("7\tExpression\tn != null\t")]
+    [InlineData("SyntaxNode\tExpression\t   \t")]
     public void Load_MalformedLine_IsSkippedButLeavesGoodLines(string malformed)
     {
-        WriteRaw("roslynquery-favorites\t1\r\n" + malformed + "\r\nSyntaxNode\tExpression\tgood\r\n");
+        WriteRaw(Header + "\r\n" + malformed + "\r\nSyntaxNode\tExpression\tgood\t\r\n");
 
         Assert.Equal(["good"], FavoritesStore.All.Select(e => e.Text));
     }
@@ -190,10 +274,23 @@ public sealed class FavoritesStoreTests : IDisposable
     [Fact]
     public void Load_DuplicateLines_CollapseToOne()
     {
-        WriteRaw("roslynquery-favorites\t1\r\nSyntaxNode\tExpression\tdupe\r\nSyntaxNode\tExpression\tdupe\r\n");
+        WriteRaw(Header + "\r\nSyntaxNode\tExpression\tdupe\tfirst\r\nSyntaxNode\tExpression\tdupe\tsecond\r\n");
 
-        Assert.Equal(["dupe"], FavoritesStore.All.Select(e => e.Text));
+        var entry = Assert.Single(FavoritesStore.All);
+
+        Assert.Equal("dupe", entry.Text);
+        Assert.Equal("first", entry.Name);
     }
+
+    [Fact]
+    public void Load_AnEmptyNameColumn_MeansNoName()
+    {
+        WriteRaw(Header + "\r\nSyntaxNode\tExpression\tn != null\t\r\n");
+
+        Assert.Null(Assert.Single(FavoritesStore.All).Name);
+    }
+
+    private const string Header = "roslynquery-favorites\t2";
 
     private void WriteRaw(string contents)
     {
