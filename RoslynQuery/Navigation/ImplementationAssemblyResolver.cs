@@ -35,6 +35,95 @@ internal static class ImplementationAssemblyResolver
 
     public static bool IsReferenceAssembly(string path) => AssemblyFacts.Read(path)?.IsReferenceAssembly == true;
 
+    /// <summary>
+    /// The file that defines the type <paramref name="documentationId"/> belongs to, found by following type
+    /// forwarders out of <paramref name="path"/>, or <paramref name="path"/> itself when it forwards nothing for it.
+    /// ILSpy needs the defining file: handed a facade, it resolves a type only to the forwarder, which it cannot select.
+    /// </summary>
+    public static string DeclaringAssembly(string path, string documentationId)
+    {
+        var typeName = TypeNameOf(documentationId);
+        if (typeName is null || string.IsNullOrEmpty(path)) return path;
+
+        for (var hops = 0; hops < 8; hops++)
+        {
+            var target = ForwardedTo(path, typeName);
+            if (target is null) return path;
+
+            var next = Path.Combine(Path.GetDirectoryName(path), target + ".dll");
+            if (!File.Exists(next) || string.Equals(next, path, StringComparison.OrdinalIgnoreCase)) return path;
+
+            path = next;
+        }
+
+        return path;
+    }
+
+    /// <summary>The full name of the type a documentation id names or declares its member in; null for a namespace.</summary>
+    private static string TypeNameOf(string documentationId)
+    {
+        if (string.IsNullOrEmpty(documentationId) || documentationId.Length < 3 || documentationId[1] != ':') return null;
+
+        var body = documentationId.Substring(2);
+
+        switch (documentationId[0])
+        {
+            case 'T':
+                return body;
+            case 'M':
+            case 'P':
+            case 'F':
+            case 'E':
+                var end = body.IndexOf('(');
+                if (end < 0) end = body.IndexOf('~');
+                if (end >= 0) body = body.Substring(0, end);
+
+                var dot = body.LastIndexOf('.');
+                return dot <= 0 ? null : body.Substring(0, dot);
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// The assembly a forwarder in <paramref name="path"/> sends the type to, or null. A nested type is forwarded along
+    /// with its outermost type, so shorter prefixes of the name are tried until one is a forwarded top-level type.
+    /// </summary>
+    private static string ForwardedTo(string path, string typeName)
+    {
+        try
+        {
+            using var stream = File.OpenRead(path);
+            using var pe = new PEReader(stream);
+            if (!pe.HasMetadata) return null;
+
+            var reader = pe.GetMetadataReader();
+            var segments = typeName.Split('.');
+
+            for (var i = segments.Length - 1; i >= 0; i--)
+            {
+                var name = segments[i];
+                var ns = string.Join(".", segments, 0, i);
+
+                foreach (var handle in reader.ExportedTypes)
+                {
+                    var exported = reader.GetExportedType(handle);
+
+                    if (exported.IsForwarder
+                        && exported.Implementation.Kind == HandleKind.AssemblyReference
+                        && reader.StringComparer.Equals(exported.Name, name)
+                        && reader.StringComparer.Equals(exported.Namespace, ns))
+                        return reader.GetString(reader.GetAssemblyReference((AssemblyReferenceHandle)exported.Implementation).Name);
+                }
+            }
+        }
+        catch (Exception)
+        {
+        }
+
+        return null;
+    }
+
     /// <summary>Why an assembly from a reference pack found no implementation, or null when it is not from one.</summary>
     public static string ExplainUnresolved(string path, ResolveOptions options)
     {

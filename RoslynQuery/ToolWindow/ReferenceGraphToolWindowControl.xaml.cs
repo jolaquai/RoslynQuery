@@ -314,7 +314,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
 
                     failure = implementation is null
                         ? Unresolved($"Only a reference assembly backs {name}, and no implementation assembly was found behind it.", assembly, resolve)
-                        : IlspyLauncher.Launch(ilspyPath, implementation, identity.DeclarationId);
+                        : IlspyLauncher.Launch(ilspyPath, ImplementationAssemblyResolver.DeclaringAssembly(implementation, identity.DeclarationId), identity.DeclarationId);
                 }
             }
             catch (Exception ex)

@@ -18,7 +18,25 @@ internal static class IlspyLauncher
         "--instanceid \"" + ilspyPath + "\" @\"" + responseFilePath + "\"";
 
     public static string ResponseFileText(string assemblyPath, string documentationId) =>
-        assemblyPath + "\r\n--navigateto:" + documentationId + "\r\n";
+        assemblyPath + "\r\n--navigateto:" + NavigationId(documentationId) + "\r\n";
+
+    /// <summary>
+    /// The id in the form ILSpy matches. Roslyn can end a method's id with a <c>~ReturnType</c> suffix, but ILSpy, like the
+    /// documentation id format itself, expects one only on a conversion operator and matches no other id that carries it.
+    /// </summary>
+    public static string NavigationId(string documentationId)
+    {
+        if (documentationId is null || !documentationId.StartsWith("M:", StringComparison.Ordinal)) return documentationId;
+
+        var tilde = documentationId.LastIndexOf('~');
+        if (tilde < 0) return documentationId;
+
+        var open = documentationId.IndexOf('(');
+        var name = documentationId.Substring(0, open >= 0 ? open : tilde);
+        var conversion = name.EndsWith(".op_Implicit", StringComparison.Ordinal) || name.EndsWith(".op_Explicit", StringComparison.Ordinal);
+
+        return conversion ? documentationId : documentationId.Substring(0, tilde);
+    }
 
     public static string DefaultResponseFileRoot =>
         Path.Combine(Path.GetTempPath(), "RoslynQuery", "ILSpy");
