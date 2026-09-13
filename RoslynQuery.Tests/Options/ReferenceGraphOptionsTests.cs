@@ -117,6 +117,28 @@ public class ReferenceGraphOptionsTests
         Assert.Contains("DOTNET_ROLL_FORWARD", Description("FallBackToNuGetPackages"));
     }
 
+    [Fact]
+    public void TheMetadataConsumerSwitch_IsStoredAndDefaultsToHidden()
+    {
+        var property = Property("ShowMetadataConsumers");
+
+        Assert.Equal("bool", property.Type.ToString());
+        Assert.Null(property.Initializer);
+        Assert.Equal("false", Attribute(property, "DefaultValue").ArgumentList.Arguments[0].ToString());
+        Assert.Equal("Metadata symbols", ((LiteralExpressionSyntax)Attribute(property, "Category").ArgumentList.Arguments[0].Expression).Token.ValueText);
+        Assert.Contains("IDisposable", Description("ShowMetadataConsumers"));
+    }
+
+    /// <summary>The switch is read on the UI thread, where the page lives, and carried into the engine with the branch.</summary>
+    [Fact]
+    public void ExpandingABranch_PassesTheMetadataConsumerSwitchToTheEngine()
+    {
+        var control = RepositoryFiles.Read(@"RoslynQuery\ToolWindow\ReferenceGraphToolWindowControl.xaml.cs");
+
+        Assert.Contains("Options()?.ShowMetadataConsumers ?? false", control);
+        Assert.Contains("node, showMetadataConsumers, cancellationToken", control);
+    }
+
     /// <summary>Both ways of opening a metadata row have to honour the switch, not just the default one.</summary>
     [Fact]
     public void BothMetadataNavigationPaths_PassTheNuGetSwitchToTheResolver()
