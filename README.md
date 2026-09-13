@@ -503,6 +503,20 @@ no method bodies, so the window first finds the implementation behind one - in t
 it says so rather than open an empty stub. A metadata row's call sites in your own code stay reachable
 through its `Locations` row.
 
+For .NET, the runtime is chosen the way the .NET host itself would choose one: the runtime matching the
+reference pack's exact version when it is installed, and otherwise whichever one `DOTNET_ROLL_FORWARD`
+allows, read from the environment Visual Studio was started with. Unset, that is `Minor`, the same default
+every .NET app gets, so a `net9.0` project on a machine with no .NET 9 runtime finds nothing;
+`DOTNET_ROLL_FORWARD=Major` opens it from the next installed major version instead. A preview runtime is
+only chosen when no release qualifies, unless `DOTNET_ROLL_FORWARD_TO_PRERELEASE=1`. When nothing
+qualifies, the message names the pack it looked for, the runtimes that are installed and the policy that
+applied.
+
+`Fall back to NuGet packages` adds a second place to look after the runtimes: the same assembly shipped as a
+NuGet package in the local package cache, found by the same rule, exact version first and then
+`DOTNET_ROLL_FORWARD`. Within a package it takes the build for the project's own framework, then a lower
+.NET build, then .NET Standard, and never a .NET Framework build. It is off by default.
+
 ILSpy is found automatically: a standalone install first, then the copy inside the ILSpy extension for
 Visual Studio. That search runs once per session, so set `ILSpy path` if yours lives somewhere else.
 Launches reuse one ILSpy window rather than opening a new one each time. When no ILSpy can be found, or
@@ -537,6 +551,7 @@ The scope the window starts on is configurable; see `Default scope` below.
 | `Default scope`              | The scope the Scope box starts on each time the window loads. Defaults to `Current project`.                                                      |
 | `Open metadata symbols in`   | `Open in ILSpy` (the default) or `Decompile in Visual Studio`.                                                                                    |
 | `ILSpy path`                 | Full path to `ILSpy.exe`. Empty means search for one once per session. A path that does not exist raises a message box rather than being ignored. |
+| `Fall back to NuGet packages` | When no installed runtime qualifies, also look in the local NuGet package cache, exact version first and then `DOTNET_ROLL_FORWARD`. Off by default. |
 | `Enable IL analysis`         | Not available yet - shown disabled, does nothing.                                                                                                 |
 | `Enable reverse IL analysis` | Not available yet - shown disabled, does nothing.                                                                                                 |
 
