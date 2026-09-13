@@ -9,9 +9,8 @@ using Xunit;
 
 namespace RoslynQuery.Tests;
 
-// Changing the filter re-reads every expanded row. The root is not one of them: its children are the
-// two direction branches, and re-fetching it replaced them with a plain incoming result, wiping the
-// tree out.
+// The refresh walk must land on analyzer rows only. Symbol rows own no fetch, so re-running one would
+// replace its branches with a result set and wipe the tree out.'
 public class ReferenceGraphRefreshTests
 {
     private static async Task<(Solution Solution, SymbolIdentity Identity, ISymbol Symbol)> FixtureAsync()
@@ -30,19 +29,17 @@ public class ReferenceGraphRefreshTests
         var (_, identity, symbol) = await FixtureAsync();
 
         return ReferenceGraphNode.CreateRoot(
-            ReferenceGraphDisplay.Of(symbol), symbol.Name, identity, SymbolGlyphs.For(symbol));
+            ReferenceGraphDisplay.Of(symbol), identity, SymbolGlyphs.For(symbol), ReferenceAnalyzers.For(symbol));
     }
 
     [Fact]
-    public async Task CreateRoot_BuildsBothDirectionBranches()
+    public async Task CreateRoot_BuildsTheApplicableAnalyzerBranches()
     {
         var root = await RootAsync();
 
-        Assert.Equal(2, root.Children.Count);
-        Assert.Equal("References To 'Target'", root.Children[0].DisplayText);
-        Assert.Equal(ReferenceDirection.Incoming, root.Children[0].Direction);
-        Assert.Equal("References From 'Target'", root.Children[1].DisplayText);
-        Assert.Equal(ReferenceDirection.Outgoing, root.Children[1].Direction);
+        // Target is a plain private method: Uses and Used By, nothing else applies.
+        Assert.Equal(["Uses", "Used By"], root.Children.Select(c => c.DisplayText));
+        Assert.All(root.Children, c => Assert.Equal(NodeRole.Analyzer, c.Role));
         Assert.True(root.IsExpanded);
     }
 
@@ -51,7 +48,7 @@ public class ReferenceGraphRefreshTests
     {
         var root = await RootAsync();
 
-        // Fetchable would mean a refresh re-runs the engine on it and overwrites both branches.
+        // Fetchable would mean a refresh re-runs the engine on it and overwrites its branches.
         Assert.False(root.IsExpandable);
         Assert.True(root.IsLoaded);
     }
@@ -92,7 +89,7 @@ public class ReferenceGraphRefreshTests
         var root = await RootAsync();
 
         var branch = root.Children[0];
-        var child = new ReferenceGraphNode("child", branch.Identity, SymbolGlyph.Method, ReferenceDirection.Incoming, parent: branch);
+        var child = ReferenceGraphNode.CreateSymbol("child", branch.Identity, SymbolGlyph.Method, [], parent: branch);
         branch.SetChildren([child]);
         branch.IsExpanded = true;
 
@@ -104,7 +101,7 @@ public class ReferenceGraphRefreshTests
     }
 
     [Fact]
-    public async Task ShallowestExpanded_SkipsALocationsBranch()
+    public async Task ShallowestExpanded_DescendsPastSymbolRowsToTheirBranches()
     {
         var (solution, _, _) = await FixtureAsync();
         var compilation = await solution.Projects.Single().GetCompilationAsync(TestContext.Current.CancellationToken);
@@ -114,24 +111,38 @@ public class ReferenceGraphRefreshTests
             target, solution, null, ReferenceUsageKind.Invocation, null, TestContext.Current.CancellationToken);
 
         var row = Assert.Single(nodes);
-        row.SetChildren([]);
-        row.IsExpanded = true;
+        var branch = row.Children[0];
+        branch.SetChildren([]);
+        branch.IsExpanded = true;
 
-        Assert.Same(row, Assert.Single(ReferenceGraphNode.ShallowestExpanded(nodes)));
+        // The symbol row itself is never a refresh target; its analyzer branch is.
+        Assert.Same(branch, Assert.Single(ReferenceGraphNode.ShallowestExpanded(nodes)));
     }
 
     [Fact]
-    public void ResetToUnloaded_ReplacesChildrenWithThePlaceholderAndClearsLoadedAndExpanded()
+    public async Task ResetToUnloaded_ReplacesChildrenWithThePlaceholderAndClearsLoadedAndExpanded()
     {
-        var parent = new ReferenceGraphNode("row", default, SymbolGlyph.Method, ReferenceDirection.Incoming);
-        parent.SetChildren([ReferenceGraphNode.CreateMessage("a row", parent)]);
-        parent.IsExpanded = true;
+        var branch = (await RootAsync()).Children[0];
+        branch.SetChildren([ReferenceGraphNode.CreateMessage("a row", branch)]);
+        branch.IsExpanded = true;
 
-        parent.ResetToUnloaded();
+        branch.ResetToUnloaded();
 
-        Assert.False(parent.IsLoaded);
-        Assert.False(parent.IsExpanded);
-        Assert.Equal(ReferenceGraphNode.SearchingText, Assert.Single(parent.Children).DisplayText);
+        Assert.False(branch.IsLoaded);
+        Assert.False(branch.IsExpanded);
+        Assert.Equal(ReferenceGraphNode.SearchingText, Assert.Single(branch.Children).DisplayText);
+    }
+
+    [Fact]
+    public async Task ResetToUnloaded_LeavesASymbolRowAlone()
+    {
+        var root = await RootAsync();
+
+        root.ResetToUnloaded();
+
+        // A symbol row has no fetch to discard, and clearing it would drop its branches for good.
+        Assert.True(root.IsLoaded);
+        Assert.Equal(2, root.Children.Count);
     }
 
     [Fact]
@@ -160,7 +171,7 @@ public class ReferenceGraphRefreshTests
         var root = await RootAsync();
 
         var branch = root.Children[0];
-        var child = new ReferenceGraphNode("child", branch.Identity, SymbolGlyph.Method, ReferenceDirection.Incoming, parent: branch);
+        var child = ReferenceGraphNode.CreateSymbol("child", branch.Identity, SymbolGlyph.Method, [], parent: branch);
         branch.SetChildren([child]);
 
         child.SetChildren([ReferenceGraphNode.CreateMessage("grandchild", child)]);

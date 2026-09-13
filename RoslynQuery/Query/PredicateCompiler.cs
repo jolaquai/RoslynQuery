@@ -26,8 +26,8 @@ internal sealed class PredicateCompilationException(string message, ImmutableArr
 internal static class PredicateCompiler
 {
     // net472 has no collectible load context, so every unique expression leaks its emitted assembly for
-    // the process lifetime; the cap below only bounds this dictionary, not the underlying leak.
-    private const int MaxCachedExpressions = 512;
+    // the process lifetime. Never evict: removing an entry reclaims nothing, and re-running it then
+    // emits and leaks a second assembly for text that already has one.
     private static readonly ConcurrentDictionary<(TargetKind, PredicateMode, string), Delegate> Cache = new ConcurrentDictionary<(TargetKind, PredicateMode, string), Delegate>();
     private static readonly ConcurrentQueue<(TargetKind, PredicateMode, string)> CacheOrder = new ConcurrentQueue<(TargetKind, PredicateMode, string)>();
     private static long _totalEmittedBytes;
@@ -62,6 +62,16 @@ internal static class PredicateCompiler
 
     public static Delegate Compile(TargetKind kind, string text) => Compile(kind, ExpressionSupport.DetectMode(text), text);
 
+    /// <summary>
+    /// The cache key this text compiles under, without compiling it. The one definition of the key, so a
+    /// caller matching a <see cref="Snapshot"/> entry cannot drift out of step with how Compile stores it.
+    /// </summary>
+    public static (TargetKind Kind, PredicateMode Mode, string Text) KeyFor(TargetKind kind, string text) =>
+        KeyFor(kind, ExpressionSupport.DetectMode(text), text);
+
+    public static (TargetKind Kind, PredicateMode Mode, string Text) KeyFor(TargetKind kind, PredicateMode mode, string text) =>
+        (kind, mode, mode == PredicateMode.Body ? ExpressionSupport.NormalizeBody(text) : ExpressionSupport.Normalize(text));
+
     public static Delegate Compile(TargetKind kind, PredicateMode mode, string text)
     {
         // Rejected outright: ParseTokens defines no preprocessor symbols, so an #if/#else would
@@ -74,8 +84,7 @@ internal static class PredicateCompiler
                 []);
         }
 
-        var normalized = mode == PredicateMode.Body ? ExpressionSupport.NormalizeBody(text) : ExpressionSupport.Normalize(text);
-        var key = (kind, mode, normalized);
+        var key = KeyFor(kind, mode, text);
         if (Cache.TryGetValue(key, out var cached))
             return cached;
 
@@ -99,9 +108,6 @@ internal static class PredicateCompiler
             var method = type.GetMethod(PredicateTemplate.MethodName, BindingFlags.Public | BindingFlags.Static);
             var @delegate = Cache.GetOrAdd(key, method.CreateDelegate(DelegateType(kind)));
             CacheOrder.Enqueue(key);
-
-            while (Cache.Count > MaxCachedExpressions && CacheOrder.TryDequeue(out var oldest))
-                Cache.TryRemove(oldest, out _);
 
             return @delegate;
         }

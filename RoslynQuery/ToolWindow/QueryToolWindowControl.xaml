@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vsshell="clr-namespace:Microsoft.VisualStudio.Shell;assembly=Microsoft.VisualStudio.Shell.15.0"
              xmlns:imaging="clr-namespace:Microsoft.VisualStudio.Imaging;assembly=Microsoft.VisualStudio.Imaging"
+             xmlns:catalog="clr-namespace:Microsoft.VisualStudio.Imaging;assembly=Microsoft.VisualStudio.ImageCatalog"
              xmlns:platformui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Imaging"
              xmlns:local="clr-namespace:RoslynQuery.ToolWindow"
              Background="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowBackgroundKey}}"
@@ -122,7 +123,7 @@
                                     Moniker="{Binding Target, Converter={StaticResource TargetMoniker}}" />
 
                 <StackPanel Grid.Column="1">
-                    <TextBlock Text="{Binding Preview}" FontFamily="Consolas" TextTrimming="CharacterEllipsis"
+                    <TextBlock Text="{Binding Preview}" FontFamily="{x:Static local:MonospaceFont.Family}" TextTrimming="CharacterEllipsis"
                                Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}" />
                     <TextBlock Margin="0,1,0,0" TextTrimming="CharacterEllipsis">
                         <Run Text="{Binding Kind, Mode=OneWay}"
@@ -134,23 +135,107 @@
             </Grid>
         </DataTemplate>
 
+        <!-- Unstarred rows only show their outline on hover, so the sidebar isn't a column of glyphs. -->
+        <Style x:Key="StarButton" TargetType="Button">
+            <Setter Property="Width" Value="18" />
+            <Setter Property="Margin" Value="6,0,0,0" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Content" Value="&#x2606;" />
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="Transparent" SnapsToDevicePixels="True">
+                            <TextBlock Text="{TemplateBinding Content}" FontSize="14"
+                                       Foreground="{TemplateBinding Foreground}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsFavorite}" Value="False" />
+                        <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="False" />
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Opacity" Value="0" />
+                </MultiDataTrigger>
+                <DataTrigger Binding="{Binding IsFavorite}" Value="True">
+                    <Setter Property="Content" Value="&#x2605;" />
+                    <Setter Property="Foreground" Value="#FFD9A441" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- The star's quieter siblings: actions, so they appear only while the row is under the cursor. -->
+        <Style x:Key="RowButton" TargetType="Button">
+            <Setter Property="Margin" Value="6,2,0,0" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="Transparent" SnapsToDevicePixels="True">
+                            <TextBlock Text="{TemplateBinding Content}" FontSize="12"
+                                       Foreground="{TemplateBinding Foreground}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                    <Setter Property="Opacity" Value="1" />
+                </DataTrigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <DataTemplate x:Key="CachedPredicateTemplate">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
                 <imaging:CrispImage Grid.Column="0" Width="16" Height="16" Margin="0,1,8,0" VerticalAlignment="Top"
                                     Moniker="{Binding Kind, Converter={StaticResource TargetMoniker}}" />
 
                 <StackPanel Grid.Column="1">
-                    <TextBlock Text="{Binding Display}" FontFamily="Consolas" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" MaxHeight="64"
+                    <TextBlock x:Name="DisplayText" Text="{Binding Display}" ToolTip="{Binding Tooltip}"
+                               FontFamily="{x:Static local:MonospaceFont.Family}" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" MaxHeight="64"
                                Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}" />
+                    <TextBox x:Name="DisplayEditor" Visibility="Collapsed"
+                             Text="{Binding EditText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             FontFamily="{x:Static local:MonospaceFont.Family}" IsVisibleChanged="OnRenameEditorVisibleChanged"
+                             KeyDown="OnRenameEditorKeyDown" LostKeyboardFocus="OnRenameEditorLostFocus" />
                     <TextBlock Text="{Binding Subtitle}" Margin="0,1,0,0" TextTrimming="CharacterEllipsis"
                                Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" />
                 </StackPanel>
+
+                <StackPanel Grid.Column="2" VerticalAlignment="Top">
+                    <Button Style="{StaticResource StarButton}" Click="OnFavoriteClick"
+                            ToolTip="Keep this query in the sidebar across restarts" />
+                    <Button Style="{StaticResource RowButton}" Content="&#x270E;" Click="OnRenameClick"
+                            ToolTip="Rename this row. Clear the name to show the query again." />
+                    <Button Style="{StaticResource RowButton}" Content="&#x2715;" Click="OnRemoveRowClick"
+                            ToolTip="Drop this row from the sidebar. The compiled query stays in the cache." />
+                </StackPanel>
             </Grid>
+
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsEditing}" Value="True">
+                    <Setter TargetName="DisplayText" Property="Visibility" Value="Collapsed" />
+                    <Setter TargetName="DisplayEditor" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
         </DataTemplate>
 
         <DataTemplate x:Key="ReplacementTemplate">
@@ -168,10 +253,10 @@
                           IsEnabled="{Binding Warning, Converter={StaticResource NullToEnabled}}" />
 
                 <StackPanel Grid.Column="1">
-                    <TextBlock Text="{Binding Before}" FontFamily="Consolas" TextTrimming="CharacterEllipsis"
+                    <TextBlock Text="{Binding Before}" FontFamily="{x:Static local:MonospaceFont.Family}" TextTrimming="CharacterEllipsis"
                                TextDecorations="Strikethrough"
                                Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" />
-                    <TextBlock Text="{Binding After}" FontFamily="Consolas" TextTrimming="CharacterEllipsis"
+                    <TextBlock Text="{Binding After}" FontFamily="{x:Static local:MonospaceFont.Family}" TextTrimming="CharacterEllipsis"
                                Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}" />
                     <TextBlock Margin="0,1,0,0" TextTrimming="CharacterEllipsis">
                         <Run Text="{Binding Hit.Kind, Mode=OneWay}"
@@ -242,7 +327,24 @@
             </Grid>
 
             <!-- Describes the Find box above, so it stays visible on both tabs rather than living inside Search's own content. -->
-            <TextBlock x:Name="SignatureText" Grid.Row="2" Margin="0,4,0,0" FontFamily="Consolas" Style="{StaticResource Meta}" />
+            <Grid Grid.Row="2" Margin="0,4,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock x:Name="SignatureText" Grid.Column="0" FontFamily="{x:Static local:MonospaceFont.Family}" Style="{StaticResource Meta}" />
+
+                <StackPanel x:Name="NeedHelpPanel" Grid.Column="1" Margin="12,0,0,0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <imaging:CrispImage Width="16" Height="16" Margin="0,0,4,0" VerticalAlignment="Center"
+                                        Moniker="{x:Static catalog:KnownMonikers.StatusInformation}" />
+                    <TextBlock Style="{StaticResource Meta}">
+                        <Hyperlink Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogHyperlinkStyleKey}}"
+                                   Click="OnNeedHelpClick"
+                                   ToolTip="Open the documentation on GitHub">Need help?</Hyperlink>
+                    </TextBlock>
+                </StackPanel>
+            </Grid>
 
             <TabControl x:Name="MainTabs" Grid.Row="3" Margin="0,7,0,0" Style="{StaticResource FlatTabControl}">
                 <TabItem Header="Search" Style="{StaticResource FlatTabItem}">
@@ -338,7 +440,7 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
-                                <TextBlock x:Name="ReplaceSignatureText" Grid.Column="0" FontFamily="Consolas" Style="{StaticResource Meta}" />
+                                <TextBlock x:Name="ReplaceSignatureText" Grid.Column="0" FontFamily="{x:Static local:MonospaceFont.Family}" Style="{StaticResource Meta}" />
 
                                 <StackPanel Grid.Column="1" Orientation="Horizontal">
                                     <Button x:Name="SelectAllButton" Content="All" MinWidth="36" Margin="12,0,4,0" Padding="6,1"

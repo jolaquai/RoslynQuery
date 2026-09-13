@@ -36,11 +36,11 @@ public class ReferenceGraphNodeTests
     }
 
     private static ReferenceGraphNode NodeFor(ISymbol symbol, Solution solution, ReferenceGraphNode parent = null) =>
-        new ReferenceGraphNode(
+        ReferenceGraphNode.CreateSymbol(
             symbol.Name,
             SymbolIdentity.Create(symbol, solution, solution.Projects.Single().Id),
             SymbolGlyphs.For(symbol),
-            ReferenceDirection.Incoming,
+            ReferenceAnalyzers.For(symbol),
             parent: parent);
 
     [Fact]
@@ -116,15 +116,63 @@ public class ReferenceGraphNodeTests
     }
 
     [Fact]
-    public async Task Constructor_SeedsAPlaceholderChildSoTheExpanderShows()
+    public async Task SymbolRow_BuildsItsAnalyzerBranchesUpFront()
+    {
+        var (solution, _, type) = await FixtureAsync();
+        var symbol = type.GetMembers("Second").Single();
+        var node = NodeFor(symbol, solution);
+
+        // A symbol row needs no fetch, so it is loaded the moment it exists.
+        Assert.True(node.IsLoaded);
+        Assert.False(node.IsExpandable);
+        Assert.Equal(NodeRole.Symbol, node.Role);
+        Assert.Equal(
+            ReferenceAnalyzers.For(symbol).Select(k => k.Header()),
+            node.Children.Select(c => c.DisplayText));
+        Assert.All(node.Children, c => Assert.Equal(NodeRole.Analyzer, c.Role));
+    }
+
+    [Fact]
+    public async Task AnalyzerRow_SeedsAPlaceholderChildSoTheExpanderShows()
     {
         var (solution, _, type) = await FixtureAsync();
         var node = NodeFor(type.GetMembers("Second").Single(), solution);
 
-        var placeholder = Assert.Single(node.Children);
+        var branch = node.Children[0];
+        var placeholder = Assert.Single(branch.Children);
+
+        Assert.True(branch.IsExpandable);
+        Assert.False(branch.IsLoaded);
         Assert.True(placeholder.IsMessage);
         Assert.Equal(ReferenceGraphNode.SearchingText, placeholder.DisplayText);
-        Assert.False(node.IsLoaded);
+    }
+
+    [Fact]
+    public async Task AnalyzerRow_CarriesItsParentSymbolsIdentity()
+    {
+        var (solution, _, type) = await FixtureAsync();
+        var node = NodeFor(type.GetMembers("Second").Single(), solution);
+
+        var branch = node.Children[0];
+
+        Assert.Equal(node.Identity, branch.Identity);
+        Assert.Equal(ReferenceAnalyzerKind.Uses, branch.Analyzer);
+    }
+
+    [Fact]
+    public async Task RecursiveSymbolRow_OffersNoBranches()
+    {
+        var (solution, _, type) = await FixtureAsync();
+        var symbol = type.GetMembers("Second").Single();
+
+        var node = ReferenceGraphNode.CreateSymbol(
+            symbol.Name,
+            SymbolIdentity.Create(symbol, solution, solution.Projects.Single().Id),
+            SymbolGlyphs.For(symbol),
+            ReferenceAnalyzers.For(symbol),
+            analyzable: false);
+
+        Assert.Empty(node.Children);
     }
 
     [Fact]
@@ -138,15 +186,15 @@ public class ReferenceGraphNodeTests
     }
 
     [Fact]
-    public async Task SetChildren_ReplacesThePlaceholderAndMarksTheNodeLoaded()
+    public async Task SetChildren_ReplacesTheAnalyzerPlaceholderAndMarksItLoaded()
     {
         var (solution, _, type) = await FixtureAsync();
-        var node = NodeFor(type.GetMembers("Second").Single(), solution);
+        var branch = NodeFor(type.GetMembers("Second").Single(), solution).Children[0];
 
-        node.SetChildren([ReferenceGraphNode.CreateMessage("nothing found", node)]);
+        branch.SetChildren([ReferenceGraphNode.CreateMessage("nothing found", branch)]);
 
-        Assert.Equal("nothing found", Assert.Single(node.Children).DisplayText);
-        Assert.True(node.IsLoaded);
+        Assert.Equal("nothing found", Assert.Single(branch.Children).DisplayText);
+        Assert.True(branch.IsLoaded);
     }
 
     [Fact]
@@ -161,9 +209,9 @@ public class ReferenceGraphNodeTests
         };
 
         var symbol = type.GetMembers("Second").Single();
-        var node = new ReferenceGraphNode(
+        var node = ReferenceGraphNode.CreateSymbol(
             symbol.Name, SymbolIdentity.Create(symbol, solution, solution.Projects.Single().Id),
-            SymbolGlyphs.For(symbol), ReferenceDirection.Incoming, locations);
+            SymbolGlyphs.For(symbol), ReferenceAnalyzers.For(symbol), locations);
 
         Assert.Equal(documentId, node.DocumentId);
         Assert.Equal(new TextSpan(10, 5), node.Span);
@@ -213,6 +261,7 @@ public class ReferenceGraphNodeTests
         Assert.Equal(SymbolGlyph.Method, SymbolGlyphs.For(type.GetMembers("Second").Single()));
         Assert.Equal(SymbolGlyph.Field, SymbolGlyphs.For(type.GetMembers("Field").Single()));
         Assert.Equal(SymbolGlyph.Constructor, SymbolGlyphs.For(type.InstanceConstructors.Single()));
+        Assert.Equal(SymbolGlyph.Namespace, SymbolGlyphs.For(type.ContainingNamespace));
         Assert.Equal(SymbolGlyph.Unknown, SymbolGlyphs.For(null));
     }
 }

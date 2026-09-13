@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,14 +20,157 @@ namespace RoslynQuery.ReferenceGraph;
 /// </summary>
 internal static class ReferenceGraphEngine
 {
-    /// <summary>Past this the tree stops being navigable, so the rest collapses into one row.</summary>
-    public const int MaxNodes = 200;
+    private const ReferenceUsageKind AllKinds =
+        ReferenceUsageKind.Invocation | ReferenceUsageKind.Read | ReferenceUsageKind.Write
+        | ReferenceUsageKind.Construction | ReferenceUsageKind.TypeReference | ReferenceUsageKind.Documentation;
 
-    public static async Task<IReadOnlyList<ReferenceGraphNode>> FindIncomingAsync(
+    /// <summary>
+    /// Runs one analyzer branch. The single entry point the tool window calls, so the switch over
+    /// analyzer kinds lives here rather than in the UI.
+    /// </summary>
+    public static Task<AnalyzerResult> RunAsync(
+        ReferenceAnalyzerKind analyzer,
+        ISymbol symbol,
+        Solution solution,
+        IImmutableSet<Document> documents,
+        ReferenceGraphNode parent,
+        CancellationToken cancellationToken) =>
+        RunAsync(analyzer, symbol, solution, documents, parent, showMetadataConsumers: true, cancellationToken);
+
+    /// <param name="showMetadataConsumers">
+    /// When false, a branch listing what depends on a metadata symbol keeps only the dependents in the solution,
+    /// leaving out every framework type that implements <c>IDisposable</c>, say.
+    /// </param>
+    public static async Task<AnalyzerResult> RunAsync(
+        ReferenceAnalyzerKind analyzer,
+        ISymbol symbol,
+        Solution solution,
+        IImmutableSet<Document> documents,
+        ReferenceGraphNode parent,
+        bool showMetadataConsumers,
+        CancellationToken cancellationToken)
+    {
+        if (symbol is null || solution is null) return new AnalyzerResult([], 0);
+
+        var stopwatch = Stopwatch.StartNew();
+        var rows = await DispatchAsync(analyzer, symbol, solution, documents, parent, cancellationToken).ConfigureAwait(false);
+        stopwatch.Stop();
+
+        if (!showMetadataConsumers && ReferenceAnalyzers.ListsConsumers(analyzer) && SymbolIdentity.IsMetadataSymbol(symbol))
+            rows = rows.Where(row => !row.IsFromMetadata).ToList();
+
+        return new AnalyzerResult(rows, stopwatch.ElapsedMilliseconds);
+    }
+
+    private static Task<IReadOnlyList<ReferenceGraphNode>> DispatchAsync(
+        ReferenceAnalyzerKind analyzer,
+        ISymbol symbol,
+        Solution solution,
+        IImmutableSet<Document> documents,
+        ReferenceGraphNode parent,
+        CancellationToken cancellationToken)
+    {
+        switch (analyzer)
+        {
+            case ReferenceAnalyzerKind.Uses:
+                return FindOutgoingAsync(symbol, solution, AllKinds, parent, cancellationToken);
+
+            case ReferenceAnalyzerKind.UsedBy:
+            case ReferenceAnalyzerKind.ReadBy:
+            case ReferenceAnalyzerKind.AssignedBy:
+            case ReferenceAnalyzerKind.InstantiatedBy:
+            case ReferenceAnalyzerKind.ExposedBy:
+            case ReferenceAnalyzerKind.AppliedTo:
+                return FindIncomingAsync(analyzer, symbol, solution, documents, parent, cancellationToken);
+
+            case ReferenceAnalyzerKind.Overrides:
+                return HierarchyAnalyzers.FindOverridesAsync(symbol, solution, parent, cancellationToken);
+
+            case ReferenceAnalyzerKind.OverriddenBy:
+                return HierarchyAnalyzers.FindOverriddenByAsync(symbol, solution, ProjectsFor(documents), parent, cancellationToken);
+
+            case ReferenceAnalyzerKind.Implements:
+                return HierarchyAnalyzers.FindImplementsAsync(symbol, solution, ProjectsFor(documents), parent, cancellationToken);
+
+            case ReferenceAnalyzerKind.ImplementedBy:
+                return HierarchyAnalyzers.FindImplementedByAsync(symbol, solution, ProjectsFor(documents), parent, cancellationToken);
+
+            case ReferenceAnalyzerKind.DerivedTypes:
+                return HierarchyAnalyzers.FindDerivedTypesAsync(symbol, solution, ProjectsFor(documents), parent, cancellationToken);
+
+            case ReferenceAnalyzerKind.ExtensionMethods:
+                return HierarchyAnalyzers.FindExtensionMethodsAsync(symbol, solution, parent, cancellationToken);
+
+            case ReferenceAnalyzerKind.Contains:
+                return HierarchyAnalyzers.FindContainsAsync(symbol, solution, parent, cancellationToken);
+
+            // Throwing, not returning empty: an unwired kind is a bug, and a silent empty branch would
+            // look exactly like a symbol that genuinely has no answers.
+            default:
+                throw new ArgumentOutOfRangeException(nameof(analyzer), analyzer, "No analyzer is wired for this kind.");
+        }
+    }
+
+    /// <summary>The hierarchy finders scope by project, not by document.</summary>
+    private static IImmutableSet<Project> ProjectsFor(IImmutableSet<Document> documents) =>
+        documents is null ? null : documents.Select(d => d.Project).ToImmutableHashSet();
+
+    /// <summary>One incoming analyzer branch. The analyzer decides both the usage mask and, where a mask alone cannot say it, an occurrence test.</summary>
+    public static Task<IReadOnlyList<ReferenceGraphNode>> FindIncomingAsync(
+        ReferenceAnalyzerKind analyzer,
+        ISymbol target,
+        Solution solution,
+        IImmutableSet<Document> documents,
+        ReferenceGraphNode parent,
+        CancellationToken cancellationToken)
+    {
+        var (mask, occurrenceFilter) = ConfigFor(analyzer, target);
+
+        return FindIncomingAsync(target, solution, documents, mask, occurrenceFilter, analyzer, parent, cancellationToken);
+    }
+
+    private static (ReferenceUsageKind Mask, Func<SyntaxNode, bool> Filter) ConfigFor(ReferenceAnalyzerKind analyzer, ISymbol target)
+    {
+        switch (analyzer)
+        {
+            // Every occurrence of a namespace or a type parameter classifies as a type reference, which the member mask excludes.
+            case ReferenceAnalyzerKind.UsedBy when target is INamespaceSymbol || target is ITypeParameterSymbol:
+                return (ReferenceUsageKind.TypeReference, null);
+            case ReferenceAnalyzerKind.UsedBy:
+                return (ReferenceUsageKind.Invocation | ReferenceUsageKind.Read | ReferenceUsageKind.Write, null);
+            case ReferenceAnalyzerKind.ReadBy:
+                return (ReferenceUsageKind.Read, null);
+            case ReferenceAnalyzerKind.AssignedBy:
+                return (ReferenceUsageKind.Write, null);
+            case ReferenceAnalyzerKind.InstantiatedBy:
+                return (ReferenceUsageKind.Construction, null);
+            case ReferenceAnalyzerKind.ExposedBy:
+                return (ReferenceUsageKind.TypeReference, ReferenceUsageClassifier.IsSignaturePosition);
+            // An attribute application binds to the constructor, so its kind is Construction or
+            // TypeReference depending on which definition SymbolFinder cascaded to; the syntax decides.
+            case ReferenceAnalyzerKind.AppliedTo:
+                return (AllKinds, ReferenceUsageClassifier.IsAttributeApplication);
+            default:
+                return (AllKinds, null);
+        }
+    }
+
+    public static Task<IReadOnlyList<ReferenceGraphNode>> FindIncomingAsync(
         ISymbol target,
         Solution solution,
         IImmutableSet<Document> documents,
         ReferenceUsageKind filter,
+        ReferenceGraphNode parent,
+        CancellationToken cancellationToken) =>
+        FindIncomingAsync(target, solution, documents, filter, null, ReferenceAnalyzerKind.UsedBy, parent, cancellationToken);
+
+    private static async Task<IReadOnlyList<ReferenceGraphNode>> FindIncomingAsync(
+        ISymbol target,
+        Solution solution,
+        IImmutableSet<Document> documents,
+        ReferenceUsageKind filter,
+        Func<SyntaxNode, bool> occurrenceFilter,
+        ReferenceAnalyzerKind analyzer,
         ReferenceGraphNode parent,
         CancellationToken cancellationToken)
     {
@@ -63,6 +207,7 @@ internal static class ReferenceGraphEngine
 
                 var kind = ReferenceUsageClassifier.Classify(occurrence, reference.Definition);
                 if ((kind & filter) == ReferenceUsageKind.None) continue;
+                if (occurrenceFilter != null && !occurrenceFilter(occurrence)) continue;
 
                 if (!models.TryGetValue(document.Id, out var model))
                 {
@@ -85,7 +230,7 @@ internal static class ReferenceGraphEngine
             }
         }
 
-        return groups.Build(ReferenceDirection.Incoming, parent);
+        return groups.Build(analyzer, parent);
     }
 
     /// <summary>What <paramref name="root"/> itself references, scoped to its own declarations, members, and base list.</summary>
@@ -117,7 +262,7 @@ internal static class ReferenceGraphEngine
                 Walk(scope, model, document, text, filter, groups, solution, cancellationToken);
         }
 
-        return groups.Build(ReferenceDirection.Outgoing, parent);
+        return groups.Build(ReferenceAnalyzerKind.Uses, parent);
     }
 
     private static void Walk(
@@ -141,7 +286,7 @@ internal static class ReferenceGraphEngine
             var kind = ReferenceUsageClassifier.Classify(node, symbol);
             if ((kind & filter) == ReferenceUsageKind.None) continue;
 
-            if (!SymbolResolver.IsSupportedRoot(symbol)) continue;
+            if (!SymbolResolver.IsGraphTarget(symbol)) continue;
 
             groups.Add(symbol, solution, document.Project.Id, ReferenceLocationInfo.Create(document, text, node.Span, kind));
         }
@@ -207,7 +352,14 @@ internal static class ReferenceGraphEngine
             if (!(node is MemberDeclarationSyntax || node is AccessorDeclarationSyntax || node is VariableDeclaratorSyntax))
                 continue;
 
-            var declared = model.GetDeclaredSymbol(node, cancellationToken);
+            // A field or field-like event declares its symbol on the declarator, so GetDeclaredSymbol
+            // answers null for the declaration itself and the walk would climb out to the containing type.
+            var declaring = node is BaseFieldDeclarationSyntax field
+                ? field.Declaration?.Variables.FirstOrDefault()
+                : node;
+            if (declaring is null) continue;
+
+            var declared = model.GetDeclaredSymbol(declaring, cancellationToken);
             if (declared != null) return Normalize(declared);
         }
 
@@ -216,7 +368,7 @@ internal static class ReferenceGraphEngine
 
     private static ISymbol Normalize(ISymbol symbol)
     {
-        while (symbol != null && !SymbolResolver.IsSupportedRoot(symbol)) symbol = symbol.ContainingSymbol;
+        while (symbol != null && !SymbolResolver.IsAttributionTarget(symbol)) symbol = symbol.ContainingSymbol;
 
         // An accessor is shown as the property or event it belongs to, the way Call Hierarchy does.
         if (symbol is IMethodSymbol method && method.AssociatedSymbol != null) return method.AssociatedSymbol;
@@ -258,48 +410,42 @@ internal static class ReferenceGraphEngine
             group.Locations.Add(location);
         }
 
-        public IReadOnlyList<ReferenceGraphNode> Build(ReferenceDirection direction, ReferenceGraphNode parent)
+        public IReadOnlyList<ReferenceGraphNode> Build(ReferenceAnalyzerKind analyzer, ReferenceGraphNode parent)
         {
-            var ordered = Order(direction);
+            var ordered = Order(analyzer);
             var nodes = new List<ReferenceGraphNode>(ordered.Count);
-            var count = 0;
 
             foreach (var group in ordered)
             {
-                if (count == MaxNodes)
-                {
-                    nodes.Add(ReferenceGraphNode.CreateMessage($"{ordered.Count - MaxNodes} more...", parent));
-                    break;
-                }
-
                 // Whichever location ends up first is the one double-click navigates to, so it has to
                 // be the same one on every refresh.
                 group.Locations.Sort(CompareLocations);
 
                 var recursive = parent != null && parent.HasAncestor(group.Identity);
 
-                nodes.Add(new ReferenceGraphNode(
+                var node = ReferenceGraphNode.CreateSymbol(
                     group.Display,
                     group.Identity,
                     SymbolGlyphs.For(group.Symbol),
-                    direction,
+                    ReferenceAnalyzers.For(group.Symbol),
                     group.Locations,
                     parent,
                     // A node whose symbol already sits above it would expand into the same subtree
-                    // forever, so it is a leaf that says so instead.
-                    expandable: !recursive)
-                { IsRecursive = recursive });
+                    // forever, so it offers no branches and says so instead.
+                    analyzable: !recursive,
+                    signature: ReferenceGraphDisplay.SignatureOf(group.Symbol));
 
-                count++;
+                node.IsRecursive = recursive;
+                nodes.Add(node);
             }
 
             return nodes;
         }
 
-        /// <summary>Incoming rows sort by name - <c>SymbolFinder</c>'s parallel search makes first-seen order nondeterministic. Outgoing rows keep insertion (source) order.</summary>
-        private List<Group> Order(ReferenceDirection direction)
+        /// <summary>Incoming rows sort by name - <c>SymbolFinder</c>'s parallel search makes first-seen order nondeterministic. <c>Uses</c> keeps insertion (source) order.</summary>
+        private List<Group> Order(ReferenceAnalyzerKind analyzer)
         {
-            if (direction != ReferenceDirection.Incoming) return _ordered;
+            if (analyzer == ReferenceAnalyzerKind.Uses) return _ordered;
 
             return [.. _ordered
                 .OrderBy(g => g.Display, StringComparer.Ordinal)

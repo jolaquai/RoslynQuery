@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
 using RoslynQuery.Query;
 
 using Xunit;
@@ -5,42 +9,78 @@ using Xunit;
 namespace RoslynQuery.Tests;
 
 /// <summary>
-/// Every predicate printed in README.md, compiled. A documented example that does not compile is
-/// worse than no example, and the README is the one place nothing else exercises - the IOperation
-/// one below shipped broken (<c>IConversionOperation.Conversion</c> is a <c>CommonConversion</c>,
-/// which has no <c>IsBoxing</c>) until this was added.
+/// Every predicate printed in README.md, read out of the README and compiled. A documented example that does
+/// not compile is worse than no example, and the README is the one place nothing else exercises - the
+/// IOperation one (<c>IConversionOperation.Conversion</c> is a <c>CommonConversion</c>, which has no
+/// <c>IsBoxing</c>) shipped broken until this existed.
 /// </summary>
-/// <remarks>Keep in sync with README.md; if an example changes there, change it here.</remarks>
 [Collection(PredicateCompilerCacheCollection.Name)]
 public class ReadmeExampleTests
 {
+    public static IEnumerable<object[]> SyntaxNodeExamples() => ReadmeExamples.For("SyntaxNode");
+
+    public static IEnumerable<object[]> SyntaxTokenExamples() => ReadmeExamples.For("SyntaxToken");
+
+    public static IEnumerable<object[]> OperationExamples() => ReadmeExamples.For("Operation");
+
     [Theory]
-    [InlineData("n is MethodDeclarationSyntax m && m.ParameterList.Parameters.Count > 3")]
-    [InlineData("var m = n as MethodDeclarationSyntax;\r\nif (m is null) return false;\r\nreturn m.Body?.Statements.Count > 20;")]
-    [InlineData("(await doc.GetSyntaxRootAsync()).DescendantNodes().Count() > 500")]
-    [InlineData("n.IsKind(SyntaxKind.IfStatement)")]
-    [InlineData("n is InvocationExpressionSyntax i && i.ArgumentList.Arguments.Count > 4")]
-    [InlineData("n is MethodDeclarationSyntax m && m.Modifiers.Any(SyntaxKind.AsyncKeyword)\r\n    && !m.Identifier.Text.EndsWith(\"Async\")")]
-    [InlineData("n is IdentifierNameSyntax id && model.GetSymbolInfo(id).Symbol is IMethodSymbol { IsStatic: true }")]
+    [MemberData(nameof(SyntaxNodeExamples))]
     public void SyntaxNodeExamples_Compile(string text) =>
         Assert.NotNull(PredicateCompiler.Compile(TargetKind.SyntaxNode, text));
 
     [Theory]
-    [InlineData("t.IsKind(SyntaxKind.StringLiteralToken) && t.ValueText.Length > 200")]
+    [MemberData(nameof(SyntaxTokenExamples))]
     public void SyntaxTokenExamples_Compile(string text) =>
         Assert.NotNull(PredicateCompiler.Compile(TargetKind.SyntaxToken, text));
 
     [Theory]
-    [InlineData("op is IConversionOperation c && c.GetConversion().IsBoxing")]
+    [MemberData(nameof(OperationExamples))]
     public void OperationExamples_Compile(string text) =>
         Assert.NotNull(PredicateCompiler.Compile(TargetKind.Operation, text));
 
+    /// <summary>
+    /// Guards the extractor itself: if it silently stopped finding examples, every test above would pass by
+    /// having nothing to run. The counts only have to be plausible, not exact.
+    /// </summary>
+    [Fact]
+    public void TheExtractor_FindsExamplesForEveryTarget()
+    {
+        var all = ReadmeExamples.All();
+
+        Assert.True(all.Count >= 20, "found only " + all.Count + " examples in the README");
+        Assert.True(all.Count(e => e.Target == "SyntaxNode") >= 10);
+        Assert.True(all.Count(e => e.Target == "SyntaxToken") >= 3);
+        Assert.True(all.Count(e => e.Target == "Operation") >= 3);
+        Assert.All(all, e => Assert.False(string.IsNullOrWhiteSpace(e.Text)));
+    }
+
+    /// <summary>The README claims the mode is detected from the text, so its own sections have to agree.</summary>
     [Theory]
-    // The README claims mode is detected from the text, so the expression examples must not be
-    // taken for bodies and the body example must not be taken for an expression.
-    [InlineData("n.IsKind(SyntaxKind.IfStatement)", (int)PredicateMode.Expression)]
-    [InlineData("(await doc.GetSyntaxRootAsync()).DescendantNodes().Count() > 500", (int)PredicateMode.Expression)]
-    [InlineData("var m = n as MethodDeclarationSyntax;\r\nif (m is null) return false;\r\nreturn m.Body?.Statements.Count > 20;", (int)PredicateMode.Body)]
-    public void Examples_DetectTheDocumentedMode(string text, int expectedMode) =>
-        Assert.Equal((PredicateMode)expectedMode, ExpressionSupport.DetectMode(text));
+    [MemberData(nameof(BodyExamples))]
+    public void ExamplesUnderTheBodiesHeading_DetectAsBodies(string text) =>
+        Assert.Equal(PredicateMode.Body, ExpressionSupport.DetectMode(text));
+
+    [Theory]
+    [MemberData(nameof(ExpressionExamples))]
+    public void ExamplesUnderTheSyntaxOnlyHeading_DetectAsExpressions(string text) =>
+        Assert.Equal(PredicateMode.Expression, ExpressionSupport.DetectMode(text));
+
+    public static IEnumerable<object[]> BodyExamples() =>
+        ReadmeExamples.All().Where(e => e.IsDocumentedAsBody).Select(e => new object[] { e.Text });
+
+    public static IEnumerable<object[]> ExpressionExamples() =>
+        ReadmeExamples.All()
+            .Where(e => e.Section.IndexOf("syntax only", StringComparison.OrdinalIgnoreCase) >= 0)
+            .Select(e => new object[] { e.Text });
+
+    /// <summary>The "Need help?" link has to land on a heading that is actually there.</summary>
+    [Fact]
+    public void TheNeedHelpLink_PointsAtTheUsingItSection()
+    {
+        const string url = RoslynQuery.ToolWindow.QueryToolWindowControl.NeedHelpUrl;
+
+        Assert.StartsWith("https://github.com/jolaquai/RoslynQuery/blob/main/README.md#", url);
+        Assert.EndsWith("#using-it", url);
+        Assert.Contains("\r\n## Using it\r\n", RepositoryFiles.Read("README.md"));
+    }
 }

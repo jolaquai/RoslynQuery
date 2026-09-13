@@ -32,39 +32,46 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
     private bool _isRecursive;
     private bool _isExpanded;
     private bool _isLoading;
+    private IReadOnlyList<SignaturePart> _signature;
 
-    public ReferenceGraphNode(
+    private ReferenceGraphNode(
         string displayText,
         SymbolIdentity identity,
         SymbolGlyph glyph,
-        ReferenceDirection direction,
+        NodeRole role,
+        ReferenceAnalyzerKind? analyzer = null,
         IReadOnlyList<ReferenceLocationInfo> locations = null,
-        ReferenceGraphNode parent = null,
-        bool expandable = true)
+        ReferenceGraphNode parent = null)
     {
         _displayText = displayText;
         Identity = identity;
         Glyph = glyph;
-        Direction = direction;
+        Role = role;
+        Analyzer = analyzer;
         Locations = locations ?? [];
         Parent = parent;
-        IsExpandable = expandable;
         _secondaryText = Describe(Locations);
-
-        if (expandable) Children.Add(CreateMessage(SearchingText, this));
     }
 
     public const string SearchingText = "Searching...";
 
     public SymbolIdentity Identity { get; }
     public SymbolGlyph Glyph { get; }
-    public ReferenceDirection Direction { get; }
+    public NodeRole Role { get; }
+
+    /// <summary>Set on analyzer rows only: the branch this row fetches when opened.</summary>
+    public ReferenceAnalyzerKind? Analyzer { get; }
+
     public IReadOnlyList<ReferenceLocationInfo> Locations { get; }
     public ReferenceGraphNode Parent { get; }
 
-    /// <summary>False for the "Searching..." / "N more..." rows, which are text and nothing else.</summary>
-    public bool IsExpandable { get; }
-    public bool IsMessage { get; private set; }
+    /// <summary>Only an analyzer row runs a fetch; a symbol row builds its branches at construction.</summary>
+    public bool IsExpandable => Role == NodeRole.Analyzer;
+
+    public bool IsMessage => Role == NodeRole.Message;
+
+    /// <summary>The row's symbol lives in a referenced assembly, so it has no source to navigate to.</summary>
+    public bool IsFromMetadata => Role == NodeRole.Symbol && Identity.IsFromMetadata;
 
     /// <summary>Set once the lazy fetch has replaced the seeded placeholder.</summary>
     public bool IsLoaded { get; set; }
@@ -79,6 +86,10 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
         get => _displayText;
         set => Set(ref _displayText, value);
     }
+
+    /// <summary>The classified spelling a row renders; anything but a symbol row renders its display text as one run.</summary>
+    public IReadOnlyList<SignaturePart> Signature =>
+        _signature ?? [new SignaturePart(SymbolDisplayPartKind.Text, DisplayText)];
 
     public string SecondaryText
     {
@@ -105,10 +116,72 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
         set => Set(ref _isLoading, value);
     }
 
+    /// <summary>
+    /// A symbol row. Its branches are decided here, while the live <see cref="ISymbol"/> is still in
+    /// hand, so that opening the row later needs no compilation.
+    /// </summary>
+    public static ReferenceGraphNode CreateSymbol(
+        string displayText,
+        SymbolIdentity identity,
+        SymbolGlyph glyph,
+        IReadOnlyList<ReferenceAnalyzerKind> analyzers,
+        IReadOnlyList<ReferenceLocationInfo> locations = null,
+        ReferenceGraphNode parent = null,
+        bool analyzable = true,
+        IReadOnlyList<SignaturePart> signature = null)
+    {
+        var node = new ReferenceGraphNode(displayText, identity, glyph, NodeRole.Symbol, locations: locations, parent: parent)
+        { IsLoaded = true, _signature = signature };
+
+        // A metadata row opens decompiled source on double-click, so even a single call site needs a row of its own.
+        if (node.Locations.Count > 1 || (node.IsFromMetadata && node.Locations.Count == 1)) node.Children.Add(node.BuildLocationsBranch());
+
+        if (analyzable && analyzers != null)
+            foreach (var kind in analyzers)
+                node.Children.Add(CreateAnalyzer(kind, node));
+
+        return node;
+    }
+
+    /// <summary>A branch row. Carries its parent symbol's identity, which is what the fetch resolves.</summary>
+    public static ReferenceGraphNode CreateAnalyzer(ReferenceAnalyzerKind kind, ReferenceGraphNode parent)
+    {
+        var node = new ReferenceGraphNode(
+            kind.Header(), parent?.Identity ?? default, SymbolGlyphs.ForAnalyzer(kind), NodeRole.Analyzer, kind, parent: parent);
+
+        node.Children.Add(CreateMessage(SearchingText, node));
+
+        return node;
+    }
+
+    public static ReferenceGraphNode CreateRoot(
+        string displayText, SymbolIdentity identity, SymbolGlyph glyph, IReadOnlyList<ReferenceAnalyzerKind> analyzers,
+        IReadOnlyList<SignaturePart> signature = null)
+    {
+        var root = CreateSymbol(displayText, identity, glyph, analyzers, signature: signature);
+        root.IsExpanded = true;
+
+        return root;
+    }
+
     public static ReferenceGraphNode CreateMessage(string text, ReferenceGraphNode parent = null) =>
-        new ReferenceGraphNode(text, default, SymbolGlyph.Unknown, parent?.Direction ?? ReferenceDirection.Incoming,
-            parent: parent, expandable: false)
-        { IsMessage = true };
+        new ReferenceGraphNode(text, default, SymbolGlyph.Unknown, NodeRole.Message, parent: parent) { IsLoaded = true };
+
+    /// <summary>A single occurrence: a leaf that exists to be double-clicked.</summary>
+    public static ReferenceGraphNode CreateLocation(ReferenceLocationInfo location, ReferenceGraphNode parent) =>
+        new ReferenceGraphNode(location.Display, default, SymbolGlyph.Location, NodeRole.Location, locations: [location], parent: parent)
+        { IsLoaded = true };
+
+    private ReferenceGraphNode BuildLocationsBranch()
+    {
+        var branch = new ReferenceGraphNode(
+            $"Locations ({Locations.Count})", default, SymbolGlyph.Locations, NodeRole.Locations, parent: this)
+        { IsLoaded = true };
+
+        foreach (var location in Locations) branch.Children.Add(CreateLocation(location, branch));
+
+        return branch;
+    }
 
     public static IEnumerable<ReferenceGraphNode> ShallowestExpanded(IEnumerable<ReferenceGraphNode> nodes)
     {
@@ -140,10 +213,13 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
 
     public void ResetToUnloaded()
     {
+        if (Role != NodeRole.Analyzer) return;
+
         Children.Clear();
         Children.Add(CreateMessage(SearchingText, this));
         IsLoaded = false;
         IsExpanded = false;
+        SecondaryText = null;
     }
 
     /// <summary>Includes this node itself, since a direct self-reference is also recursion.</summary>
@@ -160,53 +236,22 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
     public void SetChildren(IEnumerable<ReferenceGraphNode> children)
     {
         Children.Clear();
-
-        if (Locations.Count > 1) Children.Add(BuildLocationsBranch());
         foreach (var child in children) Children.Add(child);
 
         IsLoaded = true;
     }
 
-    private ReferenceGraphNode BuildLocationsBranch()
+    /// <summary>
+    /// Installs a branch's results and writes ILSpy's header suffix, "(5 in 12 ms)". A branch that found
+    /// nothing gets no children and no suffix, which is what leaves it bare and without an expander.
+    /// </summary>
+    public void ApplyResults(AnalyzerResult result)
     {
-        // Not expandable: it is built already populated, so the lazy fetch must leave it alone.
-        var branch = new ReferenceGraphNode(
-            $"Locations ({Locations.Count})", default, SymbolGlyph.Locations, Direction, parent: this, expandable: false)
-        { IsLoaded = true };
-
-        foreach (var location in Locations) branch.Children.Add(CreateLocation(location, branch));
-
-        return branch;
+        SetChildren(result.Rows);
+        SecondaryText = result.Rows.Count == 0
+            ? null
+            : $"({result.Rows.Count} in {result.ElapsedMilliseconds} ms)";
     }
-
-    /// <summary>A root and its two branches; not <see cref="IsExpandable"/>, or the refresh walk would re-fetch it and overwrite both branches.</summary>
-    public static ReferenceGraphNode CreateRoot(string displayText, string symbolName, SymbolIdentity identity, SymbolGlyph glyph)
-    {
-        var root = new ReferenceGraphNode(displayText, identity, glyph, ReferenceDirection.Incoming, expandable: false);
-
-        root.SetChildren(
-        [
-            new ReferenceGraphNode($"References To '{symbolName}'", identity, SymbolGlyph.IncomingBranch,
-                ReferenceDirection.Incoming, parent: root),
-            new ReferenceGraphNode($"References From '{symbolName}'", identity, SymbolGlyph.OutgoingBranch,
-                ReferenceDirection.Outgoing, parent: root)
-        ]);
-
-        root.IsExpanded = true;
-
-        return root;
-    }
-
-    /// <summary>A single occurrence: a leaf that exists to be double-clicked.</summary>
-    public static ReferenceGraphNode CreateLocation(ReferenceLocationInfo location, ReferenceGraphNode parent) =>
-        new ReferenceGraphNode(
-            location.Display,
-            default,
-            SymbolGlyph.Location,
-            parent?.Direction ?? ReferenceDirection.Incoming,
-            [location],
-            parent,
-            expandable: false);
 
     /// <summary>"3 refs (2 reads, 1 write)", or just "2 invocations" when there is only one kind.</summary>
     public static string Describe(IReadOnlyList<ReferenceLocationInfo> locations)
@@ -218,6 +263,8 @@ internal sealed class ReferenceGraphNode : INotifyPropertyChanged
             .Where(p => p.Count > 0)
             .ToList();
 
+        // A hierarchy row's location is a declaration, not a usage, so it has no breakdown to report.
+        if (parts.Count == 0) return null;
         if (parts.Count == 1) return $"{parts[0].Count} {Pluralize(NameOf(parts[0].Kind), parts[0].Count)}";
 
         var builder = new StringBuilder();

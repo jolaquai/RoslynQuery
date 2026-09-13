@@ -40,8 +40,12 @@ public class QueryEngineResultKindTests
     }
 
     private static Task<QueryOutcome> RunAsync(ScopeUnit unit, TargetKind target, string expression, ICollection<QueryHit> hits) =>
+        RunAsync([unit], target, expression, hits, maxResults: 100);
+
+    private static Task<QueryOutcome> RunAsync(
+        IReadOnlyList<ScopeUnit> units, TargetKind target, string expression, ICollection<QueryHit> hits, int maxResults) =>
         QueryEngine.RunAsync(
-            [unit], target, expression, PredicateCompiler.Compile(target, expression), maxResults: 100,
+            units, target, expression, PredicateCompiler.Compile(target, expression), maxResults,
             onBatch: batch => { foreach (var hit in batch) hits.Add(hit); },
             CancellationToken.None);
 
@@ -102,6 +106,98 @@ public class QueryEngineResultKindTests
         Assert.Equal(1, outcome.Matched);
         Assert.Equal(0, outcome.Errors);
         Assert.Equal("MethodDeclaration", Assert.Single(hits).Kind);
+    }
+
+    [Fact]
+    public async Task RunAsync_MultipleTokenMatchesReportingTheSameToken_CollapseToOneHit()
+    {
+        var unit = await UnitAsync("class C { void M() { int a = 1; int b = 2; } }");
+        const string selector = "t.IsKind(SyntaxKind.IdentifierToken) && (t.Text == \"a\" || t.Text == \"b\")";
+
+        // Baseline: without redirecting the result there are two separate matches left to collapse.
+        var baseline = new List<QueryHit>();
+        Assert.Equal(2, (await RunAsync(unit, TargetKind.SyntaxToken, selector, baseline)).Matched);
+
+        var hits = new List<QueryHit>();
+
+        // Both declared names report the method's own identifier token instead of themselves.
+        var body = "if (" + selector + ")\r\n"
+            + "    return t.Parent.FirstAncestorOrSelf<MethodDeclarationSyntax>().Identifier;\r\nreturn false;";
+        var outcome = await RunAsync(unit, TargetKind.SyntaxToken, body, hits);
+
+        Assert.Equal(1, outcome.Matched);
+        Assert.Equal(0, outcome.Errors);
+        Assert.Equal("IdentifierToken", Assert.Single(hits).Kind);
+    }
+
+    [Fact]
+    public async Task RunAsync_MultipleOperationMatchesReportingTheSameOperation_CollapseToOneHit()
+    {
+        var unit = await UnitAsync("class C { void M() { int a = 1; int b = 2; } }");
+
+        // Baseline: without redirecting the result there are two separate matches left to collapse.
+        var baseline = new List<QueryHit>();
+        Assert.Equal(2, (await RunAsync(unit, TargetKind.Operation, "op is ILiteralOperation", baseline)).Matched);
+
+        var hits = new List<QueryHit>();
+
+        // Every literal reports the root of its operation tree, which is the one method body.
+        var body = "if (op is not ILiteralOperation) return false;\r\n"
+            + "var root = op;\r\nwhile (root.Parent != null) root = root.Parent;\r\nreturn root;";
+        var outcome = await RunAsync(unit, TargetKind.Operation, body, hits);
+
+        Assert.Equal(1, outcome.Matched);
+        Assert.Equal(0, outcome.Errors);
+        Assert.Single(hits);
+    }
+
+    /// <summary>The key is (document, span, kind); keyed on kind alone this would collapse to one row.</summary>
+    [Fact]
+    public async Task RunAsync_SameKindAtDifferentSpans_StaySeparateHits()
+    {
+        var unit = await UnitAsync("class C { void M() { int a = 1; } void N() { int b = 2; } }");
+        var hits = new List<QueryHit>();
+
+        var body = "if (n.IsKind(SyntaxKind.LocalDeclarationStatement)) return n.FirstAncestorOrSelf<MethodDeclarationSyntax>();\r\nreturn false;";
+        var outcome = await RunAsync(unit, TargetKind.SyntaxNode, body, hits);
+
+        Assert.Equal(2, outcome.Matched);
+        Assert.Equal(0, outcome.Errors);
+        Assert.Equal(2, hits.Count);
+        Assert.All(hits, h => Assert.Equal("MethodDeclaration", h.Kind));
+        Assert.Equal(2, hits.Select(h => h.Span).Distinct().Count());
+    }
+
+    /// <summary>Two files can hold the identical span and kind, so the document has to be part of the key.</summary>
+    [Fact]
+    public async Task RunAsync_SameSpanAndKindInDifferentDocuments_StaySeparateHits()
+    {
+        const string source = "class C { void M() { int a = 1; } }";
+        var units = new[] { await UnitAsync(source), await UnitAsync(source) };
+        var hits = new List<QueryHit>();
+
+        var body = "if (n.IsKind(SyntaxKind.LocalDeclarationStatement)) return n.FirstAncestorOrSelf<MethodDeclarationSyntax>();\r\nreturn false;";
+        var outcome = await RunAsync(units, TargetKind.SyntaxNode, body, hits, maxResults: 100);
+
+        Assert.Equal(2, outcome.Matched);
+        Assert.Equal(2, hits.Count);
+        Assert.Equal(hits[0].Span, hits[1].Span);
+        Assert.Equal(2, hits.Select(h => h.DocumentId).Distinct().Count());
+    }
+
+    /// <summary>Dedupe runs before the cap counter, so collapsed duplicates must not spend the budget.</summary>
+    [Fact]
+    public async Task RunAsync_CollapsedDuplicates_DoNotCountAgainstTheCap()
+    {
+        var unit = await UnitAsync("class C { void M() { int a = 1; int b = 2; int c = 3; } }");
+        var hits = new List<QueryHit>();
+
+        var body = "if (n.IsKind(SyntaxKind.LocalDeclarationStatement)) return n.FirstAncestorOrSelf<MethodDeclarationSyntax>();\r\nreturn false;";
+        var outcome = await RunAsync([unit], TargetKind.SyntaxNode, body, hits, maxResults: 1);
+
+        Assert.Equal(1, outcome.Matched);
+        Assert.False(outcome.Truncated);
+        Assert.Single(hits);
     }
 
     [Fact]

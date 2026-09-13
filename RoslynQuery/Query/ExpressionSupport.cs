@@ -26,6 +26,75 @@ internal static class ExpressionSupport
 
     public static ImmutableArray<MetadataReference> References => LazyReferences.Value;
 
+    /// <summary>
+    /// Declares <c>System.Index</c> and <c>System.Range</c> so <c>^x</c> and <c>a..b</c> compile. net472 has
+    /// neither, and the copies inside System.Memory are internal to it, so the predicate has to carry its own:
+    /// the compiler lowers both operators against whatever types of those names it can see, shape only.
+    /// Appended after the user's text so the offset diagnostics map through stays correct.
+    /// </summary>
+    public const string IndexRangeSupport = """
+
+        namespace System
+        {
+            internal readonly struct Index
+            {
+                private readonly int _value;
+
+                public Index(int value, bool fromEnd = false)
+                {
+                    if (value < 0) throw new ArgumentOutOfRangeException(nameof(value));
+                    _value = fromEnd ? ~value : value;
+                }
+
+                private Index(int value) => _value = value;
+
+                public static Index Start => new Index(0);
+                public static Index End => new Index(~0);
+
+                public static Index FromStart(int value) => new Index(value, false);
+                public static Index FromEnd(int value) => new Index(value, true);
+
+                public int Value => _value < 0 ? ~_value : _value;
+                public bool IsFromEnd => _value < 0;
+
+                public int GetOffset(int length) => IsFromEnd ? length + _value + 1 : _value;
+
+                public static implicit operator Index(int value) => new Index(value, false);
+
+                public override string ToString() => IsFromEnd ? "^" + (uint)Value : ((uint)Value).ToString();
+            }
+
+            internal readonly struct Range
+            {
+                public Range(Index start, Index end)
+                {
+                    Start = start;
+                    End = end;
+                }
+
+                public Index Start { get; }
+                public Index End { get; }
+
+                public static Range StartAt(Index start) => new Range(start, Index.End);
+                public static Range EndAt(Index end) => new Range(Index.Start, end);
+                public static Range All => new Range(Index.Start, Index.End);
+
+                public (int Offset, int Length) GetOffsetAndLength(int length)
+                {
+                    var start = Start.GetOffset(length);
+                    var end = End.GetOffset(length);
+
+                    if ((uint)end > (uint)length || (uint)start > (uint)end)
+                        throw new ArgumentOutOfRangeException(nameof(length));
+
+                    return (start, end - start);
+                }
+
+                public override string ToString() => Start + ".." + End;
+            }
+        }
+        """;
+
     private static ImmutableArray<MetadataReference> BuildReferences()
     {
         // Keyed on simple name, not path: two files with the same identity in one reference set is

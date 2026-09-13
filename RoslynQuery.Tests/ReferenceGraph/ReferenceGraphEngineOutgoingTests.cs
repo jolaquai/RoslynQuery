@@ -26,11 +26,11 @@ public class ReferenceGraphEngineOutgoingTests
     }
 
     private static ReferenceGraphNode RootNodeFor(ISymbol symbol, Solution solution) =>
-        new ReferenceGraphNode(
+        ReferenceGraphNode.CreateSymbol(
             symbol.Name,
             SymbolIdentity.Create(symbol, solution, solution.Projects.Single().Id),
             SymbolGlyphs.For(symbol),
-            ReferenceDirection.Outgoing);
+            ReferenceAnalyzers.For(symbol));
 
     [Fact]
     public async Task Outgoing_AMethodCallingTwoMethods_ProducesTwoInvocationNodes()

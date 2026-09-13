@@ -25,6 +25,10 @@ public sealed class SymbolGlyphMonikerConverter : IValueConverter
             case SymbolGlyph.Method: return KnownMonikers.Method;
             // The catalog has no constructor glyph; NewClass is what "make one of these" looks like.
             case SymbolGlyph.Constructor: return KnownMonikers.NewClass;
+            case SymbolGlyph.Operator: return KnownMonikers.Operator;
+            case SymbolGlyph.LocalFunction: return KnownMonikers.MethodSnippet;
+            // The catalog has no lambda glyph; Inline is the closest thing to an inline function.
+            case SymbolGlyph.Lambda: return KnownMonikers.Inline;
             case SymbolGlyph.Property: return KnownMonikers.Property;
             case SymbolGlyph.Field: return KnownMonikers.Field;
             case SymbolGlyph.Event: return KnownMonikers.Event;
@@ -35,8 +39,13 @@ public sealed class SymbolGlyphMonikerConverter : IValueConverter
             case SymbolGlyph.Interface: return KnownMonikers.Interface;
             case SymbolGlyph.Enumeration: return KnownMonikers.Enumeration;
             case SymbolGlyph.Delegate: return KnownMonikers.Delegate;
+            case SymbolGlyph.Namespace: return KnownMonikers.Namespace;
+            case SymbolGlyph.Local: return KnownMonikers.LocalVariable;
+            case SymbolGlyph.Parameter: return KnownMonikers.Parameter;
+            case SymbolGlyph.TypeParameter: return KnownMonikers.TypeDefinition;
             case SymbolGlyph.IncomingBranch: return KnownMonikers.CallTo;
             case SymbolGlyph.OutgoingBranch: return KnownMonikers.CallFrom;
+            case SymbolGlyph.HierarchyBranch: return KnownMonikers.Hierarchy;
             case SymbolGlyph.Locations: return KnownMonikers.BulletList;
             case SymbolGlyph.Location: return KnownMonikers.GoToSourceCode;
             default: return KnownMonikers.CodeInformation;

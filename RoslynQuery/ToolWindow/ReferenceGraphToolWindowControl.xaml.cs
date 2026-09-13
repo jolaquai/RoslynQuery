@@ -10,15 +10,18 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Media3D;
 using System.Windows.Threading;
 
 using Microsoft.CodeAnalysis;
 using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.LanguageServices;
 using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Threading;
 
 using RoslynQuery.Navigation;
+using RoslynQuery.Options;
 using RoslynQuery.Query;
 using RoslynQuery.ReferenceGraph;
 
@@ -64,17 +67,6 @@ public partial class ReferenceGraphToolWindowControl : UserControl
 
     private ScopeKind CurrentScope => ((Choice<ScopeKind>)ScopeCombo.SelectedItem)?.Value ?? ScopeKind.Project;
 
-    private ReferenceUsageKind CurrentFilter =>
-        Flag(InvocationCheck, ReferenceUsageKind.Invocation)
-        | Flag(ReadCheck, ReferenceUsageKind.Read)
-        | Flag(WriteCheck, ReferenceUsageKind.Write)
-        | Flag(ConstructionCheck, ReferenceUsageKind.Construction)
-        | Flag(TypeReferenceCheck, ReferenceUsageKind.TypeReference)
-        | Flag(DocumentationCheck, ReferenceUsageKind.Documentation);
-
-    private static ReferenceUsageKind Flag(CheckBox box, ReferenceUsageKind kind) =>
-        box.IsChecked == true ? kind : ReferenceUsageKind.None;
-
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         if (_initialized) return;
@@ -82,21 +74,37 @@ public partial class ReferenceGraphToolWindowControl : UserControl
 
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        ScopeCombo.ItemsSource = new[]
+        var options = Options();
+
+        var scopeChoices = new[]
         {
             new Choice<ScopeKind>("Current document", ScopeKind.Document),
             new Choice<ScopeKind>("Current project", ScopeKind.Project),
             new Choice<ScopeKind>("My solution", ScopeKind.Solution)
         };
-        ScopeCombo.SelectedIndex = 1;
+        ScopeCombo.ItemsSource = scopeChoices;
+
+        // A persisted scope the combo does not offer falls back to Current project rather than to index 0.
+        var scope = Array.FindIndex(scopeChoices, c => c.Value == (options?.DefaultScope ?? ScopeKind.Project));
+        ScopeCombo.SelectedIndex = scope >= 0 ? scope : 1;
 
         var componentModel = Package.GetGlobalService(typeof(SComponentModel)) as IComponentModel;
         _workspace = componentModel?.GetService<VisualStudioWorkspace>();
+
+        ClassificationBrushes.Initialize(componentModel);
+        ClassificationBrushes.Changed += OnClassificationsChanged;
+        SignatureText.BrushResolver = ClassificationBrushes.For;
 
         if (_workspace is null) SetError("No Roslyn workspace is available. Open a solution and reopen this window.");
         else StatusText.Text = "Right-click a member or type in the editor and choose View Reference Graph.";
 
         _ready = true;
+    }
+
+    private void OnClassificationsChanged(object sender, EventArgs e)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        Tree.Items.Refresh();
     }
 
     internal void AddRoot(ISymbol symbol, Solution solution)
@@ -105,7 +113,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
 
         if (symbol is null || solution is null)
         {
-            SetError("There is no method, property, field, event or type at the caret.");
+            SetError("Nothing at the caret can root a reference graph.");
             return;
         }
 
@@ -117,7 +125,8 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         }
 
         var root = ReferenceGraphNode.CreateRoot(
-            ReferenceGraphDisplay.Of(symbol), symbol.Name, identity, SymbolGlyphs.For(symbol));
+            ReferenceGraphDisplay.Of(symbol), identity, SymbolGlyphs.For(symbol), ReferenceAnalyzers.For(symbol),
+            ReferenceGraphDisplay.SignatureOf(symbol));
 
         _roots.Insert(0, root);
         SetError(null);
@@ -159,7 +168,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         if (Ancestor<TreeViewItem>(source)?.DataContext is not ReferenceGraphNode node) return;
 
         // A branch row has nowhere to navigate to, so leave the event alone and let it expand.
-        if (node.DocumentId is null) return;
+        if (node.DocumentId is null && !node.IsFromMetadata) return;
 
         e.Handled = true;
 
@@ -170,7 +179,8 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => node.IsExpanded = wasExpanded));
 #pragma warning restore VSTHRD001, VSTHRD110
 
-        Navigate(node);
+        if (node.IsFromMetadata) NavigateToMetadata(node);
+        else Navigate(node);
     }
 
     private void OnTreeKeyDown(object sender, KeyEventArgs e)
@@ -188,15 +198,24 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         }
 
         if (e.Key != Key.Enter || _workspace is null) return;
-        if (Tree.SelectedItem is not ReferenceGraphNode node || node.DocumentId is null) return;
+        if (Tree.SelectedItem is not ReferenceGraphNode node || (node.DocumentId is null && !node.IsFromMetadata)) return;
 
         e.Handled = true;
-        Navigate(node);
+
+        if (node.IsFromMetadata) NavigateToMetadata(node);
+        else Navigate(node);
     }
 
+    /// <summary>
+    /// A click on <see cref="SignatureText"/> can originate from a <c>Run</c>, a <see cref="FrameworkContentElement"/>
+    /// with no place in the visual tree; <see cref="VisualTreeHelper.GetParent"/> throws on it, so such nodes climb via
+    /// the logical tree until reaching a <see cref="Visual"/> the visual tree can take over from.
+    /// </summary>
     private static T Ancestor<T>(DependencyObject node) where T : DependencyObject
     {
-        for (; node != null; node = VisualTreeHelper.GetParent(node))
+        for (; node != null; node = node is Visual or Visual3D
+                 ? VisualTreeHelper.GetParent(node)
+                 : LogicalTreeHelper.GetParent(node))
             if (node is T match) return match;
 
         return null;
@@ -224,6 +243,190 @@ public partial class ReferenceGraphToolWindowControl : UserControl
 #pragma warning restore VSSDK007
     }
 
+    private static ReferenceGraphOptions Options()
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        return RoslynQueryPackage.Instance?.GetDialogPage(typeof(ReferenceGraphOptions)) as ReferenceGraphOptions;
+    }
+
+    /// <summary>A missing ILSpy is raised rather than worked around: silently decompiling instead hides that the setting is wrong.</summary>
+    private void NavigateToMetadata(ReferenceGraphNode node)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        var options = Options();
+        if (options != null && options.MetadataNavigation == MetadataNavigationMode.VisualStudio)
+        {
+            NavigateToDecompiled(node);
+            return;
+        }
+
+        var configured = options?.IlspyPath;
+        var ilspy = IlspyLocator.Find(configured);
+
+        if (ilspy is null)
+        {
+            VsShellUtilities.ShowMessageBox(
+                ServiceProvider.GlobalProvider,
+                IlspyLocator.NotFoundMessage(configured),
+                "Reference Graph",
+                OLEMSGICON.OLEMSGICON_WARNING,
+                OLEMSGBUTTON.OLEMSGBUTTON_OK,
+                OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
+
+            return;
+        }
+
+        NavigateInIlspy(node, ilspy);
+    }
+
+    private void NavigateInIlspy(ReferenceGraphNode node, string ilspyPath)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        var identity = node.Identity;
+        var solution = _workspace.CurrentSolution;
+        var name = node.DisplayText;
+        var resolve = ResolveOptionsFromSettings();
+
+        SetError(null);
+        StatusText.Text = $"Opening {name} in ILSpy...";
+
+#pragma warning disable VSSDK007
+        ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+        {
+            await TaskScheduler.Default;
+
+            string failure;
+
+            try
+            {
+                var assembly = await MetadataAssemblyLocator.PathOfAsync(identity, solution, CancellationToken.None).ConfigureAwait(false);
+
+                if (assembly is null)
+                {
+                    failure = $"No assembly file backs {name}, so there is nothing for ILSpy to open.";
+                }
+                else
+                {
+                    // ILSpy drops reference assemblies before it looks an id up, so it has to be handed the implementation.
+                    var implementation = ImplementationAssemblyResolver.Resolve(assembly, resolve);
+
+                    failure = implementation is null
+                        ? Unresolved($"Only a reference assembly backs {name}, and no implementation assembly was found behind it.", assembly, resolve)
+                        : IlspyLauncher.Launch(ilspyPath, ImplementationAssemblyResolver.DeclaringAssembly(implementation, identity.DeclarationId), identity.DeclarationId);
+                }
+            }
+            catch (Exception ex)
+            {
+                failure = $"Opening {name} in ILSpy failed: {ex.GetType().Name}: {ex.Message}";
+            }
+
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            SetError(failure);
+            StatusText.Text = failure is null ? $"Opened {name} in ILSpy." : string.Empty;
+        }).FileAndForget("vs/roslynquery/referencegraph/ilspy");
+#pragma warning restore VSSDK007
+    }
+
+    /// <summary>Read on the UI thread: the options page cannot be reached from the background work that uses it.</summary>
+    private static ResolveOptions ResolveOptionsFromSettings()
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        return ResolveOptions.FromEnvironment(Options()?.FallBackToNuGetPackages ?? false);
+    }
+
+    private static string Unresolved(string failure, string assembly, ResolveOptions resolve)
+    {
+        var why = ImplementationAssemblyResolver.ExplainUnresolved(assembly, resolve);
+        return why is null ? failure : failure + " " + why;
+    }
+
+    private void NavigateToDecompiled(ReferenceGraphNode node)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        var identity = node.Identity;
+        var solution = _workspace.CurrentSolution;
+        var name = node.DisplayText;
+        var resolve = ResolveOptionsFromSettings();
+
+        SetError(null);
+        StatusText.Text = $"Decompiling {name}...";
+
+#pragma warning disable VSSDK007
+        ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+        {
+            await TaskScheduler.Default;
+
+            NavigationTarget target = null;
+            string failure = null;
+
+            try
+            {
+                var assembly = await MetadataAssemblyLocator.PathOfAsync(identity, solution, CancellationToken.None).ConfigureAwait(false);
+
+                if (assembly is null)
+                {
+                    failure = $"No assembly file backs {name}, so there is nothing to decompile.";
+                }
+                else
+                {
+                    var source = DecompiledSourceProvider.Decompile(assembly, identity.DeclarationId, resolve);
+
+                    if (!source.Succeeded)
+                    {
+                        failure = source.Failure;
+                    }
+                    else
+                    {
+                        var path = DecompiledSourceFiles.Write(
+                            DecompiledSourceFiles.DefaultRoot, source.AssemblyName, source.AssemblyVersion, source.TypeFullName, source.Text);
+
+                        target = new NavigationTarget
+                        {
+                            FilePath = path,
+                            Line = source.Line,
+                            Column = source.Column,
+                            EndLine = source.Line,
+                            EndColumn = source.Column
+                        };
+                    }
+                }
+            }
+            catch (Exception ex) when (IsDecompilerUnavailable(ex))
+            {
+                failure = "The decompiler Visual Studio ships could not be loaded, so metadata rows cannot be opened: " + ex.Message;
+            }
+            catch (Exception ex)
+            {
+                failure = $"Decompiling {name} failed: {ex.GetType().Name}: {ex.Message}";
+            }
+
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            SetError(failure ?? DocumentNavigator.Navigate(ServiceProvider.GlobalProvider, target));
+            StatusText.Text = failure is null ? $"Opened decompiled {name}." : string.Empty;
+        }).FileAndForget("vs/roslynquery/referencegraph/decompile");
+#pragma warning restore VSSDK007
+    }
+
+    private static bool IsDecompilerUnavailable(Exception exception)
+    {
+        var missing = (exception as System.IO.FileNotFoundException)?.FileName ?? (exception as System.IO.FileLoadException)?.FileName;
+
+        if (missing != null)
+        {
+            return missing.StartsWith("ICSharpCode.Decompiler", StringComparison.OrdinalIgnoreCase)
+                || missing.StartsWith("System.Reflection.Metadata", StringComparison.OrdinalIgnoreCase)
+                || missing.StartsWith("System.Collections.Immutable", StringComparison.OrdinalIgnoreCase)
+                || missing.StartsWith("System.Memory", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return exception is TypeLoadException || exception is MissingMethodException || exception is TypeInitializationException;
+    }
+
     private void OnRefreshClick(object sender, RoutedEventArgs e)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
@@ -234,14 +437,6 @@ public partial class ReferenceGraphToolWindowControl : UserControl
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        if (!_ready) return;
-
-        RefreshExpanded();
-    }
-
-    private void OnFilterChanged(object sender, RoutedEventArgs e)
-    {
-        ThreadHelper.ThrowIfNotOnUIThread();
         if (!_ready) return;
 
         RefreshExpanded();
@@ -286,7 +481,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
 
         var solution = _workspace.CurrentSolution;
         var scope = CurrentScope;
-        var filter = CurrentFilter;
+        var showMetadataConsumers = Options()?.ShowMetadataConsumers ?? false;
         var token = SharedCancellation().Token;
 
         _ranAgainst = new WeakReference<Solution>(solution);
@@ -299,7 +494,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         {
             try
             {
-                await ExpandCoreAsync(node, solution, scope, filter, token);
+                await ExpandCoreAsync(node, solution, scope, showMetadataConsumers, token);
             }
             catch (OperationCanceledException)
             {
@@ -330,36 +525,28 @@ public partial class ReferenceGraphToolWindowControl : UserControl
     }
 
     private async Task ExpandCoreAsync(
-        ReferenceGraphNode node, Solution solution, ScopeKind scope, ReferenceUsageKind filter, CancellationToken cancellationToken)
+        ReferenceGraphNode node, Solution solution, ScopeKind scope, bool showMetadataConsumers, CancellationToken cancellationToken)
     {
+        if (node.Analyzer is null) return;
+
         await TaskScheduler.Default;
 
         var symbol = await node.Identity.ResolveAsync(solution, cancellationToken).ConfigureAwait(false);
 
-        IReadOnlyList<ReferenceGraphNode> children;
-
         if (symbol is null)
         {
-            children = [ReferenceGraphNode.CreateMessage("This symbol no longer exists in the current solution.", node)];
-        }
-        else if (node.Direction == ReferenceDirection.Incoming)
-        {
-            children = await ReferenceGraphEngine
-                .FindIncomingAsync(symbol, solution, DocumentsFor(symbol, solution, scope), filter, node, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        else
-        {
-            children = await ReferenceGraphEngine
-                .FindOutgoingAsync(symbol, solution, filter, node, cancellationToken)
-                .ConfigureAwait(false);
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+            node.SetChildren([ReferenceGraphNode.CreateMessage("This symbol no longer exists in the current solution.", node)]);
+            return;
         }
 
-        if (children.Count == 0)
-            children = [ReferenceGraphNode.CreateMessage("No references.", node)];
+        var result = await ReferenceGraphEngine
+            .RunAsync(node.Analyzer.Value, symbol, solution, DocumentsFor(symbol, solution, scope), node, showMetadataConsumers, cancellationToken)
+            .ConfigureAwait(false);
 
+        // An empty branch gets no children at all, which is what drops its expander.
         await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-        node.SetChildren(children);
+        node.ApplyResults(result);
     }
 
     private static IImmutableSet<Document> DocumentsFor(ISymbol symbol, Solution solution, ScopeKind scope)

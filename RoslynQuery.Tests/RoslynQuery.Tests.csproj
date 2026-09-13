@@ -25,10 +25,20 @@
          two the tests actually touch are referenced directly, with runtime assets. -->
     <PackageReference Include="Microsoft.VisualStudio.ImageCatalog" Version="17.14.40260" />
     <PackageReference Include="Microsoft.VisualStudio.Imaging.Interop.14.0.DesignTime" Version="17.14.40254" />
+
+    <!-- Same reason: the extension compiles against Visual Studio's own decompiler, the tests need a real copy. -->
+    <PackageReference Include="ICSharpCode.Decompiler" Version="9.1.0.7988" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\RoslynQuery\RoslynQuery.csproj" />
+  </ItemGroup>
+
+  <!-- UseWPF on the extension project does not flow framework references to its dependents. -->
+  <ItemGroup>
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="WindowsBase" />
   </ItemGroup>
 
 </Project>

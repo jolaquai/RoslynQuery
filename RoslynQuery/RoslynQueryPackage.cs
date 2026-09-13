@@ -21,11 +21,13 @@ namespace RoslynQuery;
 
 [Guid(PackageGuidString)]
 [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
-[InstalledProductRegistration("#110", "#112", "0.3.2")]
+[InstalledProductRegistration("#110", "#112", "0.4.0")]
 [ProvideMenuResource("Menus.ctmenu", 1)]
 [ProvideToolWindow(typeof(QueryToolWindow), Style = VsDockStyle.Tabbed, Window = "{D78612C7-9962-4B83-95D9-268046DAD23A}")]
 [ProvideToolWindow(typeof(ReferenceGraphToolWindow), Style = VsDockStyle.Tabbed, Window = "{D78612C7-9962-4B83-95D9-268046DAD23A}")]
 [ProvideOptionPage(typeof(RoslynQueryOptions), "RoslynQuery", "General", 0, 0, true)]
+[ProvideOptionPage(typeof(ReferenceGraphOptions), "RoslynQuery", "Reference Graph", 0, 0, true)]
+[ProvideOptionPage(typeof(EnvironmentOptions), "RoslynQuery", "Environment", 0, 0, true)]
 // Without this, "View Reference Graph" stays greyed out until a window is opened by hand: nothing
 // else loads the package, so its BeforeQueryStatus never runs.
 [ProvideAutoLoad(CSharpEditorContextGuidString, PackageAutoLoadFlags.BackgroundLoad)]

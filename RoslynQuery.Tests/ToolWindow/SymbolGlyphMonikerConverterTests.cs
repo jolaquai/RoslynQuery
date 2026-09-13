@@ -33,8 +33,13 @@ public class SymbolGlyphMonikerConverterTests
         Assert.Equal(KnownMonikers.Interface, Convert(SymbolGlyph.Interface));
         Assert.Equal(KnownMonikers.Enumeration, Convert(SymbolGlyph.Enumeration));
         Assert.Equal(KnownMonikers.Delegate, Convert(SymbolGlyph.Delegate));
+        Assert.Equal(KnownMonikers.Operator, Convert(SymbolGlyph.Operator));
+        Assert.Equal(KnownMonikers.Namespace, Convert(SymbolGlyph.Namespace));
+        Assert.Equal(KnownMonikers.LocalVariable, Convert(SymbolGlyph.Local));
+        Assert.Equal(KnownMonikers.Parameter, Convert(SymbolGlyph.Parameter));
         Assert.Equal(KnownMonikers.CallTo, Convert(SymbolGlyph.IncomingBranch));
         Assert.Equal(KnownMonikers.CallFrom, Convert(SymbolGlyph.OutgoingBranch));
+        Assert.Equal(KnownMonikers.Hierarchy, Convert(SymbolGlyph.HierarchyBranch));
     }
 
     [Fact]

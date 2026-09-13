@@ -8,6 +8,9 @@ internal enum SymbolGlyph
     Unknown,
     Method,
     Constructor,
+    Operator,
+    LocalFunction,
+    Lambda,
     Property,
     Field,
     Event,
@@ -18,8 +21,13 @@ internal enum SymbolGlyph
     Interface,
     Enumeration,
     Delegate,
+    Namespace,
+    Local,
+    Parameter,
+    TypeParameter,
     IncomingBranch,
     OutgoingBranch,
+    HierarchyBranch,
 
     /// <summary>The synthetic row grouping one node's individual occurrences, and one such occurrence.</summary>
     Locations,
@@ -33,9 +41,21 @@ internal static class SymbolGlyphs
         switch (symbol)
         {
             case IMethodSymbol method:
-                return method.MethodKind == MethodKind.Constructor || method.MethodKind == MethodKind.StaticConstructor
-                    ? SymbolGlyph.Constructor
-                    : SymbolGlyph.Method;
+                switch (method.MethodKind)
+                {
+                    case MethodKind.Constructor:
+                    case MethodKind.StaticConstructor:
+                        return SymbolGlyph.Constructor;
+                    case MethodKind.UserDefinedOperator:
+                    case MethodKind.Conversion:
+                        return SymbolGlyph.Operator;
+                    case MethodKind.LocalFunction:
+                        return SymbolGlyph.LocalFunction;
+                    case MethodKind.AnonymousFunction:
+                        return SymbolGlyph.Lambda;
+                    default:
+                        return SymbolGlyph.Method;
+                }
 
             case IPropertySymbol _:
                 return SymbolGlyph.Property;
@@ -58,8 +78,40 @@ internal static class SymbolGlyphs
                     default: return SymbolGlyph.Unknown;
                 }
 
+            case INamespaceSymbol _:
+                return SymbolGlyph.Namespace;
+
+            case ILocalSymbol _:
+                return SymbolGlyph.Local;
+
+            case IParameterSymbol _:
+                return SymbolGlyph.Parameter;
+
+            case ITypeParameterSymbol _:
+                return SymbolGlyph.TypeParameter;
+
             default:
                 return SymbolGlyph.Unknown;
+        }
+    }
+
+    public static SymbolGlyph ForAnalyzer(ReferenceAnalyzerKind kind)
+    {
+        switch (kind)
+        {
+            case ReferenceAnalyzerKind.Uses:
+                return SymbolGlyph.OutgoingBranch;
+
+            case ReferenceAnalyzerKind.UsedBy:
+            case ReferenceAnalyzerKind.ReadBy:
+            case ReferenceAnalyzerKind.AssignedBy:
+            case ReferenceAnalyzerKind.InstantiatedBy:
+            case ReferenceAnalyzerKind.ExposedBy:
+            case ReferenceAnalyzerKind.AppliedTo:
+                return SymbolGlyph.IncomingBranch;
+
+            default:
+                return SymbolGlyph.HierarchyBranch;
         }
     }
 }

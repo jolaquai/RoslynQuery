@@ -48,8 +48,21 @@ internal static class SymbolResolver
         return null;
     }
 
-    public static bool IsSupportedRoot(ISymbol symbol)
+    /// <summary>What a caret may root a graph at. Wider than <see cref="IsGraphTarget"/>: namespaces and position-identified symbols can be analysed but are not rows.</summary>
+    public static bool IsSupportedRoot(ISymbol symbol) =>
+        IsGraphTarget(symbol)
+        || symbol is INamespaceSymbol { IsGlobalNamespace: false }
+        || (SymbolIdentity.IdentifiedByPosition(symbol) && !symbol.DeclaringSyntaxReferences.IsEmpty);
+
+    /// <summary>What becomes a row in a branch: a member, a type, or a local function.</summary>
+    public static bool IsGraphTarget(ISymbol symbol) =>
+        IsAttributionTarget(symbol) || symbol is IMethodSymbol { MethodKind: MethodKind.LocalFunction };
+
+    /// <summary>Where an incoming occurrence is attributed: never a local function or lambda, which are stepped over to the member holding them.</summary>
+    public static bool IsAttributionTarget(ISymbol symbol)
     {
+        if (symbol is null) return false;
+
         if (symbol is IMethodSymbol method
             && (method.MethodKind == MethodKind.AnonymousFunction || method.MethodKind == MethodKind.LocalFunction))
             return false;
