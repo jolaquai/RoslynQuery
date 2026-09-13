@@ -770,7 +770,7 @@ first version of this table said otherwise; see the correction under **Deviation
   | Other options | `--newinstance`, `--noactivate`, `--instanceid <NAME>`, `-s\|--search`, `-l\|--language`, `-c\|--config` |
   | Response files | `ResponseFileHandling.ParseArgsAsLineSeparated`, so `@file` holds one argument per line, unquoted |
   | Reference assemblies | filtered out of the search set, so an id in one resolves to nothing |
-  | Facades | a type resolves as an `ExportedType` handle; a member does not, and ILSpy then chases forwarders itself, up to 16 hops |
+  | Facades | a type resolves only to its `ExportedType` forwarder, which ILSpy cannot select, so a type in a facade never navigates; a member resolves to nothing and ILSpy chases the forwarder itself. See the corrected step 29 deviation |
   | What the ILSpy extension does | `--instanceid "<exe>" @"<temp file>"`, arguments `<assemblies...>` + `--navigateto:<id>` |
 - **Verify:** `dotnet build RoslynQuery.slnx -c Debug` succeeds, then
   `RoslynQuery.Tests.exe -class "RoslynQuery.Tests.IlspyLauncherTests"`,
@@ -840,11 +840,15 @@ first version of this table said otherwise; see the correction under **Deviation
   with `System.Reflection.Metadata` alone, so opening a row in ILSpy does not touch the
   ICSharpCode.Decompiler that Visual Studio ships. That matters because the whole point of preferring
   ILSpy is to not depend on the in-process decompiler; only the Visual Studio setting does.
-- **Step 29: a facade is enough to hand ILSpy.** `ImplementationAssemblyResolver` resolves a .NET
-  reference assembly into the shared runtime, where `System.Runtime.dll` is a forwarder facade. Measured:
-  `T:System.String` resolves there as an `ExportedType`, and `M:System.String.Format(System.String,System.Object)`
-  does not. That is exactly the entry condition for ILSpy's own `FindMemberViaTypeForwarders`, which
-  then chases the forwarder into `System.Private.CoreLib`, so no forwarder following was added here.
+- **Step 29, corrected: a facade is NOT enough to hand ILSpy.** The original note here claimed it was, and it
+  was wrong - the user reported double-clicking `IDisposable` added `System.Runtime.dll` to ILSpy and selected
+  nothing. Measured against ILSpy 11's `FindEntityInRelevantAssemblies`: `IdStringProvider.FindEntity` on the
+  facade returns the type's `ExportedType` handle, which is non-nil, so ILSpy skips `FindMemberViaTypeForwarders`
+  and then fails to resolve a forwarder to an entity. Only a member id reaches the forwarder chase. The fix
+  follows forwarders before launching (`ImplementationAssemblyResolver.DeclaringAssembly`, System.Reflection.Metadata
+  only) and hands ILSpy the defining file. Separately, Roslyn's declaration ids can end a method with a
+  `~ReturnType` suffix, which ILSpy matches only on conversion operators, so an `Interlocked.Exchange` row opened
+  an ILSpy with nothing selected; `IlspyLauncher.NavigationId` drops the suffix everywhere else.
 - **Step 16 crash found during the step 26 smoke test: `Ancestor<T>` threw on a `Run`.**
   `VisualTreeHelper.GetParent` throws `InvalidOperationException` for a `FrameworkContentElement`, and
   step 23's signature rows are `Run`s inside a `TextBlock`, so double-clicking the text itself - rather
