@@ -50,6 +50,12 @@ public class QueryToolWindowOptionsTests
         Assert.Contains("x:Name=\"GetStartedPanel\"", markup);
         Assert.Contains("Click=\"OnGetStartedClick\"", markup);
         Assert.Contains("ThemedDialogHyperlinkStyleKey", markup);
+
+        // The info icon has to sit before the link text, inside the panel the setting hides.
+        var panel = markup.Substring(markup.IndexOf("x:Name=\"GetStartedPanel\"", System.StringComparison.Ordinal));
+        panel = panel.Substring(0, panel.IndexOf("</StackPanel>", System.StringComparison.Ordinal));
+        Assert.Contains("KnownMonikers.StatusInformation", panel);
+        Assert.True(panel.IndexOf("KnownMonikers.StatusInformation", System.StringComparison.Ordinal) < panel.IndexOf("Need help?", System.StringComparison.Ordinal));
     }
 
     [Fact]

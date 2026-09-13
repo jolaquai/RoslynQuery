@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vsshell="clr-namespace:Microsoft.VisualStudio.Shell;assembly=Microsoft.VisualStudio.Shell.15.0"
              xmlns:imaging="clr-namespace:Microsoft.VisualStudio.Imaging;assembly=Microsoft.VisualStudio.Imaging"
+             xmlns:catalog="clr-namespace:Microsoft.VisualStudio.Imaging;assembly=Microsoft.VisualStudio.ImageCatalog"
              xmlns:platformui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Imaging"
              xmlns:local="clr-namespace:RoslynQuery.ToolWindow"
              Background="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowBackgroundKey}}"
@@ -334,11 +335,15 @@
 
                 <TextBlock x:Name="SignatureText" Grid.Column="0" FontFamily="Consolas" Style="{StaticResource Meta}" />
 
-                <TextBlock x:Name="GetStartedPanel" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource Meta}">
-                    <Hyperlink Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogHyperlinkStyleKey}}"
-                               Click="OnGetStartedClick"
-                               ToolTip="Open the documentation on GitHub">Need help?</Hyperlink>
-                </TextBlock>
+                <StackPanel x:Name="GetStartedPanel" Grid.Column="1" Margin="12,0,0,0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <imaging:CrispImage Width="16" Height="16" Margin="0,0,4,0" VerticalAlignment="Center"
+                                        Moniker="{x:Static catalog:KnownMonikers.StatusInformation}" />
+                    <TextBlock Style="{StaticResource Meta}">
+                        <Hyperlink Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ThemedDialogHyperlinkStyleKey}}"
+                                   Click="OnGetStartedClick"
+                                   ToolTip="Open the documentation on GitHub">Need help?</Hyperlink>
+                    </TextBlock>
+                </StackPanel>
             </Grid>
 
             <TabControl x:Name="MainTabs" Grid.Row="3" Margin="0,7,0,0" Style="{StaticResource FlatTabControl}">
