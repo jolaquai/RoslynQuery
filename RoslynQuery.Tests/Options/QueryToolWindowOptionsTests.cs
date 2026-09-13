@@ -24,7 +24,7 @@ public class QueryToolWindowOptionsTests
     [Fact]
     public void TheGetStartedSetting_IsABoolThatDefaultsToOn()
     {
-        var property = Property("ShowGetStartedLink");
+        var property = Property("ShowNeedHelpLink");
         var attributes = property.AttributeLists.SelectMany(l => l.Attributes).ToList();
 
         Assert.Equal("bool", property.Type.ToString());
@@ -38,7 +38,7 @@ public class QueryToolWindowOptionsTests
     {
         var control = RepositoryFiles.Read(ControlPath);
 
-        Assert.Contains("options?.ShowGetStartedLink ?? true", control);
+        Assert.Contains("options?.ShowNeedHelpLink ?? true", control);
         Assert.Contains("GetStartedPanel.Visibility", control);
     }
 
@@ -61,7 +61,7 @@ public class QueryToolWindowOptionsTests
             .Single(m => m.Identifier.Text == "OnGetStartedClick")
             .ToString();
 
-        Assert.Contains("VsShellUtilities.OpenSystemBrowser(GetStartedUrl)", handler);
+        Assert.Contains("VsShellUtilities.OpenSystemBrowser(NeedHelpUrl)", handler);
         Assert.Contains("e.Handled = true", handler);
     }
 }

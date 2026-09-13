@@ -77,7 +77,7 @@ public class ReadmeExampleTests
     [Fact]
     public void TheGetStartedLink_PointsAtTheUsingItSection()
     {
-        const string url = RoslynQuery.ToolWindow.QueryToolWindowControl.GetStartedUrl;
+        const string url = RoslynQuery.ToolWindow.QueryToolWindowControl.NeedHelpUrl;
 
         Assert.StartsWith("https://github.com/jolaquai/RoslynQuery/blob/main/README.md#", url);
         Assert.EndsWith("#using-it", url);

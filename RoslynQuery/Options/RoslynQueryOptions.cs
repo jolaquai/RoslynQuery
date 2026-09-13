@@ -44,10 +44,10 @@ public sealed class RoslynQueryOptions : DialogPage
     public bool DefaultShowHistory { get; set; } = true;
 
     [Category("Tool Window Defaults")]
-    [DisplayName("Show \"Get started\" link")]
+    [DisplayName("Show \"Need help?\" link")]
     [Description("Whether the tool window shows a link to the documentation beside the signature line.")]
     [DefaultValue(true)]
-    public bool ShowGetStartedLink { get; set; } = true;
+    public bool ShowNeedHelpLink { get; set; } = true;
 
     [Category("Tool Window Defaults")]
     [DisplayName("Show example query")]
