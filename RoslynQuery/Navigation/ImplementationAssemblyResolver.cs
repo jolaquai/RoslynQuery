@@ -254,13 +254,23 @@ internal static class ImplementationAssemblyResolver
         return Version.TryParse(directoryName.Substring(start + 1, end - start - 1), out var version) ? version : null;
     }
 
-    private static string DotNetRoot()
-    {
-        var configured = Environment.GetEnvironmentVariable("DOTNET_ROOT");
+    public const string DotNetRootVariable = "DOTNET_ROOT";
 
-        return !string.IsNullOrEmpty(configured) && Directory.Exists(configured)
-            ? configured
+    private static string DotNetRoot() => DotNetRootFrom(Environment.GetEnvironmentVariable(DotNetRootVariable));
+
+    /// <summary>Where the runtimes are looked up for a reference pack restored into the NuGet cache rather than under <c>dotnet\packs</c>.</summary>
+    public static string DotNetRootFrom(string rawDotNetRoot) =>
+        !string.IsNullOrEmpty(rawDotNetRoot) && Directory.Exists(rawDotNetRoot)
+            ? rawDotNetRoot
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet");
+
+    public static string DescribeDotNetRoot(string rawDotNetRoot)
+    {
+        var root = DotNetRootFrom(rawDotNetRoot);
+
+        return string.IsNullOrEmpty(rawDotNetRoot) ? root + " (" + DotNetRootVariable + " is not set)"
+            : Directory.Exists(rawDotNetRoot) ? root + " (from " + DotNetRootVariable + ")"
+            : root + " (" + DotNetRootVariable + "='" + rawDotNetRoot + "' does not exist)";
     }
 
     private sealed class AssemblyFacts
