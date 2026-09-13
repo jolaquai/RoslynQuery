@@ -481,6 +481,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
 
         var solution = _workspace.CurrentSolution;
         var scope = CurrentScope;
+        var showMetadataConsumers = Options()?.ShowMetadataConsumers ?? false;
         var token = SharedCancellation().Token;
 
         _ranAgainst = new WeakReference<Solution>(solution);
@@ -493,7 +494,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         {
             try
             {
-                await ExpandCoreAsync(node, solution, scope, token);
+                await ExpandCoreAsync(node, solution, scope, showMetadataConsumers, token);
             }
             catch (OperationCanceledException)
             {
@@ -524,7 +525,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
     }
 
     private async Task ExpandCoreAsync(
-        ReferenceGraphNode node, Solution solution, ScopeKind scope, CancellationToken cancellationToken)
+        ReferenceGraphNode node, Solution solution, ScopeKind scope, bool showMetadataConsumers, CancellationToken cancellationToken)
     {
         if (node.Analyzer is null) return;
 
@@ -540,7 +541,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         }
 
         var result = await ReferenceGraphEngine
-            .RunAsync(node.Analyzer.Value, symbol, solution, DocumentsFor(symbol, solution, scope), node, cancellationToken)
+            .RunAsync(node.Analyzer.Value, symbol, solution, DocumentsFor(symbol, solution, scope), node, showMetadataConsumers, cancellationToken)
             .ConfigureAwait(false);
 
         // An empty branch gets no children at all, which is what drops its expander.

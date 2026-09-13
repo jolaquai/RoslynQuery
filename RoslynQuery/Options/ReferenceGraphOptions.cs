@@ -35,6 +35,12 @@ public sealed class ReferenceGraphOptions : DialogPage
     [DefaultValue(false)]
     public bool FallBackToNuGetPackages { get; set; }
 
+    [Category("Metadata symbols")]
+    [DisplayName("Show metadata consumers of metadata symbols")]
+    [Description("Whether a branch listing what depends on a symbol from a referenced assembly also lists dependents that come from referenced assemblies. Off, Implemented By on IDisposable shows only the types in your solution that implement it, not the hundreds of framework types that do. Branches listing what a symbol builds on, such as Overrides and Implements, always show everything.")]
+    [DefaultValue(false)]
+    public bool ShowMetadataConsumers { get; set; }
+
     // Inert until IL analysis exists: a persisted true must never switch anything on.
     [Category("IL analysis (not yet available)")]
     [DisplayName("Enable IL analysis")]

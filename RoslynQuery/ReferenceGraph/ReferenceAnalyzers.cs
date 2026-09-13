@@ -19,6 +19,27 @@ internal static class ReferenceAnalyzers
         return [.. kinds.Where(kind => kind != ReferenceAnalyzerKind.Uses)];
     }
 
+    /// <summary>Whether a branch lists what depends on its symbol, as opposed to what the symbol itself builds on.</summary>
+    public static bool ListsConsumers(ReferenceAnalyzerKind analyzer)
+    {
+        switch (analyzer)
+        {
+            case ReferenceAnalyzerKind.UsedBy:
+            case ReferenceAnalyzerKind.ReadBy:
+            case ReferenceAnalyzerKind.AssignedBy:
+            case ReferenceAnalyzerKind.InstantiatedBy:
+            case ReferenceAnalyzerKind.ExposedBy:
+            case ReferenceAnalyzerKind.AppliedTo:
+            case ReferenceAnalyzerKind.OverriddenBy:
+            case ReferenceAnalyzerKind.ImplementedBy:
+            case ReferenceAnalyzerKind.DerivedTypes:
+            case ReferenceAnalyzerKind.ExtensionMethods:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     private static IReadOnlyList<ReferenceAnalyzerKind> Applicable(ISymbol symbol)
     {
         switch (symbol)

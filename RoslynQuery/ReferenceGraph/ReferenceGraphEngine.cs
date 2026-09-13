@@ -28,12 +28,26 @@ internal static class ReferenceGraphEngine
     /// Runs one analyzer branch. The single entry point the tool window calls, so the switch over
     /// analyzer kinds lives here rather than in the UI.
     /// </summary>
+    public static Task<AnalyzerResult> RunAsync(
+        ReferenceAnalyzerKind analyzer,
+        ISymbol symbol,
+        Solution solution,
+        IImmutableSet<Document> documents,
+        ReferenceGraphNode parent,
+        CancellationToken cancellationToken) =>
+        RunAsync(analyzer, symbol, solution, documents, parent, showMetadataConsumers: true, cancellationToken);
+
+    /// <param name="showMetadataConsumers">
+    /// When false, a branch listing what depends on a metadata symbol keeps only the dependents in the solution,
+    /// leaving out every framework type that implements <c>IDisposable</c>, say.
+    /// </param>
     public static async Task<AnalyzerResult> RunAsync(
         ReferenceAnalyzerKind analyzer,
         ISymbol symbol,
         Solution solution,
         IImmutableSet<Document> documents,
         ReferenceGraphNode parent,
+        bool showMetadataConsumers,
         CancellationToken cancellationToken)
     {
         if (symbol is null || solution is null) return new AnalyzerResult([], 0);
@@ -41,6 +55,9 @@ internal static class ReferenceGraphEngine
         var stopwatch = Stopwatch.StartNew();
         var rows = await DispatchAsync(analyzer, symbol, solution, documents, parent, cancellationToken).ConfigureAwait(false);
         stopwatch.Stop();
+
+        if (!showMetadataConsumers && ReferenceAnalyzers.ListsConsumers(analyzer) && SymbolIdentity.IsMetadataSymbol(symbol))
+            rows = rows.Where(row => !row.IsFromMetadata).ToList();
 
         return new AnalyzerResult(rows, stopwatch.ElapsedMilliseconds);
     }
