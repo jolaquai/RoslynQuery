@@ -552,11 +552,19 @@ The scope the window starts on is configurable; see `Default scope` below.
 | `Open metadata symbols in`   | `Open in ILSpy` (the default) or `Decompile in Visual Studio`.                                                                                    |
 | `ILSpy path`                 | Full path to `ILSpy.exe`. Empty means search for one once per session. A path that does not exist raises a message box rather than being ignored. |
 | `Fall back to NuGet packages` | When no installed runtime qualifies, also look in the local NuGet package cache, exact version first and then `DOTNET_ROLL_FORWARD`. Off by default. |
+| `Roll-forward policy`        | Read-only. The policy `DOTNET_ROLL_FORWARD` gives this Visual Studio, and whether it was set or not a valid policy. |
+| `Roll forward to previews`   | Read-only. Whether `DOTNET_ROLL_FORWARD_TO_PRERELEASE` is on, which it is only when it reads as the number 1. |
+| `NuGet package cache`        | Read-only. Where `Fall back to NuGet packages` looks, from `NUGET_PACKAGES`, and whether that folder exists. |
+| `.NET install root`          | Read-only. Where runtimes are looked up for a reference pack restored into the NuGet cache, from `DOTNET_ROOT`. |
 | `Enable IL analysis`         | Not available yet - shown disabled, does nothing.                                                                                                 |
 | `Enable reverse IL analysis` | Not available yet - shown disabled, does nothing.                                                                                                 |
 
 The two IL analysis settings would read the IL of framework methods so that `Uses` could continue past
 your source and `Used By` could report framework callers.
+
+The read-only rows show what Visual Studio's own environment is telling the resolver. Visual Studio reads
+its environment once at startup, so a changed variable only shows up, and only takes effect, after a
+restart.
 
 ## Building
 
