@@ -22,7 +22,7 @@ public class QueryToolWindowOptionsTests
             .Single(p => p.Identifier.Text == name);
 
     [Fact]
-    public void TheGetStartedSetting_IsABoolThatDefaultsToOn()
+    public void TheNeedHelpSetting_IsABoolThatDefaultsToOn()
     {
         var property = Property("ShowNeedHelpLink");
         var attributes = property.AttributeLists.SelectMany(l => l.Attributes).ToList();
@@ -39,7 +39,7 @@ public class QueryToolWindowOptionsTests
         var control = RepositoryFiles.Read(ControlPath);
 
         Assert.Contains("options?.ShowNeedHelpLink ?? true", control);
-        Assert.Contains("GetStartedPanel.Visibility", control);
+        Assert.Contains("NeedHelpPanel.Visibility", control);
     }
 
     [Fact]
@@ -47,12 +47,12 @@ public class QueryToolWindowOptionsTests
     {
         var markup = RepositoryFiles.Read(MarkupPath);
 
-        Assert.Contains("x:Name=\"GetStartedPanel\"", markup);
-        Assert.Contains("Click=\"OnGetStartedClick\"", markup);
+        Assert.Contains("x:Name=\"NeedHelpPanel\"", markup);
+        Assert.Contains("Click=\"OnNeedHelpClick\"", markup);
         Assert.Contains("ThemedDialogHyperlinkStyleKey", markup);
 
         // The info icon has to sit before the link text, inside the panel the setting hides.
-        var panel = markup.Substring(markup.IndexOf("x:Name=\"GetStartedPanel\"", System.StringComparison.Ordinal));
+        var panel = markup.Substring(markup.IndexOf("x:Name=\"NeedHelpPanel\"", System.StringComparison.Ordinal));
         panel = panel.Substring(0, panel.IndexOf("</StackPanel>", System.StringComparison.Ordinal));
         Assert.Contains("KnownMonikers.StatusInformation", panel);
         Assert.True(panel.IndexOf("KnownMonikers.StatusInformation", System.StringComparison.Ordinal) < panel.IndexOf("Need help?", System.StringComparison.Ordinal));
@@ -64,7 +64,7 @@ public class QueryToolWindowOptionsTests
         var handler = CSharpSyntaxTree.ParseText(RepositoryFiles.Read(ControlPath), cancellationToken: TestContext.Current.CancellationToken)
             .GetRoot(TestContext.Current.CancellationToken)
             .DescendantNodes().OfType<MethodDeclarationSyntax>()
-            .Single(m => m.Identifier.Text == "OnGetStartedClick")
+            .Single(m => m.Identifier.Text == "OnNeedHelpClick")
             .ToString();
 
         Assert.Contains("VsShellUtilities.OpenSystemBrowser(NeedHelpUrl)", handler);

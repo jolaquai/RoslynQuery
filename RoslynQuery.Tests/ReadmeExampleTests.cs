@@ -73,9 +73,9 @@ public class ReadmeExampleTests
             .Where(e => e.Section.IndexOf("syntax only", StringComparison.OrdinalIgnoreCase) >= 0)
             .Select(e => new object[] { e.Text });
 
-    /// <summary>The "Get started" link has to land on a heading that is actually there.</summary>
+    /// <summary>The "Need help?" link has to land on a heading that is actually there.</summary>
     [Fact]
-    public void TheGetStartedLink_PointsAtTheUsingItSection()
+    public void TheNeedHelpLink_PointsAtTheUsingItSection()
     {
         const string url = RoslynQuery.ToolWindow.QueryToolWindowControl.NeedHelpUrl;
 
