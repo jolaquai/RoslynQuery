@@ -106,6 +106,29 @@ public class ReferenceGraphOptionsTests
     }
 
     [Fact]
+    public void TheNuGetFallback_IsAStoredSwitchThatDefaultsToOff()
+    {
+        var property = Property("FallBackToNuGetPackages");
+
+        Assert.Equal("bool", property.Type.ToString());
+        Assert.Null(property.Initializer);
+        Assert.Equal("false", Attribute(property, "DefaultValue").ArgumentList.Arguments[0].ToString());
+        Assert.Equal("Metadata symbols", ((LiteralExpressionSyntax)Attribute(property, "Category").ArgumentList.Arguments[0].Expression).Token.ValueText);
+        Assert.Contains("DOTNET_ROLL_FORWARD", Description("FallBackToNuGetPackages"));
+    }
+
+    /// <summary>Both ways of opening a metadata row have to honour the switch, not just the default one.</summary>
+    [Fact]
+    public void BothMetadataNavigationPaths_PassTheNuGetSwitchToTheResolver()
+    {
+        var control = RepositoryFiles.Read(@"RoslynQuery\ToolWindow\ReferenceGraphToolWindowControl.xaml.cs");
+
+        Assert.Contains("Options()?.FallBackToNuGetPackages ?? false", control);
+        Assert.Contains("ImplementationAssemblyResolver.Resolve(assembly, resolve)", control);
+        Assert.Contains("DecompiledSourceProvider.Decompile(assembly, identity.DeclarationId, resolve)", control);
+    }
+
+    [Fact]
     public void ThePage_OffersAPathOverrideForIlspy()
     {
         var property = Property("IlspyPath");
