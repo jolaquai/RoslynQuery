@@ -497,6 +497,12 @@ lists `MemoryStream` and the rest. Such a row is marked `(metadata)`. It offers 
 `Uses`, since there is no source to read what it uses, and its `Used By` and similar branches find the
 uses in your own code.
 
+By default a metadata symbol's consumers are limited to your own code, too: `Implemented By` on
+`IDisposable` lists the types in your solution that implement it, not the hundreds of framework types that
+also do. `Show metadata consumers of metadata symbols` brings those back. Only branches that list what
+depends on a symbol are affected; `Overrides` and `Implements`, which list what it builds on, always show
+everything.
+
 Double-clicking a metadata row opens the symbol in **ILSpy**, positioned on the member. Either way of
 opening one needs the implementation assembly: a project references reference assemblies, which carry
 no method bodies, so the window first finds the implementation behind one - in the shared runtime for
@@ -553,6 +559,7 @@ The scope the window starts on is configurable; see `Default scope` below.
 | `Open metadata symbols in`   | `Open in ILSpy` (the default) or `Decompile in Visual Studio`.                                                                                    |
 | `ILSpy path`                 | Full path to `ILSpy.exe`. Empty means search for one once per session. A path that does not exist raises a message box rather than being ignored. |
 | `Fall back to NuGet packages` | When no installed runtime qualifies, also look in the local NuGet package cache, exact version first and then `DOTNET_ROLL_FORWARD`. Off by default. |
+| `Show metadata consumers of metadata symbols` | Whether a symbol from a referenced assembly lists dependents that also come from referenced assemblies. Off by default. |
 | `Enable IL analysis`         | Not available yet - shown disabled, does nothing.                                                                                                 |
 | `Enable reverse IL analysis` | Not available yet - shown disabled, does nothing.                                                                                                 |
 
