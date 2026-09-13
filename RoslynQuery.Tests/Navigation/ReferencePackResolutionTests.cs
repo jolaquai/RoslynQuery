@@ -233,6 +233,17 @@ public class ReferencePackResolutionTests
     public void TheExplanation_IsNullForAnAssemblyOutsideAReferencePack() =>
         Assert.Null(ImplementationAssemblyResolver.ExplainUnresolved(typeof(object).Assembly.Location, default));
 
+    [Theory]
+    [InlineData(null, null, "Minor (DOTNET_ROLL_FORWARD is not set)")]
+    [InlineData("Major", null, "Major (from DOTNET_ROLL_FORWARD)")]
+    [InlineData("latestmajor", null, "LatestMajor (from DOTNET_ROLL_FORWARD)")]
+    [InlineData("Sideways", null, "Minor (DOTNET_ROLL_FORWARD='Sideways' is not a policy)")]
+    [InlineData(" Major", null, "Minor (DOTNET_ROLL_FORWARD=' Major' is not a policy)")]
+    [InlineData("LatestMajor", "1", "LatestMajor (from DOTNET_ROLL_FORWARD), with previews allowed by DOTNET_ROLL_FORWARD_TO_PRERELEASE")]
+    [InlineData(null, "true", "Minor (DOTNET_ROLL_FORWARD is not set)")]
+    public void TheDescription_SaysWhichPolicyIsInForceAndWhy(string rawPolicy, string rawPrerelease, string expected) =>
+        Assert.Equal(expected, ResolveOptions.Describe(rawPolicy, rawPrerelease));
+
     [Fact]
     public void TheOptions_DescribeWhereThePolicyCameFrom()
     {

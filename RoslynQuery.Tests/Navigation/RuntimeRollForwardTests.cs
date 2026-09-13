@@ -35,9 +35,41 @@ public class RuntimeRollForwardTests
     [InlineData("LatestMinor")]
     [InlineData("LatestMajor")]
     [InlineData("Disable")]
-    [InlineData("  latestmajor  ")]
+    [InlineData("latestmajor")]
+    [InlineData("LATESTPATCH")]
     public void APolicyName_ParsesCaseInsensitively(string value) =>
         Assert.True(RuntimeRollForward.TryParse(value, out _));
+
+    /// <summary>hostfxr compares the whole value with strcasecmp and never trims, so padding makes it no policy at all.</summary>
+    [Theory]
+    [InlineData(" Major")]
+    [InlineData("Major ")]
+    [InlineData("  latestmajor  ")]
+    public void APaddedPolicyName_IsNotAPolicy_JustAsTheHostSeesIt(string value) =>
+        Assert.False(RuntimeRollForward.TryParse(value, out _));
+
+    /// <summary>hostfxr reads the switch as <c>xtoi(value) == 1</c>, C's atoi, so these follow atoi rather than a boolean parse.</summary>
+    [Theory]
+    [InlineData("1", true)]
+    [InlineData("01", true)]
+    [InlineData("+1", true)]
+    [InlineData(" 1", true)]
+    [InlineData("\t1", true)]
+    [InlineData("1 ", true)]
+    [InlineData("1abc", true)]
+    [InlineData("0", false)]
+    [InlineData("2", false)]
+    [InlineData("11", false)]
+    [InlineData("-1", false)]
+    [InlineData("true", false)]
+    [InlineData("yes", false)]
+    [InlineData("a1", false)]
+    [InlineData("   ", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    [InlineData("99999999999999999999", false)]
+    public void ThePrereleaseSwitch_ReadsTheWayTheHostsAtoiDoes(string value, bool expected) =>
+        Assert.Equal(expected, RuntimeRollForward.RollsToPrerelease(value));
 
     [Theory]
     [InlineData(null)]
