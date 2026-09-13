@@ -244,6 +244,66 @@ public class ReferencePackResolutionTests
     public void TheDescription_SaysWhichPolicyIsInForceAndWhy(string rawPolicy, string rawPrerelease, string expected) =>
         Assert.Equal(expected, ResolveOptions.Describe(rawPolicy, rawPrerelease));
 
+    [Theory]
+    [InlineData(null, "Minor (DOTNET_ROLL_FORWARD is not set)")]
+    [InlineData("Major", "Major (from DOTNET_ROLL_FORWARD)")]
+    [InlineData("Sideways", "Minor (DOTNET_ROLL_FORWARD='Sideways' is not a policy)")]
+    public void ThePolicyRow_ReadsLikeTheDescription(string raw, string expected) =>
+        Assert.Equal(expected, ResolveOptions.DescribePolicy(raw));
+
+    [Theory]
+    [InlineData(null, "No (DOTNET_ROLL_FORWARD_TO_PRERELEASE is not set)")]
+    [InlineData("1", "Yes (DOTNET_ROLL_FORWARD_TO_PRERELEASE='1')")]
+    [InlineData("01", "Yes (DOTNET_ROLL_FORWARD_TO_PRERELEASE='01')")]
+    [InlineData("true", "No (DOTNET_ROLL_FORWARD_TO_PRERELEASE='true' does not read as 1)")]
+    public void ThePreviewRow_SaysWhetherAndWhy(string raw, string expected) =>
+        Assert.Equal(expected, ResolveOptions.DescribePrerelease(raw));
+
+    private static string ExistingTempDirectory()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "RoslynQueryTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(path);
+        return path;
+    }
+
+    [Fact]
+    public void TheNuGetRow_NamesTheCacheAndWhetherItExists()
+    {
+        var existing = ExistingTempDirectory();
+        var missing = Path.Combine(existing, "nope");
+
+        try
+        {
+            Assert.Equal(existing + " (from NUGET_PACKAGES)", ResolveOptions.DescribeNuGetRoot(existing));
+            Assert.Equal(missing + " (from NUGET_PACKAGES, and it does not exist)", ResolveOptions.DescribeNuGetRoot(missing));
+            Assert.StartsWith(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget", "packages"), ResolveOptions.DescribeNuGetRoot(null));
+            Assert.Contains("NUGET_PACKAGES is not set", ResolveOptions.DescribeNuGetRoot(null));
+        }
+        finally
+        {
+            Directory.Delete(existing, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void TheDotNetRootRow_FallsBackToProgramFilesAndSaysWhy()
+    {
+        var existing = ExistingTempDirectory();
+        var missing = Path.Combine(existing, "nope");
+        var programFiles = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet");
+
+        try
+        {
+            Assert.Equal(programFiles + " (DOTNET_ROOT is not set)", ImplementationAssemblyResolver.DescribeDotNetRoot(null));
+            Assert.Equal(existing + " (from DOTNET_ROOT)", ImplementationAssemblyResolver.DescribeDotNetRoot(existing));
+            Assert.Equal(programFiles + " (DOTNET_ROOT='" + missing + "' does not exist)", ImplementationAssemblyResolver.DescribeDotNetRoot(missing));
+        }
+        finally
+        {
+            Directory.Delete(existing, recursive: true);
+        }
+    }
+
     [Fact]
     public void TheOptions_DescribeWhereThePolicyCameFrom()
     {

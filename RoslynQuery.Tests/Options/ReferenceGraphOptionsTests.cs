@@ -105,6 +105,27 @@ public class ReferenceGraphOptionsTests
             a => Assert.True(a.Body is null && a.ExpressionBody is null, "the setting has to persist, so neither accessor may be written out"));
     }
 
+    /// <summary>
+    /// Get-only and hidden from serialization: DialogPage saves only serialization-visible properties and assigns only
+    /// stored values on load, so a setter or a missing attribute would start persisting a value that is never an input.
+    /// </summary>
+    [Theory]
+    [InlineData("EnvironmentRollForward", "DOTNET_ROLL_FORWARD")]
+    [InlineData("EnvironmentRollForwardToPreviews", "DOTNET_ROLL_FORWARD_TO_PRERELEASE")]
+    [InlineData("EnvironmentNuGetPackageCache", "NUGET_PACKAGES")]
+    [InlineData("EnvironmentDotNetRoot", "DOTNET_ROOT")]
+    public void EachEnvironmentRow_IsReadOnlyAndNeverPersisted(string name, string variable)
+    {
+        var property = Property(name);
+
+        Assert.Equal("string", property.Type.ToString());
+        Assert.NotNull(property.ExpressionBody);
+        Assert.Null(property.AccessorList);
+        Assert.Equal("DesignerSerializationVisibility.Hidden", Attribute(property, "DesignerSerializationVisibility").ArgumentList.Arguments[0].ToString());
+        Assert.Equal("Environment (read-only)", ((LiteralExpressionSyntax)Attribute(property, "Category").ArgumentList.Arguments[0].Expression).Token.ValueText);
+        Assert.Contains(variable, Description(name));
+    }
+
     [Fact]
     public void TheNuGetFallback_IsAStoredSwitchThatDefaultsToOff()
     {
