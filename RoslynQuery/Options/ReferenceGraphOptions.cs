@@ -1,4 +1,3 @@
-using System;
 using System.ComponentModel;
 
 using Microsoft.VisualStudio.Shell;
@@ -35,35 +34,6 @@ public sealed class ReferenceGraphOptions : DialogPage
     [Description("Framework assemblies are opened from the installed .NET runtime matching the project's reference pack, or, failing an exact match, from whichever runtime DOTNET_ROLL_FORWARD allows. When that finds nothing, this also looks for the same assembly shipped as a NuGet package in the local package cache, by the same rule: the exact version first, then DOTNET_ROLL_FORWARD. Off by default, since a package build is not always the build a runtime ships.")]
     [DefaultValue(false)]
     public bool FallBackToNuGetPackages { get; set; }
-
-    // Hidden from serialization, so DialogPage never saves these and never assigns them on load.
-    [Category("Environment (read-only)")]
-    [DisplayName("Roll-forward policy")]
-    [Description("The roll-forward policy this Visual Studio process has, from DOTNET_ROLL_FORWARD. It decides which installed runtime a metadata row opens from when the reference pack's exact version is not installed. Visual Studio reads its environment once at startup, so set the variable before starting it.")]
-    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public string EnvironmentRollForward =>
-        ResolveOptions.DescribePolicy(Environment.GetEnvironmentVariable(RuntimeRollForward.PolicyVariable));
-
-    [Category("Environment (read-only)")]
-    [DisplayName("Roll forward to previews")]
-    [Description("Whether DOTNET_ROLL_FORWARD_TO_PRERELEASE lets roll-forward pick a preview runtime even when a release qualifies. Without it a preview is only picked when no release does. It is on only when the value reads as the number 1, exactly as .NET itself reads it.")]
-    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public string EnvironmentRollForwardToPreviews =>
-        ResolveOptions.DescribePrerelease(Environment.GetEnvironmentVariable(RuntimeRollForward.PrereleaseVariable));
-
-    [Category("Environment (read-only)")]
-    [DisplayName("NuGet package cache")]
-    [Description("Where Fall back to NuGet packages looks, from NUGET_PACKAGES, or the default cache under your profile when that is not set.")]
-    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public string EnvironmentNuGetPackageCache =>
-        ResolveOptions.DescribeNuGetRoot(Environment.GetEnvironmentVariable(ResolveOptions.NuGetPackagesVariable));
-
-    [Category("Environment (read-only)")]
-    [DisplayName(".NET install root")]
-    [Description("Where installed runtimes are looked up for a reference pack that was restored into the NuGet cache, from DOTNET_ROOT, or Program Files when that is not set or does not exist. A reference pack under an install's own packs folder always uses that install instead.")]
-    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public string EnvironmentDotNetRoot =>
-        ImplementationAssemblyResolver.DescribeDotNetRoot(Environment.GetEnvironmentVariable(ImplementationAssemblyResolver.DotNetRootVariable));
 
     // Inert until IL analysis exists: a persisted true must never switch anything on.
     [Category("IL analysis (not yet available)")]
