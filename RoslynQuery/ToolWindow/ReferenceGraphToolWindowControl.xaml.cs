@@ -287,6 +287,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         var identity = node.Identity;
         var solution = _workspace.CurrentSolution;
         var name = node.DisplayText;
+        var resolve = ResolveOptionsFromSettings();
 
         SetError(null);
         StatusText.Text = $"Opening {name} in ILSpy...";
@@ -309,10 +310,10 @@ public partial class ReferenceGraphToolWindowControl : UserControl
                 else
                 {
                     // ILSpy drops reference assemblies before it looks an id up, so it has to be handed the implementation.
-                    var implementation = ImplementationAssemblyResolver.Resolve(assembly);
+                    var implementation = ImplementationAssemblyResolver.Resolve(assembly, resolve);
 
                     failure = implementation is null
-                        ? $"Only a reference assembly backs {name}, and no implementation assembly was found behind it."
+                        ? Unresolved($"Only a reference assembly backs {name}, and no implementation assembly was found behind it.", assembly, resolve)
                         : IlspyLauncher.Launch(ilspyPath, implementation, identity.DeclarationId);
                 }
             }
@@ -329,6 +330,19 @@ public partial class ReferenceGraphToolWindowControl : UserControl
 #pragma warning restore VSSDK007
     }
 
+    /// <summary>Read on the UI thread: the options page cannot be reached from the background work that uses it.</summary>
+    private static ResolveOptions ResolveOptionsFromSettings()
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        return ResolveOptions.FromEnvironment(Options()?.FallBackToNuGetPackages ?? false);
+    }
+
+    private static string Unresolved(string failure, string assembly, ResolveOptions resolve)
+    {
+        var why = ImplementationAssemblyResolver.ExplainUnresolved(assembly, resolve);
+        return why is null ? failure : failure + " " + why;
+    }
+
     private void NavigateToDecompiled(ReferenceGraphNode node)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
@@ -336,6 +350,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
         var identity = node.Identity;
         var solution = _workspace.CurrentSolution;
         var name = node.DisplayText;
+        var resolve = ResolveOptionsFromSettings();
 
         SetError(null);
         StatusText.Text = $"Decompiling {name}...";
@@ -358,7 +373,7 @@ public partial class ReferenceGraphToolWindowControl : UserControl
                 }
                 else
                 {
-                    var source = DecompiledSourceProvider.Decompile(assembly, identity.DeclarationId);
+                    var source = DecompiledSourceProvider.Decompile(assembly, identity.DeclarationId, resolve);
 
                     if (!source.Succeeded)
                     {

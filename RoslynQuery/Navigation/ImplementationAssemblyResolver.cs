@@ -15,13 +15,15 @@ namespace RoslynQuery.Navigation;
 internal static class ImplementationAssemblyResolver
 {
     /// <summary>The path itself when it is already an implementation, otherwise the implementation, or null when none can be found.</summary>
-    public static string Resolve(string path)
+    public static string Resolve(string path) => Resolve(path, ResolveOptions.FromEnvironment(allowNuGetFallback: false));
+
+    public static string Resolve(string path, ResolveOptions options)
     {
         var reference = AssemblyFacts.Read(path);
         if (reference is null) return null;
         if (!reference.IsReferenceAssembly) return path;
 
-        return Candidates(path, reference).FirstOrDefault(candidate =>
+        return Candidates(path, reference, options).FirstOrDefault(candidate =>
         {
             var found = AssemblyFacts.Read(candidate);
             return found != null
@@ -33,9 +35,23 @@ internal static class ImplementationAssemblyResolver
 
     public static bool IsReferenceAssembly(string path) => AssemblyFacts.Read(path)?.IsReferenceAssembly == true;
 
-    private static IEnumerable<string> Candidates(string path, AssemblyFacts reference)
+    /// <summary>Why an assembly from a reference pack found no implementation, or null when it is not from one.</summary>
+    public static string ExplainUnresolved(string path, ResolveOptions options)
     {
-        if (TryReferencePack(path, out var fromPack)) return fromPack;
+        if (!ReferencePack.TryRead(path, out var pack)) return null;
+
+        var installed = Subdirectories(pack.SharedRoot).OrderBy(v => v, StringComparer.OrdinalIgnoreCase).ToList();
+
+        return "It comes from the " + pack.Version + " reference pack, and no installed runtime qualifies under roll-forward policy "
+            + (options.PolicyDescription ?? options.Policy.ToString())
+            + (installed.Count == 0 ? "; no runtimes are installed." : "; installed: " + string.Join(", ", installed) + ".")
+            + " Set " + RuntimeRollForward.PolicyVariable + " before starting Visual Studio to allow a different one."
+            + (options.AllowNuGetFallback ? " No NuGet package matched either." : " Falling back to NuGet packages is off.");
+    }
+
+    private static IEnumerable<string> Candidates(string path, AssemblyFacts reference, ResolveOptions options)
+    {
+        if (ReferencePack.TryRead(path, out var pack)) return FromReferencePack(pack, options);
         if (TryNuGetReference(path, out var fromLib)) return fromLib;
 
         // A .NET reference assembly found outside its pack must never be matched to a .NET Framework namesake.
@@ -44,30 +60,83 @@ internal static class ImplementationAssemblyResolver
         return GlobalAssemblyCache(reference).Concat(FrameworkDirectory(reference));
     }
 
-    /// <summary><c>packs\X.Ref\ver\ref\tfm\a.dll</c>, or the same layout restored into the NuGet cache, maps to <c>dotnet\shared\X\ver\a.dll</c>.</summary>
-    private static bool TryReferencePack(string path, out IEnumerable<string> candidates)
+    /// <summary>
+    /// The shared runtime, exact version first and then the one the roll-forward policy picks; then, when allowed,
+    /// the same assembly shipped as a NuGet package, found by the same two steps.
+    /// </summary>
+    private static IEnumerable<string> FromReferencePack(ReferencePack pack, ResolveOptions options)
     {
-        candidates = null;
+        var runtime = Versions(Subdirectories(pack.SharedRoot), pack.Version, options)
+            .Select(version => Path.Combine(pack.SharedRoot, version, pack.FileName));
 
-        var tfm = Directory.GetParent(path);
-        var refDirectory = tfm?.Parent;
-        var version = refDirectory?.Parent;
-        var pack = version?.Parent;
+        return (options.AllowNuGetFallback ? runtime.Concat(NuGetPackage(pack, options)) : runtime).ToList();
+    }
 
-        if (pack is null
-            || !refDirectory.Name.Equals("ref", StringComparison.OrdinalIgnoreCase)
-            || !pack.Name.EndsWith(".Ref", StringComparison.OrdinalIgnoreCase))
-            return false;
+    private static IEnumerable<string> NuGetPackage(ReferencePack pack, ResolveOptions options)
+    {
+        if (string.IsNullOrEmpty(options.NuGetRoot)) return [];
 
-        var dotnet = pack.Parent != null && pack.Parent.Name.Equals("packs", StringComparison.OrdinalIgnoreCase) && pack.Parent.Parent != null
-            ? pack.Parent.Parent.FullName
-            : DotNetRoot();
+        var package = Path.Combine(options.NuGetRoot, Path.GetFileNameWithoutExtension(pack.FileName).ToLowerInvariant());
 
-        var shared = Path.Combine(dotnet, "shared", pack.Name.Substring(0, pack.Name.Length - ".Ref".Length));
-        var file = Path.GetFileName(path);
+        return Versions(Subdirectories(package), pack.Version, options)
+            .SelectMany(version => LibFrameworks(Path.Combine(package, version, "lib"), pack.Framework)
+                .Select(framework => Path.Combine(package, version, "lib", framework, pack.FileName)));
+    }
 
-        candidates = RuntimeVersions(shared, version.Name).Select(v => Path.Combine(shared, v, file)).ToList();
-        return true;
+    /// <summary>The exact version when it is there, then the one the roll-forward policy would bind to.</summary>
+    private static IEnumerable<string> Versions(IReadOnlyList<string> available, string packVersion, ResolveOptions options)
+    {
+        var exact = available.FirstOrDefault(v => string.Equals(v, packVersion, StringComparison.OrdinalIgnoreCase));
+        var rolled = RuntimeRollForward.Select(available, RuntimeRollForward.RequestFor(packVersion), options.Policy, options.RollToPrerelease);
+
+        return new[] { exact, rolled }.Where(v => v != null).Distinct(StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The reference's own framework, then lower .NET frameworks newest first, then .NET Standard; never a .NET Framework build.</summary>
+    private static IEnumerable<string> LibFrameworks(string lib, string framework)
+    {
+        var available = Subdirectories(lib);
+        var ceiling = NetVersion(framework);
+
+        var lower = available
+            .Select(f => (Framework: f, Version: NetVersion(f)))
+            .Where(f => f.Version != null && (ceiling == null || f.Version <= ceiling))
+            .OrderByDescending(f => f.Version)
+            .Select(f => f.Framework);
+
+        var standard = available
+            .Where(f => f.StartsWith("netstandard", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(f => f, StringComparer.OrdinalIgnoreCase);
+
+        return available.Where(f => string.Equals(f, framework, StringComparison.OrdinalIgnoreCase))
+            .Concat(lower)
+            .Concat(standard)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary><c>net9.0</c> and <c>netcoreapp3.1</c> as versions; null for .NET Framework (<c>net462</c>), .NET Standard and the rest.</summary>
+    private static Version NetVersion(string framework)
+    {
+        string number = null;
+
+        if (framework.StartsWith("netcoreapp", StringComparison.OrdinalIgnoreCase))
+            number = framework.Substring("netcoreapp".Length);
+        else if (framework.StartsWith("net", StringComparison.OrdinalIgnoreCase) && !framework.StartsWith("netstandard", StringComparison.OrdinalIgnoreCase))
+            number = framework.Substring("net".Length);
+
+        return number != null && number.IndexOf('.') >= 0 && Version.TryParse(number, out var version) ? version : null;
+    }
+
+    private static IReadOnlyList<string> Subdirectories(string path)
+    {
+        try
+        {
+            return Directory.Exists(path) ? new DirectoryInfo(path).EnumerateDirectories().Select(d => d.Name).ToList() : [];
+        }
+        catch (Exception)
+        {
+            return [];
+        }
     }
 
     /// <summary><c>package\ver\ref\tfm\a.dll</c> maps to <c>package\ver\lib\tfm\a.dll</c>, then to any other <c>lib</c> framework carrying the file.</summary>
@@ -129,25 +198,50 @@ internal static class ImplementationAssemblyResolver
             yield return Path.Combine(windows, "Microsoft.NET", framework, "v4.0.30319", reference.Name + ".dll");
     }
 
-    /// <summary>Installed runtimes of the pack's major version: its own version first, then its minor, then newest.</summary>
-    private static IEnumerable<string> RuntimeVersions(string sharedRoot, string packVersion)
+    /// <summary><c>packs\X.Ref\ver\ref\tfm\a.dll</c>, or the same layout restored into the NuGet cache, with the runtime it maps to.</summary>
+    private readonly struct ReferencePack
     {
-        if (!Directory.Exists(sharedRoot) || !Version.TryParse(Stable(packVersion), out var wanted)) return [];
+        private ReferencePack(string sharedRoot, string version, string framework, string fileName)
+        {
+            SharedRoot = sharedRoot;
+            Version = version;
+            Framework = framework;
+            FileName = fileName;
+        }
 
-        return new DirectoryInfo(sharedRoot).EnumerateDirectories()
-            .Select(d => (d.Name, Version: Version.TryParse(Stable(d.Name), out var parsed) ? parsed : null))
-            .Where(r => r.Version != null && r.Version.Major == wanted.Major)
-            .OrderByDescending(r => string.Equals(r.Name, packVersion, StringComparison.OrdinalIgnoreCase))
-            .ThenByDescending(r => r.Version.Minor == wanted.Minor)
-            .ThenByDescending(r => r.Version)
-            .Select(r => r.Name)
-            .ToList();
-    }
+        /// <summary><c>dotnet\shared\X</c>, holding one directory per installed runtime version.</summary>
+        public string SharedRoot { get; }
 
-    private static string Stable(string version)
-    {
-        var dash = version.IndexOf('-');
-        return dash < 0 ? version : version.Substring(0, dash);
+        public string Version { get; }
+        public string Framework { get; }
+        public string FileName { get; }
+
+        public static bool TryRead(string path, out ReferencePack pack)
+        {
+            pack = default;
+            if (string.IsNullOrEmpty(path)) return false;
+
+            var tfm = Directory.GetParent(path);
+            var refDirectory = tfm?.Parent;
+            var version = refDirectory?.Parent;
+            var packDirectory = version?.Parent;
+
+            if (packDirectory is null
+                || !refDirectory.Name.Equals("ref", StringComparison.OrdinalIgnoreCase)
+                || !packDirectory.Name.EndsWith(".Ref", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            var dotnet = packDirectory.Parent != null
+                && packDirectory.Parent.Name.Equals("packs", StringComparison.OrdinalIgnoreCase)
+                && packDirectory.Parent.Parent != null
+                    ? packDirectory.Parent.Parent.FullName
+                    : DotNetRoot();
+
+            var shared = Path.Combine(dotnet, "shared", packDirectory.Name.Substring(0, packDirectory.Name.Length - ".Ref".Length));
+
+            pack = new ReferencePack(shared, version.Name, tfm.Name, Path.GetFileName(path));
+            return true;
+        }
     }
 
     /// <summary><c>v4.0_4.0.0.0__b77a5c561934e089</c>.</summary>

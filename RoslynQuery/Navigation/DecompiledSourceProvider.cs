@@ -26,32 +26,40 @@ internal static class DecompiledSourceProvider
 
     // NoInlining keeps ICSharpCode.Decompiler out of the caller's JIT, so a missing assembly throws inside the caller's try.
     [MethodImpl(MethodImplOptions.NoInlining)]
-    public static DecompiledSource Decompile(string assemblyPath, string documentationId)
+    public static DecompiledSource Decompile(string assemblyPath, string documentationId) =>
+        Decompile(assemblyPath, documentationId, ResolveOptions.FromEnvironment(allowNuGetFallback: false));
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static DecompiledSource Decompile(string assemblyPath, string documentationId, ResolveOptions options)
     {
         if (string.IsNullOrEmpty(documentationId)) return DecompiledSource.Failed("This row has no documentation id to look it up by.");
 
-        var implementation = ImplementationAssemblyResolver.Resolve(assemblyPath);
+        var implementation = ImplementationAssemblyResolver.Resolve(assemblyPath, options);
         if (implementation is null)
         {
-            return DecompiledSource.Failed(ImplementationAssemblyResolver.IsReferenceAssembly(assemblyPath)
-                ? $"{Path.GetFileName(assemblyPath)} is a reference assembly and no implementation was found for it, so there are no method bodies to show."
-                : $"{assemblyPath} could not be read as an assembly.");
+            if (!ImplementationAssemblyResolver.IsReferenceAssembly(assemblyPath))
+                return DecompiledSource.Failed($"{assemblyPath} could not be read as an assembly.");
+
+            var failure = $"{Path.GetFileName(assemblyPath)} is a reference assembly and no implementation was found for it, so there are no method bodies to show.";
+            var why = ImplementationAssemblyResolver.ExplainUnresolved(assemblyPath, options);
+
+            return DecompiledSource.Failed(why is null ? failure : failure + " " + why);
         }
 
         lock (Gate)
         {
-            return DecompileFrom(implementation, documentationId, forwards: 0);
+            return DecompileFrom(implementation, documentationId, forwards: 0, options);
         }
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private static DecompiledSource DecompileFrom(string path, string documentationId, int forwards)
+    private static DecompiledSource DecompileFrom(string path, string documentationId, int forwards, ResolveOptions options)
     {
         var decompiler = DecompilerFor(path);
         var entity = IdStringProvider.FindEntity(documentationId, new SimpleTypeResolveContext(decompiler.TypeSystem.MainModule));
         if (entity is null) return DecompiledSource.Failed($"{documentationId} was not found in {Path.GetFileName(path)}.");
 
-        if (!entity.ParentModule.IsMainModule) return FollowForward(entity, path, documentationId, forwards);
+        if (!entity.ParentModule.IsMainModule) return FollowForward(entity, path, documentationId, forwards, options);
 
         var top = entity as ITypeDefinition ?? entity.DeclaringTypeDefinition;
         while (top?.DeclaringTypeDefinition != null) top = top.DeclaringTypeDefinition;
@@ -68,9 +76,9 @@ internal static class DecompiledSourceProvider
     }
 
     /// <summary>A facade forwards the type to the assembly that declares it.</summary>
-    private static DecompiledSource FollowForward(IEntity entity, string path, string documentationId, int forwards)
+    private static DecompiledSource FollowForward(IEntity entity, string path, string documentationId, int forwards, ResolveOptions options)
     {
-        var implementation = ImplementationAssemblyResolver.Resolve(entity.ParentModule.MetadataFile?.FileName);
+        var implementation = ImplementationAssemblyResolver.Resolve(entity.ParentModule.MetadataFile?.FileName, options);
 
         if (forwards >= 3 || implementation is null || string.Equals(implementation, path, StringComparison.OrdinalIgnoreCase))
         {
@@ -78,7 +86,7 @@ internal static class DecompiledSourceProvider
                 $"{documentationId} is forwarded from {Path.GetFileName(path)} to {entity.ParentModule.AssemblyName}, whose implementation could not be found.");
         }
 
-        return DecompileFrom(implementation, documentationId, forwards + 1);
+        return DecompileFrom(implementation, documentationId, forwards + 1, options);
     }
 
     /// <summary>Read off the syntax tree, which also positions declarations without a name token, such as indexers and operators.</summary>

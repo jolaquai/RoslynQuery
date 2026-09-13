@@ -25,9 +25,6 @@ internal static class RuntimeRollForward
     public const string PolicyVariable = "DOTNET_ROLL_FORWARD";
     public const string PrereleaseVariable = "DOTNET_ROLL_FORWARD_TO_PRERELEASE";
 
-    public static RollForwardPolicy CurrentPolicy =>
-        TryParse(Environment.GetEnvironmentVariable(PolicyVariable), out var policy) ? policy : RollForwardPolicy.Minor;
-
     public static bool CurrentRollsToPrerelease =>
         string.Equals(Environment.GetEnvironmentVariable(PrereleaseVariable)?.Trim(), "1", StringComparison.Ordinal);
 

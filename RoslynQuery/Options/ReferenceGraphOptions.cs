@@ -19,7 +19,7 @@ public sealed class ReferenceGraphOptions : DialogPage
 
     [Category("Metadata symbols")]
     [DisplayName("Open metadata symbols in")]
-    [Description("What opens when you activate a row that came from a referenced assembly. ILSpy shows the symbol in its own assembly tree, where the whole assembly is browsable. Visual Studio decompiles the containing type into a temporary file and opens that in the editor. When no ILSpy can be found, Visual Studio is used and the status line says so.")]
+    [Description("What opens when you activate a row that came from a referenced assembly. ILSpy shows the symbol in its own assembly tree, where the whole assembly is browsable. Visual Studio decompiles the containing type into a temporary file and opens that in the editor. When ILSpy is chosen but cannot be found, a message box says so.")]
     [DefaultValue(MetadataNavigationMode.Ilspy)]
     [TypeConverter(typeof(MetadataNavigationModeConverter))]
     public MetadataNavigationMode MetadataNavigation { get; set; } = MetadataNavigationMode.Ilspy;
@@ -28,6 +28,12 @@ public sealed class ReferenceGraphOptions : DialogPage
     [DisplayName("ILSpy path")]
     [Description("Full path to ILSpy.exe. Leave this empty to search the usual install locations and the ILSpy extension for Visual Studio. Set it only when ILSpy lives somewhere unusual; a path that does not exist is reported rather than ignored.")]
     public string IlspyPath { get; set; }
+
+    [Category("Metadata symbols")]
+    [DisplayName("Fall back to NuGet packages")]
+    [Description("Framework assemblies are opened from the installed .NET runtime matching the project's reference pack, or, failing an exact match, from whichever runtime DOTNET_ROLL_FORWARD allows. When that finds nothing, this also looks for the same assembly shipped as a NuGet package in the local package cache, by the same rule: the exact version first, then DOTNET_ROLL_FORWARD. Off by default, since a package build is not always the build a runtime ships.")]
+    [DefaultValue(false)]
+    public bool FallBackToNuGetPackages { get; set; }
 
     // Inert until IL analysis exists: a persisted true must never switch anything on.
     [Category("IL analysis (not yet available)")]
