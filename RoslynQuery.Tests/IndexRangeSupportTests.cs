@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 
 using RoslynQuery.Query;
 
@@ -74,24 +75,23 @@ public class IndexRangeSupportTests
     [Theory]
     [InlineData(0, 5, 0)]
     [InlineData(2, 5, 2)]
-    public void GetOffset_FromStart_IsTheValueItself(int value, int length, int expected) =>
-        Assert.Equal(expected, Offset(value, fromEnd: false, length));
+    public async Task GetOffset_FromStart_IsTheValueItself(int value, int length, int expected) =>
+        Assert.Equal(expected, await OffsetAsync(value, fromEnd: false, length));
 
     [Theory]
     [InlineData(1, 5, 4)]
     [InlineData(5, 5, 0)]
-    public void GetOffset_FromEnd_CountsBackFromLength(int value, int length, int expected) =>
-        Assert.Equal(expected, Offset(value, fromEnd: true, length));
+    public async Task GetOffset_FromEnd_CountsBackFromLength(int value, int length, int expected) =>
+        Assert.Equal(expected, await OffsetAsync(value, fromEnd: true, length));
 
     /// <summary>Runs the polyfill's own arithmetic, since an off-by-one there would silently pick the wrong element.</summary>
-    private static int Offset(int value, bool fromEnd, int length)
+    private static async Task<int> OffsetAsync(int value, bool fromEnd, int length)
     {
         var text = $"System.Index probe = new System.Index({value}, {(fromEnd ? "true" : "false")});"
             + $" return probe.GetOffset({length});";
 
         var predicate = PredicateCompiler.Compile(TargetKind.SyntaxNode, text);
-        var result = ((System.Threading.Tasks.ValueTask<object>)predicate.DynamicInvoke(null, null, null)).Result;
 
-        return (int)result;
+        return (int)await (ValueTask<object>)predicate.DynamicInvoke(null, null, null);
     }
 }
