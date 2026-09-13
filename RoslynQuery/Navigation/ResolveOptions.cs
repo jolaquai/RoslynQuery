@@ -26,14 +26,27 @@ internal readonly struct ResolveOptions
     /// <summary>The process's own roll-forward settings, which for Visual Studio are whatever it was started with.</summary>
     public static ResolveOptions FromEnvironment(bool allowNuGetFallback)
     {
-        var raw = Environment.GetEnvironmentVariable(RuntimeRollForward.PolicyVariable);
-        var parsed = RuntimeRollForward.TryParse(raw, out var policy);
+        var rawPolicy = Environment.GetEnvironmentVariable(RuntimeRollForward.PolicyVariable);
+        var rawPrerelease = Environment.GetEnvironmentVariable(RuntimeRollForward.PrereleaseVariable);
 
-        var description = string.IsNullOrWhiteSpace(raw) ? policy + " (" + RuntimeRollForward.PolicyVariable + " is not set)"
+        RuntimeRollForward.TryParse(rawPolicy, out var policy);
+        var rollToPrerelease = RuntimeRollForward.RollsToPrerelease(rawPrerelease);
+
+        return new ResolveOptions(policy, rollToPrerelease, allowNuGetFallback, DefaultNuGetRoot(), Describe(rawPolicy, rawPrerelease));
+    }
+
+    /// <summary>The policy the raw variables produce, worded so a user can see why it is the one in force.</summary>
+    public static string Describe(string rawPolicy, string rawPrerelease)
+    {
+        var parsed = RuntimeRollForward.TryParse(rawPolicy, out var policy);
+
+        var description = string.IsNullOrEmpty(rawPolicy) ? policy + " (" + RuntimeRollForward.PolicyVariable + " is not set)"
             : parsed ? policy + " (from " + RuntimeRollForward.PolicyVariable + ")"
-            : policy + " (" + RuntimeRollForward.PolicyVariable + "=" + raw.Trim() + " is not a policy)";
+            : policy + " (" + RuntimeRollForward.PolicyVariable + "='" + rawPolicy + "' is not a policy)";
 
-        return new ResolveOptions(policy, RuntimeRollForward.CurrentRollsToPrerelease, allowNuGetFallback, DefaultNuGetRoot(), description);
+        return RuntimeRollForward.RollsToPrerelease(rawPrerelease)
+            ? description + ", with previews allowed by " + RuntimeRollForward.PrereleaseVariable
+            : description;
     }
 
     private static string DefaultNuGetRoot()

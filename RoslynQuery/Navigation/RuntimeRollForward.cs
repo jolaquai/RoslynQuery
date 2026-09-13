@@ -25,18 +25,20 @@ internal static class RuntimeRollForward
     public const string PolicyVariable = "DOTNET_ROLL_FORWARD";
     public const string PrereleaseVariable = "DOTNET_ROLL_FORWARD_TO_PRERELEASE";
 
-    public static bool CurrentRollsToPrerelease =>
-        string.Equals(Environment.GetEnvironmentVariable(PrereleaseVariable)?.Trim(), "1", StringComparison.Ordinal);
+    public static bool CurrentRollsToPrerelease => RollsToPrerelease(Environment.GetEnvironmentVariable(PrereleaseVariable));
 
+    /// <summary>As hostfxr reads it: <c>xtoi(value) == 1</c>, so <c>01</c> and <c>1x</c> count and <c>true</c> does not.</summary>
+    public static bool RollsToPrerelease(string value) => !string.IsNullOrEmpty(value) && Atoi(value) == 1;
+
+    /// <summary>As hostfxr reads it: a case-insensitive match on the whole value, which is not trimmed.</summary>
     public static bool TryParse(string value, out RollForwardPolicy policy)
     {
         policy = RollForwardPolicy.Minor;
-        if (string.IsNullOrWhiteSpace(value)) return false;
+        if (string.IsNullOrEmpty(value)) return false;
 
-        var text = value.Trim();
         foreach (RollForwardPolicy candidate in Enum.GetValues(typeof(RollForwardPolicy)))
         {
-            if (string.Equals(candidate.ToString(), text, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(candidate.ToString(), value, StringComparison.OrdinalIgnoreCase))
             {
                 policy = candidate;
                 return true;
@@ -44,6 +46,29 @@ internal static class RuntimeRollForward
         }
 
         return false;
+    }
+
+    /// <summary>C's <c>atoi</c>: leading whitespace, an optional sign, then digits up to the first non-digit, or 0.</summary>
+    private static long Atoi(string value)
+    {
+        var i = 0;
+        while (i < value.Length && value[i] is ' ' or '\t' or '\n' or '\v' or '\f' or '\r') i++;
+
+        var negative = false;
+        if (i < value.Length && value[i] is '+' or '-')
+        {
+            negative = value[i] == '-';
+            i++;
+        }
+
+        long result = 0;
+        for (; i < value.Length && value[i] >= '0' && value[i] <= '9'; i++)
+        {
+            result = result * 10 + (value[i] - '0');
+            if (result > int.MaxValue) return 0;
+        }
+
+        return negative ? -result : result;
     }
 
     /// <summary>What an app built on a targeting pack asks the host for: its major.minor, or a prerelease pack exactly.</summary>
