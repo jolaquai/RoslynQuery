@@ -123,7 +123,7 @@
                                     Moniker="{Binding Target, Converter={StaticResource TargetMoniker}}" />
 
                 <StackPanel Grid.Column="1">
-                    <TextBlock Text="{Binding Preview}" FontFamily="Consolas" TextTrimming="CharacterEllipsis"
+                    <TextBlock Text="{Binding Preview}" FontFamily="{x:Static local:MonospaceFont.Family}" TextTrimming="CharacterEllipsis"
                                Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}" />
                     <TextBlock Margin="0,1,0,0" TextTrimming="CharacterEllipsis">
                         <Run Text="{Binding Kind, Mode=OneWay}"
@@ -210,11 +210,11 @@
 
                 <StackPanel Grid.Column="1">
                     <TextBlock x:Name="DisplayText" Text="{Binding Display}" ToolTip="{Binding Tooltip}"
-                               FontFamily="Consolas" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" MaxHeight="64"
+                               FontFamily="{x:Static local:MonospaceFont.Family}" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" MaxHeight="64"
                                Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}" />
                     <TextBox x:Name="DisplayEditor" Visibility="Collapsed"
                              Text="{Binding EditText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                             FontFamily="Consolas" IsVisibleChanged="OnRenameEditorVisibleChanged"
+                             FontFamily="{x:Static local:MonospaceFont.Family}" IsVisibleChanged="OnRenameEditorVisibleChanged"
                              KeyDown="OnRenameEditorKeyDown" LostKeyboardFocus="OnRenameEditorLostFocus" />
                     <TextBlock Text="{Binding Subtitle}" Margin="0,1,0,0" TextTrimming="CharacterEllipsis"
                                Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" />
@@ -253,10 +253,10 @@
                           IsEnabled="{Binding Warning, Converter={StaticResource NullToEnabled}}" />
 
                 <StackPanel Grid.Column="1">
-                    <TextBlock Text="{Binding Before}" FontFamily="Consolas" TextTrimming="CharacterEllipsis"
+                    <TextBlock Text="{Binding Before}" FontFamily="{x:Static local:MonospaceFont.Family}" TextTrimming="CharacterEllipsis"
                                TextDecorations="Strikethrough"
                                Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" />
-                    <TextBlock Text="{Binding After}" FontFamily="Consolas" TextTrimming="CharacterEllipsis"
+                    <TextBlock Text="{Binding After}" FontFamily="{x:Static local:MonospaceFont.Family}" TextTrimming="CharacterEllipsis"
                                Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}" />
                     <TextBlock Margin="0,1,0,0" TextTrimming="CharacterEllipsis">
                         <Run Text="{Binding Hit.Kind, Mode=OneWay}"
@@ -333,7 +333,7 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <TextBlock x:Name="SignatureText" Grid.Column="0" FontFamily="Consolas" Style="{StaticResource Meta}" />
+                <TextBlock x:Name="SignatureText" Grid.Column="0" FontFamily="{x:Static local:MonospaceFont.Family}" Style="{StaticResource Meta}" />
 
                 <StackPanel x:Name="NeedHelpPanel" Grid.Column="1" Margin="12,0,0,0" Orientation="Horizontal" VerticalAlignment="Center">
                     <imaging:CrispImage Width="16" Height="16" Margin="0,0,4,0" VerticalAlignment="Center"
@@ -440,7 +440,7 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
-                                <TextBlock x:Name="ReplaceSignatureText" Grid.Column="0" FontFamily="Consolas" Style="{StaticResource Meta}" />
+                                <TextBlock x:Name="ReplaceSignatureText" Grid.Column="0" FontFamily="{x:Static local:MonospaceFont.Family}" Style="{StaticResource Meta}" />
 
                                 <StackPanel Grid.Column="1" Orientation="Horizontal">
                                     <Button x:Name="SelectAllButton" Content="All" MinWidth="36" Margin="12,0,4,0" Padding="6,1"

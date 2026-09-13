@@ -13,6 +13,7 @@ using Microsoft.VisualStudio.Text.Operations;
 using Microsoft.VisualStudio.Utilities;
 
 using RoslynQuery.Query;
+using RoslynQuery.ToolWindow;
 
 using VsData = Microsoft.VisualStudio.Language.Intellisense.AsyncCompletion.Data;
 
@@ -385,7 +386,7 @@ internal sealed class PredicateTextBoxInput : IPredicateInput
             AcceptsReturn = true,
             TextWrapping = TextWrapping.Wrap,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            FontFamily = new FontFamily("Consolas"),
+            FontFamily = MonospaceFont.Family,
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0)
         };
