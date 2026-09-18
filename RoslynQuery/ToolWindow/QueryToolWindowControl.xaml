@@ -197,7 +197,7 @@
             </Style.Triggers>
         </Style>
 
-        <DataTemplate x:Key="CachedPredicateTemplate">
+        <DataTemplate x:Key="HistoryRowTemplate">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
@@ -222,11 +222,11 @@
 
                 <StackPanel Grid.Column="2" VerticalAlignment="Top">
                     <Button Style="{StaticResource StarButton}" Click="OnFavoriteClick"
-                            ToolTip="Keep this query in the sidebar across restarts" />
+                            ToolTip="Keep this row in the sidebar across restarts" />
                     <Button Style="{StaticResource RowButton}" Content="&#x270E;" Click="OnRenameClick"
-                            ToolTip="Rename this row. Clear the name to show the query again." />
+                            ToolTip="Rename this row. Clear the name to show the expression again." />
                     <Button Style="{StaticResource RowButton}" Content="&#x2715;" Click="OnRemoveRowClick"
-                            ToolTip="Drop this row from the sidebar. The compiled query stays in the cache." />
+                            ToolTip="Drop this row from the sidebar. The compiled expression stays in the cache." />
                 </StackPanel>
             </Grid>
 
@@ -346,7 +346,8 @@
                 </StackPanel>
             </Grid>
 
-            <TabControl x:Name="MainTabs" Grid.Row="3" Margin="0,7,0,0" Style="{StaticResource FlatTabControl}">
+            <TabControl x:Name="MainTabs" Grid.Row="3" Margin="0,7,0,0" Style="{StaticResource FlatTabControl}"
+                        SelectionChanged="OnMainTabsSelectionChanged">
                 <TabItem Header="Search" Style="{StaticResource FlatTabItem}">
                     <Grid>
                         <Grid.RowDefinitions>
@@ -482,21 +483,52 @@
                 BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarBorderKey}}">
             <Grid>
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
+                    <RowDefinition Height="*" MinHeight="60" />
+                    <RowDefinition x:Name="ReplacementHistorySplitterRow" Height="0" />
+                    <RowDefinition x:Name="ReplacementHistoryRow" Height="0" />
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" Text="Query History" Style="{StaticResource Caption}" Margin="6,0,0,4" />
+                <Grid Grid.Row="0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
 
-                <ListBox x:Name="CachedPredicates" Grid.Row="1"
-                         BorderThickness="0" Background="Transparent"
-                         HorizontalContentAlignment="Stretch"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                         VirtualizingStackPanel.IsVirtualizing="True"
-                         VirtualizingStackPanel.VirtualizationMode="Recycling"
-                         ItemContainerStyle="{StaticResource ResultRow}"
-                         ItemTemplate="{StaticResource CachedPredicateTemplate}"
-                         MouseDoubleClick="OnCachedPredicateDoubleClick" />
+                    <TextBlock Grid.Row="0" Text="Query History" Style="{StaticResource Caption}" Margin="6,0,0,4" />
+
+                    <ListBox x:Name="CachedPredicates" Grid.Row="1"
+                             BorderThickness="0" Background="Transparent"
+                             HorizontalContentAlignment="Stretch"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             VirtualizingStackPanel.IsVirtualizing="True"
+                             VirtualizingStackPanel.VirtualizationMode="Recycling"
+                             ItemContainerStyle="{StaticResource ResultRow}"
+                             ItemTemplate="{StaticResource HistoryRowTemplate}"
+                             MouseDoubleClick="OnCachedPredicateDoubleClick" />
+                </Grid>
+
+                <GridSplitter x:Name="ReplacementHistorySplitter" Grid.Row="1" Height="4" Visibility="Collapsed"
+                              HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext"
+                              Background="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarGradientKey}}" />
+
+                <Grid x:Name="ReplacementHistoryPane" Grid.Row="2" Margin="0,4,0,0" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Text="Replacement History" Style="{StaticResource Caption}" Margin="6,0,0,4" />
+
+                    <ListBox x:Name="CachedReplacements" Grid.Row="1"
+                             BorderThickness="0" Background="Transparent"
+                             HorizontalContentAlignment="Stretch"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             VirtualizingStackPanel.IsVirtualizing="True"
+                             VirtualizingStackPanel.VirtualizationMode="Recycling"
+                             ItemContainerStyle="{StaticResource ResultRow}"
+                             ItemTemplate="{StaticResource HistoryRowTemplate}"
+                             MouseDoubleClick="OnCachedReplacementDoubleClick" />
+                </Grid>
             </Grid>
         </Border>
     </Grid>
