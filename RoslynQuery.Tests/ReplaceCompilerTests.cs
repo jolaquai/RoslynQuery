@@ -108,6 +108,32 @@ public class ReplaceCompilerTests
         Assert.Same(first, second);
     }
 
+    [Theory]
+    [InlineData(TargetKind.SyntaxNode, "\"key\"   +   {0}")]
+    [InlineData(TargetKind.SyntaxToken, "\"key\"+{0}")]
+    [InlineData(TargetKind.SyntaxNode, "return \"key\" + {0};")]
+    public void KeyFor_MatchesTheKeyCompileStored(TargetKind kind, string template)
+    {
+        var text = string.Format(template, Guid.NewGuid().GetHashCode() & int.MaxValue);
+
+        ReplaceCompiler.Compile(kind, text);
+
+        Assert.Contains(ReplaceCompiler.KeyFor(kind, text), ReplaceCompiler.Snapshot());
+        Assert.DoesNotContain(ReplaceCompiler.KeyFor(kind, text), PredicateCompiler.Snapshot());
+    }
+
+    [Fact]
+    public void Compile_KeepsItsOwnByteTotal()
+    {
+        var predicateBytes = PredicateCompiler.TotalEmittedBytes;
+        var replaceBytes = ReplaceCompiler.TotalEmittedBytes;
+
+        ReplaceCompiler.Compile(TargetKind.SyntaxNode, "\"bytes\" + " + (Guid.NewGuid().GetHashCode() & int.MaxValue));
+
+        Assert.Equal(predicateBytes, PredicateCompiler.TotalEmittedBytes);
+        Assert.True(ReplaceCompiler.TotalEmittedBytes > replaceBytes);
+    }
+
     [Fact]
     public void DelegateType_ReturnsExpected()
     {
