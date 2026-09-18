@@ -22,6 +22,7 @@ using Microsoft.VisualStudio.TextManager.Interop;
 using Microsoft.VisualStudio.Threading;
 
 using RoslynQuery.Editor;
+using RoslynQuery.Favorites;
 using RoslynQuery.Navigation;
 using RoslynQuery.Options;
 using RoslynQuery.Query;
@@ -267,8 +268,8 @@ public partial class QueryToolWindowControl : UserControl
         if ((sender as FrameworkElement)?.DataContext is not CachedPredicateItem item) return;
 
         item.IsFavorite = !item.IsFavorite;
-        if (item.IsFavorite) FavoritesStore.Add(item.Kind, item.Mode, item.Text, item.Name);
-        else FavoritesStore.Remove(item.Kind, item.Mode, item.Text);
+        if (item.IsFavorite) FavoritesStore.Queries.Add(item.Kind, item.Mode, item.Text, item.Name);
+        else FavoritesStore.Queries.Remove(item.Kind, item.Mode, item.Text);
     }
 
     /// <summary>The README section that documents writing a predicate, which is what a new user needs first.</summary>
@@ -302,7 +303,7 @@ public partial class QueryToolWindowControl : UserControl
         if ((sender as FrameworkElement)?.DataContext is not CachedPredicateItem item) return;
 
         // Unstarred as well as hidden: a starred row would otherwise come back on the next refresh.
-        if (item.IsFavorite) FavoritesStore.Remove(item.Kind, item.Mode, item.Text);
+        if (item.IsFavorite) FavoritesStore.Queries.Remove(item.Kind, item.Mode, item.Text);
 
         _hiddenRows.Add((item.Kind, item.Mode, item.Text));
         _cachedPredicates.Remove(item);
@@ -353,7 +354,7 @@ public partial class QueryToolWindowControl : UserControl
 
         item.CommitEdit();
 
-        if (item.IsFavorite) FavoritesStore.Rename(item.Kind, item.Mode, item.Text, item.Name);
+        if (item.IsFavorite) FavoritesStore.Queries.Rename(item.Kind, item.Mode, item.Text, item.Name);
     }
 
     private static bool IsWithinButton(object originalSource)
@@ -405,7 +406,7 @@ public partial class QueryToolWindowControl : UserControl
         _cachedPredicates.Clear();
         var seen = new HashSet<(TargetKind, PredicateMode, string)>(_hiddenRows);
 
-        foreach (var entry in FavoritesStore.All)
+        foreach (var entry in FavoritesStore.Queries.All)
         {
             if (seen.Add((entry.Kind, entry.Mode, entry.Text)))
                 _cachedPredicates.Add(new CachedPredicateItem(entry.Kind, entry.Mode, entry.Text, isFavorite: true, name: entry.Name));
@@ -425,7 +426,7 @@ public partial class QueryToolWindowControl : UserControl
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        var warning = FavoritesStore.TakeWarning();
+        var warning = FavoritesStore.Queries.TakeWarning();
         if (warning is null) return;
 
 #pragma warning disable VSTHRD001, VSTHRD110

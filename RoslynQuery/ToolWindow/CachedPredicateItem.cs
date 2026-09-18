@@ -10,7 +10,7 @@ using RoslynQuery.Query;
 
 namespace RoslynQuery.ToolWindow;
 
-/// <summary>One entry in the cached-predicates sidebar: a normalized predicate still in <see cref="PredicateCompiler"/>'s cache, or one starred in <see cref="FavoritesStore"/>.</summary>
+/// <summary>One entry in the cached-predicates sidebar: a normalized predicate still in <see cref="PredicateCompiler"/>'s cache, or one starred in <see cref="Favorites.FavoritesStore"/>.</summary>
 internal sealed class CachedPredicateItem : INotifyPropertyChanged
 {
     // Not a cap on the entry: Pretty stays whole and is what a double-click restores. This only
