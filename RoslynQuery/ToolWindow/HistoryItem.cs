@@ -10,7 +10,7 @@ using RoslynQuery.Query;
 
 namespace RoslynQuery.ToolWindow;
 
-/// <summary>One entry in the cached-predicates sidebar: a normalized predicate still in <see cref="PredicateCompiler"/>'s cache, or one starred in <see cref="Favorites.FavoritesStore"/>.</summary>
+/// <summary>One sidebar history row: a normalized expression still in its compiler's cache, or one starred in a <see cref="Favorites.FavoritesStore"/>.</summary>
 internal sealed class HistoryItem : INotifyPropertyChanged
 {
     // Not a cap on the entry: Pretty stays whole and is what a double-click restores. This only
@@ -23,8 +23,9 @@ internal sealed class HistoryItem : INotifyPropertyChanged
     private string _name;
     private string _editText;
 
-    public HistoryItem(TargetKind kind, PredicateMode mode, string text, bool isFavorite = false, string name = null)
+    public HistoryItem(TargetKind kind, PredicateMode mode, string text, bool isFavorite = false, string name = null, HistoryList owner = null)
     {
+        Owner = owner;
         Kind = kind;
         Mode = mode;
         Text = text;
@@ -33,6 +34,9 @@ internal sealed class HistoryItem : INotifyPropertyChanged
     }
 
     public event PropertyChangedEventHandler PropertyChanged;
+
+    /// <summary>The list this row belongs to, and so the store its star, rename and drop act on.</summary>
+    public HistoryList Owner { get; }
 
     public TargetKind Kind { get; }
     public PredicateMode Mode { get; }

@@ -3,7 +3,9 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Reflection;
 
+using RoslynQuery.Favorites;
 using RoslynQuery.Query;
+using RoslynQuery.ToolWindow;
 
 using Xunit;
 
@@ -169,5 +171,32 @@ public class PredicateCompilerSnapshotTests
 
         Assert.DoesNotContain(PredicateCompiler.Snapshot(), e => e.Text == phantomText);
         Assert.Contains(PredicateCompiler.Snapshot(), e => e.Text.Contains(token.ToString()));
+    }
+
+    /// <summary>
+    /// Dropping a row must never evict the compiled delegate behind it: on net472 the emitted assembly cannot be
+    /// unloaded, so evicting reclaims nothing and re-running the same text leaks a second assembly. The row is
+    /// unstarred, so the store is never touched and this needs no favorites isolation.
+    /// </summary>
+    [Fact]
+    public void DroppingAHistoryRow_LeavesTheCompiledEntryCached()
+    {
+        var text = $"true || {UniqueToken()} == -1";
+        PredicateCompiler.Compile(TargetKind.SyntaxNode, text);
+        var key = PredicateCompiler.KeyFor(TargetKind.SyntaxNode, text);
+        var list = new HistoryList(FavoritesStore.Queries);
+
+        list.Drop(new HistoryItem(key.Kind, key.Mode, key.Text, owner: list));
+
+        Assert.Contains(key, PredicateCompiler.Snapshot());
+    }
+
+    /// <summary>The cache exposes no removal at all, so no caller can evict one even by mistake.</summary>
+    [Fact]
+    public void TheCompilerCache_HasNoRemovalPath()
+    {
+        var methods = typeof(ExpressionCache).GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+
+        Assert.DoesNotContain(methods, m => m.Name.Contains("Remove") || m.Name.Contains("Clear") || m.Name.Contains("Evict"));
     }
 }
