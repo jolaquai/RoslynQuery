@@ -11,7 +11,7 @@ using RoslynQuery.Query;
 namespace RoslynQuery.ToolWindow;
 
 /// <summary>One entry in the cached-predicates sidebar: a normalized predicate still in <see cref="PredicateCompiler"/>'s cache, or one starred in <see cref="Favorites.FavoritesStore"/>.</summary>
-internal sealed class CachedPredicateItem : INotifyPropertyChanged
+internal sealed class HistoryItem : INotifyPropertyChanged
 {
     // Not a cap on the entry: Pretty stays whole and is what a double-click restores. This only
     // stops a pasted novel from being text-laid-out in full for the 64px the row actually shows.
@@ -23,7 +23,7 @@ internal sealed class CachedPredicateItem : INotifyPropertyChanged
     private string _name;
     private string _editText;
 
-    public CachedPredicateItem(TargetKind kind, PredicateMode mode, string text, bool isFavorite = false, string name = null)
+    public HistoryItem(TargetKind kind, PredicateMode mode, string text, bool isFavorite = false, string name = null)
     {
         Kind = kind;
         Mode = mode;

@@ -48,7 +48,7 @@ public partial class QueryToolWindowControl : UserControl
         return false;
         """;
     private readonly ObservableCollection<QueryHit> _hits = [];
-    private readonly ObservableCollection<CachedPredicateItem> _cachedPredicates = [];
+    private readonly ObservableCollection<HistoryItem> _cachedPredicates = [];
 
     // Rows the user dropped. Session-scoped on purpose: the compiler cache behind them is per-process too.
     private readonly HashSet<(TargetKind Kind, PredicateMode Mode, string Text)> _hiddenRows = [];
@@ -253,7 +253,7 @@ public partial class QueryToolWindowControl : UserControl
         // The star swallows selection, so without this a double-click on it would run whichever row
         // happened to be selected before rather than the one under the cursor.
         if (IsWithinButton(e.OriginalSource)) return;
-        if (CachedPredicates.SelectedItem is not CachedPredicateItem item) return;
+        if (CachedPredicates.SelectedItem is not HistoryItem item) return;
 
         // Pretty, not Display: the latter is truncated for the list and would restore a fragment.
         TargetCombo.SelectedIndex = (int)item.Kind;
@@ -265,7 +265,7 @@ public partial class QueryToolWindowControl : UserControl
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        if ((sender as FrameworkElement)?.DataContext is not CachedPredicateItem item) return;
+        if ((sender as FrameworkElement)?.DataContext is not HistoryItem item) return;
 
         item.IsFavorite = !item.IsFavorite;
         if (item.IsFavorite) FavoritesStore.Queries.Add(item.Kind, item.Mode, item.Text, item.Name);
@@ -287,7 +287,7 @@ public partial class QueryToolWindowControl : UserControl
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        if ((sender as FrameworkElement)?.DataContext is not CachedPredicateItem item) return;
+        if ((sender as FrameworkElement)?.DataContext is not HistoryItem item) return;
 
         item.BeginEdit();
     }
@@ -300,7 +300,7 @@ public partial class QueryToolWindowControl : UserControl
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        if ((sender as FrameworkElement)?.DataContext is not CachedPredicateItem item) return;
+        if ((sender as FrameworkElement)?.DataContext is not HistoryItem item) return;
 
         // Unstarred as well as hidden: a starred row would otherwise come back on the next refresh.
         if (item.IsFavorite) FavoritesStore.Queries.Remove(item.Kind, item.Mode, item.Text);
@@ -323,7 +323,7 @@ public partial class QueryToolWindowControl : UserControl
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        if (((TextBox)sender).DataContext is not CachedPredicateItem item) return;
+        if (((TextBox)sender).DataContext is not HistoryItem item) return;
 
         if (e.Key == Key.Enter)
         {
@@ -341,11 +341,11 @@ public partial class QueryToolWindowControl : UserControl
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        if (((TextBox)sender).DataContext is CachedPredicateItem item) CommitRename(item);
+        if (((TextBox)sender).DataContext is HistoryItem item) CommitRename(item);
     }
 
     /// <summary>A name matching the predicate, or an emptied box, clears the label rather than storing it.</summary>
-    private void CommitRename(CachedPredicateItem item)
+    private void CommitRename(HistoryItem item)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
@@ -409,13 +409,13 @@ public partial class QueryToolWindowControl : UserControl
         foreach (var entry in FavoritesStore.Queries.All)
         {
             if (seen.Add((entry.Kind, entry.Mode, entry.Text)))
-                _cachedPredicates.Add(new CachedPredicateItem(entry.Kind, entry.Mode, entry.Text, isFavorite: true, name: entry.Name));
+                _cachedPredicates.Add(new HistoryItem(entry.Kind, entry.Mode, entry.Text, isFavorite: true, name: entry.Name));
         }
 
         foreach (var (kind, mode, text) in PredicateCompiler.Snapshot())
         {
             if (seen.Add((kind, mode, text)))
-                _cachedPredicates.Add(new CachedPredicateItem(kind, mode, text));
+                _cachedPredicates.Add(new HistoryItem(kind, mode, text));
         }
 
         ReportFavoritesWarning();
