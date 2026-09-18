@@ -153,9 +153,11 @@ public class PredicateCompilerSnapshotTests
     {
         // Nothing evicts any more, so a key in CacheOrder that is absent from Cache is unreachable
         // by normal use; the filter stays as defence and reflection is the only way to exercise it.
-        var cacheOrderField = typeof(PredicateCompiler).GetField("CacheOrder", BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("PredicateCompiler.CacheOrder not found - has it been renamed?");
-        var cacheOrder = (ConcurrentQueue<(TargetKind, PredicateMode, string)>)cacheOrderField.GetValue(null);
+        var cacheField = typeof(PredicateCompiler).GetField("Cache", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("PredicateCompiler.Cache not found - has it been renamed?");
+        var cacheOrderField = typeof(ExpressionCache).GetField("_cacheOrder", BindingFlags.NonPublic | BindingFlags.Instance)
+            ?? throw new InvalidOperationException("ExpressionCache._cacheOrder not found - has it been renamed?");
+        var cacheOrder = (ConcurrentQueue<(TargetKind, PredicateMode, string)>)cacheOrderField.GetValue(cacheField.GetValue(null));
 
         var phantomText = "PHANTOM_" + Guid.NewGuid().ToString("N");
         cacheOrder.Enqueue((TargetKind.SyntaxNode, PredicateMode.Expression, phantomText));
