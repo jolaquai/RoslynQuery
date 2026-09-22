@@ -3,16 +3,13 @@ using System.IO;
 using System.Linq;
 
 using RoslynQuery.Query;
-using RoslynQuery.ToolWindow;
+using RoslynQuery.Favorites;
 
 using Xunit;
 
 namespace RoslynQuery.Tests;
 
-/// <summary>
-/// One class on purpose: <c>FavoritesStore</c> is a process-wide static, and xUnit only serializes
-/// test methods within a single class. A second class touching it would race this one.
-/// </summary>
+[Collection(FavoritesCollection.Name)]
 public sealed class FavoritesStoreTests : IDisposable
 {
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "RoslynQueryTests", Guid.NewGuid().ToString("N"));
@@ -31,42 +28,42 @@ public sealed class FavoritesStoreTests : IDisposable
     private void Reload() => FavoritesStore.DirectoryOverride = _directory;
 
     [Fact]
-    public void All_WithNothingStarred_IsEmpty() => Assert.Empty(FavoritesStore.All);
+    public void All_WithNothingStarred_IsEmpty() => Assert.Empty(FavoritesStore.Queries.All);
 
     [Fact]
     public void Add_ThenContains_FindsTheEntry()
     {
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
 
-        Assert.True(FavoritesStore.Contains(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null"));
+        Assert.True(FavoritesStore.Queries.Contains(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null"));
     }
 
     [Fact]
     public void Contains_DistinguishesKindAndMode()
     {
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
 
-        Assert.False(FavoritesStore.Contains(TargetKind.SyntaxToken, PredicateMode.Expression, "n != null"));
-        Assert.False(FavoritesStore.Contains(TargetKind.SyntaxNode, PredicateMode.Body, "n != null"));
+        Assert.False(FavoritesStore.Queries.Contains(TargetKind.SyntaxToken, PredicateMode.Expression, "n != null"));
+        Assert.False(FavoritesStore.Queries.Contains(TargetKind.SyntaxNode, PredicateMode.Body, "n != null"));
     }
 
     [Fact]
     public void Add_OrdersMostRecentlyStarredFirst()
     {
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "first");
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "second");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "first");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "second");
 
-        Assert.Equal(["second", "first"], FavoritesStore.All.Select(e => e.Text));
+        Assert.Equal(["second", "first"], FavoritesStore.Queries.All.Select(e => e.Text));
     }
 
     [Fact]
     public void Add_ExistingEntry_MovesItToFrontWithoutDuplicating()
     {
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a");
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "b");
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "b");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a");
 
-        Assert.Equal(["a", "b"], FavoritesStore.All.Select(e => e.Text));
+        Assert.Equal(["a", "b"], FavoritesStore.Queries.All.Select(e => e.Text));
     }
 
     [Theory]
@@ -75,63 +72,63 @@ public sealed class FavoritesStoreTests : IDisposable
     [InlineData("   ")]
     public void Add_EmptyText_IsIgnored(string text)
     {
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, text);
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, text);
 
-        Assert.Empty(FavoritesStore.All);
+        Assert.Empty(FavoritesStore.Queries.All);
     }
 
     [Fact]
     public void Remove_DropsOnlyTheMatchingEntry()
     {
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a");
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "b");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "b");
 
-        FavoritesStore.Remove(TargetKind.SyntaxNode, PredicateMode.Expression, "a");
+        FavoritesStore.Queries.Remove(TargetKind.SyntaxNode, PredicateMode.Expression, "a");
 
-        Assert.Equal(["b"], FavoritesStore.All.Select(e => e.Text));
+        Assert.Equal(["b"], FavoritesStore.Queries.All.Select(e => e.Text));
     }
 
     [Fact]
     public void Remove_UnknownEntry_IsANoOp()
     {
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a");
 
-        FavoritesStore.Remove(TargetKind.Operation, PredicateMode.Body, "nope");
+        FavoritesStore.Queries.Remove(TargetKind.Operation, PredicateMode.Body, "nope");
 
-        Assert.Equal(["a"], FavoritesStore.All.Select(e => e.Text));
+        Assert.Equal(["a"], FavoritesStore.Queries.All.Select(e => e.Text));
     }
 
     [Fact]
     public void Entries_SurviveAReload()
     {
-        FavoritesStore.Add(TargetKind.Operation, PredicateMode.Body, "return op != null;");
-        FavoritesStore.Add(TargetKind.SyntaxToken, PredicateMode.Expression, "t.ValueText == \"x\"");
+        FavoritesStore.Queries.Add(TargetKind.Operation, PredicateMode.Body, "return op != null;");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxToken, PredicateMode.Expression, "t.ValueText == \"x\"");
 
         Reload();
 
         Assert.Equal(
-            [new FavoritesStore.Entry(TargetKind.SyntaxToken, PredicateMode.Expression, "t.ValueText == \"x\"", null),
-             new FavoritesStore.Entry(TargetKind.Operation, PredicateMode.Body, "return op != null;", null)],
-            FavoritesStore.All);
+            [new FavoriteEntry(TargetKind.SyntaxToken, PredicateMode.Expression, "t.ValueText == \"x\"", null),
+             new FavoriteEntry(TargetKind.Operation, PredicateMode.Body, "return op != null;", null)],
+            FavoritesStore.Queries.All);
     }
 
     [Fact]
     public void AName_SurvivesAReload()
     {
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null", "Non-null nodes");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null", "Non-null nodes");
 
         Reload();
 
-        Assert.Equal("Non-null nodes", FavoritesStore.NameOf(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null"));
+        Assert.Equal("Non-null nodes", FavoritesStore.Queries.NameOf(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null"));
     }
 
     [Fact]
     public void AName_IsNotPartOfTheKey()
     {
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null", "first");
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null", "second");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null", "first");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null", "second");
 
-        var all = FavoritesStore.All;
+        var all = FavoritesStore.Queries.All;
 
         Assert.Equal("second", Assert.Single(all).Name);
     }
@@ -139,14 +136,14 @@ public sealed class FavoritesStoreTests : IDisposable
     [Fact]
     public void Rename_RelabelsInPlaceWithoutReordering()
     {
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a");
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "b");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "b");
 
-        FavoritesStore.Rename(TargetKind.SyntaxNode, PredicateMode.Expression, "a", "Ay");
+        FavoritesStore.Queries.Rename(TargetKind.SyntaxNode, PredicateMode.Expression, "a", "Ay");
         Reload();
 
-        Assert.Equal(["b", "a"], FavoritesStore.All.Select(e => e.Text));
-        Assert.Equal([null, "Ay"], FavoritesStore.All.Select(e => e.Name));
+        Assert.Equal(["b", "a"], FavoritesStore.Queries.All.Select(e => e.Text));
+        Assert.Equal([null, "Ay"], FavoritesStore.Queries.All.Select(e => e.Name));
     }
 
     [Theory]
@@ -155,28 +152,28 @@ public sealed class FavoritesStoreTests : IDisposable
     [InlineData("   ")]
     public void Rename_ToNothing_ClearsTheName(string name)
     {
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a", "Ay");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a", "Ay");
 
-        FavoritesStore.Rename(TargetKind.SyntaxNode, PredicateMode.Expression, "a", name);
+        FavoritesStore.Queries.Rename(TargetKind.SyntaxNode, PredicateMode.Expression, "a", name);
         Reload();
 
-        Assert.Null(FavoritesStore.NameOf(TargetKind.SyntaxNode, PredicateMode.Expression, "a"));
+        Assert.Null(FavoritesStore.Queries.NameOf(TargetKind.SyntaxNode, PredicateMode.Expression, "a"));
     }
 
     [Fact]
     public void Rename_AnUnstarredEntry_IsANoOp()
     {
-        FavoritesStore.Rename(TargetKind.SyntaxNode, PredicateMode.Expression, "a", "Ay");
+        FavoritesStore.Queries.Rename(TargetKind.SyntaxNode, PredicateMode.Expression, "a", "Ay");
 
-        Assert.Empty(FavoritesStore.All);
+        Assert.Empty(FavoritesStore.Queries.All);
     }
 
     [Fact]
     public void AName_IsTrimmed()
     {
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a", "  padded  ");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a", "  padded  ");
 
-        Assert.Equal("padded", FavoritesStore.NameOf(TargetKind.SyntaxNode, PredicateMode.Expression, "a"));
+        Assert.Equal("padded", FavoritesStore.Queries.NameOf(TargetKind.SyntaxNode, PredicateMode.Expression, "a"));
     }
 
     [Theory]
@@ -185,26 +182,26 @@ public sealed class FavoritesStoreTests : IDisposable
     [InlineData("back\\slash")]
     public void AName_WithSeparatorsOrEscapes_RoundTripsThroughDisk(string name)
     {
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a", name);
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a", name);
 
         Reload();
 
-        Assert.Equal(name, FavoritesStore.NameOf(TargetKind.SyntaxNode, PredicateMode.Expression, "a"));
+        Assert.Equal(name, FavoritesStore.Queries.NameOf(TargetKind.SyntaxNode, PredicateMode.Expression, "a"));
     }
 
     [Fact]
     public void NameOf_AnUnstarredEntry_IsNull() =>
-        Assert.Null(FavoritesStore.NameOf(TargetKind.SyntaxNode, PredicateMode.Expression, "nope"));
+        Assert.Null(FavoritesStore.Queries.NameOf(TargetKind.SyntaxNode, PredicateMode.Expression, "nope"));
 
     [Fact]
     public void Remove_SurvivesAReload()
     {
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a");
-        FavoritesStore.Remove(TargetKind.SyntaxNode, PredicateMode.Expression, "a");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "a");
+        FavoritesStore.Queries.Remove(TargetKind.SyntaxNode, PredicateMode.Expression, "a");
 
         Reload();
 
-        Assert.Empty(FavoritesStore.All);
+        Assert.Empty(FavoritesStore.Queries.All);
     }
 
     [Theory]
@@ -217,21 +214,21 @@ public sealed class FavoritesStoreTests : IDisposable
     [InlineData("n.ToString() == \"\\\\n not a newline\"")]
     public void Text_WithSeparatorsOrEscapes_RoundTripsThroughDisk(string text)
     {
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, text);
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, text);
 
         Reload();
 
-        Assert.Equal([text], FavoritesStore.All.Select(e => e.Text));
+        Assert.Equal([text], FavoritesStore.Queries.All.Select(e => e.Text));
     }
 
     [Fact]
     public void Add_IsUncapped_AndNeverDropsAnEarlierStar()
     {
         for (var i = 0; i < 1000; i++)
-            FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "q" + i);
+            FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "q" + i);
 
         Reload();
-        var all = FavoritesStore.All;
+        var all = FavoritesStore.Queries.All;
 
         Assert.Equal(1000, all.Count);
         Assert.Equal("q999", all[0].Text);
@@ -250,13 +247,13 @@ public sealed class FavoritesStoreTests : IDisposable
     {
         WriteRaw(header + "\r\nSyntaxNode\tExpression\tn != null\t\r\n");
 
-        Assert.Empty(FavoritesStore.All);
+        Assert.Empty(FavoritesStore.Queries.All);
     }
 
     [Fact]
     public void Load_TheCurrentStamp_IsVersionOne()
     {
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
 
         var lines = File.ReadAllLines(Path.Combine(_directory, "favorites.tsv"));
 
@@ -268,7 +265,7 @@ public sealed class FavoritesStoreTests : IDisposable
     {
         Reload();
 
-        Assert.Empty(FavoritesStore.All);
+        Assert.Empty(FavoritesStore.Queries.All);
     }
 
     [Theory]
@@ -283,7 +280,7 @@ public sealed class FavoritesStoreTests : IDisposable
     {
         WriteRaw(Header + "\r\n" + malformed + "\r\nSyntaxNode\tExpression\tgood\t\r\n");
 
-        Assert.Equal(["good"], FavoritesStore.All.Select(e => e.Text));
+        Assert.Equal(["good"], FavoritesStore.Queries.All.Select(e => e.Text));
     }
 
     [Fact]
@@ -291,7 +288,7 @@ public sealed class FavoritesStoreTests : IDisposable
     {
         WriteRaw(Header + "\r\nSyntaxNode\tExpression\tdupe\tfirst\r\nSyntaxNode\tExpression\tdupe\tsecond\r\n");
 
-        var entry = Assert.Single(FavoritesStore.All);
+        var entry = Assert.Single(FavoritesStore.Queries.All);
 
         Assert.Equal("dupe", entry.Text);
         Assert.Equal("first", entry.Name);
@@ -302,7 +299,7 @@ public sealed class FavoritesStoreTests : IDisposable
     {
         WriteRaw(Header + "\r\nSyntaxNode\tExpression\tn != null\t\r\n");
 
-        Assert.Null(Assert.Single(FavoritesStore.All).Name);
+        Assert.Null(Assert.Single(FavoritesStore.Queries.All).Name);
     }
 
     private const string FutureFile = "roslynquery-favorites\t99\r\nSyntaxNode\tExpression\tfrom the future\t\r\n";
@@ -314,7 +311,7 @@ public sealed class FavoritesStoreTests : IDisposable
     {
         WriteRaw(FutureFile);
 
-        Assert.Empty(FavoritesStore.All);
+        Assert.Empty(FavoritesStore.Queries.All);
         Assert.False(File.Exists(Favorites));
         Assert.Equal(FutureFile, File.ReadAllText(Favorites + ".v99.bak"));
     }
@@ -324,26 +321,26 @@ public sealed class FavoritesStoreTests : IDisposable
     {
         WriteRaw(FutureFile);
 
-        _ = FavoritesStore.All;
-        var warning = FavoritesStore.TakeWarning();
+        _ = FavoritesStore.Queries.All;
+        var warning = FavoritesStore.Queries.TakeWarning();
 
         Assert.NotNull(warning);
         Assert.Contains("version 99", warning);
         Assert.Contains("understands 1", warning);
         Assert.Contains(".v99.bak", warning);
-        Assert.Null(FavoritesStore.TakeWarning());
+        Assert.Null(FavoritesStore.Queries.TakeWarning());
     }
 
     [Fact]
     public void AfterANewerFileIsMovedAside_StarringStartsAFreshFile()
     {
         WriteRaw(FutureFile);
-        _ = FavoritesStore.All;
+        _ = FavoritesStore.Queries.All;
 
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "mine");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "mine");
         Reload();
 
-        Assert.Equal(["mine"], FavoritesStore.All.Select(e => e.Text));
+        Assert.Equal(["mine"], FavoritesStore.Queries.All.Select(e => e.Text));
         Assert.True(File.Exists(Favorites + ".v99.bak"));
     }
 
@@ -351,10 +348,10 @@ public sealed class FavoritesStoreTests : IDisposable
     public void ASecondNewerFile_NeverClobbersTheFirstBackup()
     {
         WriteRaw(FutureFile);
-        _ = FavoritesStore.All;
+        _ = FavoritesStore.Queries.All;
 
         WriteRaw("roslynquery-favorites\t99\r\nSyntaxNode\tExpression\tsecond\t\r\n");
-        _ = FavoritesStore.All;
+        _ = FavoritesStore.Queries.All;
 
         Assert.Equal(FutureFile, File.ReadAllText(Favorites + ".v99.bak"));
         Assert.Contains("second", File.ReadAllText(Favorites + ".v99-2.bak"));
@@ -369,13 +366,13 @@ public sealed class FavoritesStoreTests : IDisposable
         // Shares reading so the file still parses, but withholds delete, which is what File.Move needs.
         using (File.Open(Favorites, FileMode.Open, FileAccess.Read, FileShare.Read))
         {
-            _ = FavoritesStore.All;
+            _ = FavoritesStore.Queries.All;
 
-            var warning = FavoritesStore.TakeWarning();
+            var warning = FavoritesStore.Queries.TakeWarning();
             Assert.NotNull(warning);
             Assert.Contains("will not be saved", warning);
 
-            FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "mine");
+            FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "mine");
         }
 
         Assert.Equal(FutureFile, File.ReadAllText(Favorites));
@@ -384,12 +381,12 @@ public sealed class FavoritesStoreTests : IDisposable
     [Fact]
     public void AFileAtTheCurrentVersion_IsNeverMovedAside()
     {
-        FavoritesStore.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "mine");
+        FavoritesStore.Queries.Add(TargetKind.SyntaxNode, PredicateMode.Expression, "mine");
         Reload();
 
-        _ = FavoritesStore.All;
+        _ = FavoritesStore.Queries.All;
 
-        Assert.Null(FavoritesStore.TakeWarning());
+        Assert.Null(FavoritesStore.Queries.TakeWarning());
         Assert.True(File.Exists(Favorites));
         Assert.Empty(Directory.GetFiles(_directory, "*.bak"));
     }

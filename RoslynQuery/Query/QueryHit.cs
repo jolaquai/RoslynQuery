@@ -17,6 +17,9 @@ internal sealed class QueryHit
     private const int PreviewLength = 160;
 
     public DocumentId DocumentId { get; private set; }
+
+    /// <summary>The same for every hit in one file, whichever of its linked documents the hit was found in.</summary>
+    public DocumentId FileId { get; private set; }
     public string FilePath { get; private set; }
     public string FileName { get; private set; }
     public TextSpan Span { get; private set; }
@@ -30,13 +33,14 @@ internal sealed class QueryHit
 
     public string Location => $"{FileName} ({Line + 1},{Column + 1})";
 
-    public static QueryHit Create(Document document, SourceText text, TextSpan span, string kind, TargetKind target)
+    public static QueryHit Create(Document document, SourceText text, TextSpan span, string kind, TargetKind target, DocumentId fileId = null)
     {
         var lines = text.Lines.GetLinePositionSpan(span);
 
         return new QueryHit
         {
             DocumentId = document.Id,
+            FileId = fileId ?? document.Id,
             FilePath = document.FilePath,
             FileName = string.IsNullOrEmpty(document.FilePath) ? document.Name : Path.GetFileName(document.FilePath),
             Span = span,

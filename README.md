@@ -26,6 +26,8 @@ be analyzed in turn.
     - [Keys](#keys)
     - [Query history](#query-history)
     - [Favorites](#favorites)
+    - [Replace](#replace)
+      - [Replacement history](#replacement-history)
   - [Reference Graph](#reference-graph)
     - [Branches](#branches)
     - [Symbols from referenced assemblies](#symbols-from-referenced-assemblies)
@@ -95,6 +97,9 @@ neither navigation nor a later Replace pass could resolve it back to anything re
 
 Different matches that end up reporting the same location - three statements in one method that
 all report that method, say - collapse to a single result rather than repeating it once per match.
+The same goes for a file compiled into several projects, as every file of a multi-targeted project is
+once per target framework: each copy is searched, so code behind any `#if` is covered, but each
+location is listed once. A file's results always appear together and in source order.
 
 Write either a single boolean expression or a full statement body ending in a `return` - which one
 you meant is detected from the text, so nothing needs switching:
@@ -387,6 +392,8 @@ otherwise.
 The **cross** drops the row from the sidebar, unstarring it if it was starred. It deliberately leaves
 the compiled delegate in the cache; see above.
 
+### Replace
+
 The **Replace** tab sits next to Search and shares its Find box, Target, Scope and Cap - there is
 one query, and Replace runs it itself rather than requiring a prior Search run.
 
@@ -428,6 +435,27 @@ several files is one Ctrl+Z.
 Structural (`SyntaxNode` / `SyntaxToken`) replacements are reformatted against their surroundings at
 apply time, so indentation comes out matching the rest of the file even when the replacement text
 itself was flush-left or otherwise unindented.
+
+#### Replacement history
+
+While the Replace tab is active, the sidebar grows a second section below Query History, with a splitter
+between the two. **Replacement History** lists every replacement expression still in its own compile
+cache, newest first, and disappears again when you switch back to Search. It is the same cache story as
+predicates: each distinct replacement is compiled and leaked once, keyed on its minified form, and
+cached separately from predicates since the same text compiles to a different delegate type.
+
+Double-click a row to put it back in the replacement box. That is all it does: nothing is generated,
+because a replacement only previews against whatever the Find box currently holds, and that may not be
+the query you want yet. Press Generate Previews when it is.
+
+The star, pencil and cross behave exactly as they do on query rows. Stars are written to their own file,
+`%LocalAppData%\RoslynQuery\replace-favorites.tsv`, stamped `roslynquery-replace-favorites` with a
+version chain of its own, so neither file's format can change under the other; the newer-version
+backup and write refusal described under [Favorites](#favorites) apply to it the same way. A dropped
+replacement comes back the next time you generate previews with it.
+
+A replacement favorite stands alone. It records the replacement expression and its target, not the
+Find predicate it was used with, so it can be reused against any query.
 
 ## Reference Graph
 

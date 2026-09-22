@@ -43,10 +43,9 @@ internal static class QueryEngine
         var outcome = new QueryOutcome();
         var watch = Stopwatch.StartNew();
         var needsModel = target == TargetKind.Operation || MentionsModel.IsMatch(expression ?? string.Empty);
+        var files = GroupLinked(units);
 
         var pending = new List<QueryHit>(BatchSize);
-        // Dedupes matches that report the same result location (see TryClassifyResult).
-        var seen = new HashSet<(DocumentId DocumentId, TextSpan Span, string Kind)>();
         var sync = new object();
         var examined = 0;
         var matched = 0;
@@ -73,26 +72,24 @@ internal static class QueryEngine
                 if (batch != null) onBatch(batch);
             }
 
-            void Emit(QueryHit hit)
+            // Counted as each hit is found, not when its file is published, so the cap still stops a wide run early.
+            bool Reserve()
             {
-                lock (sync)
-                {
-                    if (!seen.Add((hit.DocumentId, hit.Span, hit.Kind)))
-                        return;
-                }
+                if (Interlocked.Increment(ref matched) <= maxResults) return true;
 
-                if (Interlocked.Increment(ref matched) > maxResults)
-                {
-                    outcome.Truncated = true;
-                    cap.Cancel();
-                    return;
-                }
-
-                lock (sync) pending.Add(hit);
-                Flush(false);
+                outcome.Truncated = true;
+                cap.Cancel();
+                return false;
             }
 
-            void Skip() => Interlocked.Increment(ref skipped);
+            // One AddRange under the lock keeps a file's hits contiguous; Flush always takes the whole list.
+            void Publish(IReadOnlyList<QueryHit> hits)
+            {
+                if (hits.Count == 0) return;
+
+                lock (sync) pending.AddRange(hits);
+                Flush(false);
+            }
 
             void Fail(Exception ex)
             {
@@ -102,15 +99,23 @@ internal static class QueryEngine
 
             using (var gate = new SemaphoreSlim(Environment.ProcessorCount))
             {
-                var work = units.Select(async unit =>
+                var work = files.Select(async file =>
                 {
                     await gate.WaitAsync(token).ConfigureAwait(false);
+
+                    var hits = new FileHits(file[0].Document.Id, Reserve);
+                    var skippedHere = 0;
                     try
                     {
-                        Interlocked.Add(ref examined, await ScanAsync(unit, target, predicate, needsModel, Emit, Fail, Skip, token).ConfigureAwait(false));
+                        foreach (var unit in file)
+                            Interlocked.Add(ref examined, await ScanAsync(unit, target, predicate, needsModel, hits, Fail, () => skippedHere++, token).ConfigureAwait(false));
                     }
                     finally
                     {
+                        if (skippedHere == file.Count) Interlocked.Increment(ref skipped);
+
+                        // Also when cancelled part-way through the file: partial results stand.
+                        Publish(hits.InDocumentOrder());
                         gate.Release();
                     }
                 });
@@ -129,7 +134,7 @@ internal static class QueryEngine
         }
 
         watch.Stop();
-        outcome.Documents = units.Count - skipped;
+        outcome.Documents = files.Count - skipped;
         outcome.Examined = examined;
         outcome.Matched = Math.Min(matched, maxResults);
         outcome.Errors = errors;
@@ -138,12 +143,67 @@ internal static class QueryEngine
         return outcome;
     }
 
+    /// <summary>
+    /// One entry per file: a multi-targeted project is one Roslyn project per target framework, each with its own
+    /// copy of every file. Every copy is still scanned, since each can have different #if branches active.
+    /// </summary>
+    private static List<List<ScopeUnit>> GroupLinked(IReadOnlyList<ScopeUnit> units)
+    {
+        var files = new List<List<ScopeUnit>>(units.Count);
+        var byDocument = new Dictionary<DocumentId, List<ScopeUnit>>();
+
+        foreach (var unit in units)
+        {
+            var document = unit.Document;
+            var whole = unit.Restriction is null && document is not SourceGeneratedDocument;
+
+            if (whole && byDocument.TryGetValue(document.Id, out var existing))
+            {
+                existing.Add(unit);
+                continue;
+            }
+
+            var file = new List<ScopeUnit>(1) { unit };
+            files.Add(file);
+
+            if (!whole) continue;
+            foreach (var linked in document.GetLinkedDocumentIds()) byDocument[linked] = file;
+        }
+
+        return files;
+    }
+
+    /// <summary>
+    /// One file's hits across all of its linked documents, deduped on location: a predicate returning another node
+    /// (see <see cref="TryClassifyResult"/>) and each linked copy of the file can report the same place again.
+    /// </summary>
+    private sealed class FileHits(DocumentId fileId, Func<bool> reserve)
+    {
+        private readonly HashSet<(TextSpan Span, string Kind)> _seen = [];
+        private readonly List<QueryHit> _hits = [];
+        private bool _ordered = true;
+
+        public void Add(Document document, SourceText text, TextSpan span, string kind, TargetKind target)
+        {
+            if (!_seen.Add((span, kind)) || !reserve()) return;
+
+            if (_hits.Count > 0 && Compare(_hits[_hits.Count - 1].Span, span) > 0) _ordered = false;
+            _hits.Add(QueryHit.Create(document, text, span, kind, target, fileId));
+        }
+
+        /// <summary>Stable, so hits sharing a span keep the outer-first order the walk found them in.</summary>
+        public IReadOnlyList<QueryHit> InDocumentOrder() =>
+            _ordered ? _hits : [.. _hits.OrderBy(h => h.Span.Start).ThenByDescending(h => h.Span.End)];
+
+        private static int Compare(TextSpan a, TextSpan b) => a.Start != b.Start ? a.Start.CompareTo(b.Start) : b.End.CompareTo(a.End);
+    }
+
     private static async Task<int> ScanAsync(
         ScopeUnit unit,
         TargetKind target,
         Delegate predicate,
         bool needsModel,
-        Action<QueryHit> emit,
+        FileHits hits,
         Action<Exception> fail,
         Action skip,
         CancellationToken cancellationToken)
@@ -172,12 +232,12 @@ internal static class QueryEngine
         switch (target)
         {
             case TargetKind.SyntaxNode:
-                return await ScanNodesAsync(scopeRoot, model, document, text, (NodeMatch)predicate, emit, fail, cancellationToken).ConfigureAwait(false);
+                return await ScanNodesAsync(scopeRoot, model, document, text, (NodeMatch)predicate, hits, fail, cancellationToken).ConfigureAwait(false);
             case TargetKind.SyntaxToken:
-                return await ScanTokensAsync(scopeRoot, model, document, text, (TokenMatch)predicate, emit, fail, cancellationToken).ConfigureAwait(false);
+                return await ScanTokensAsync(scopeRoot, model, document, text, (TokenMatch)predicate, hits, fail, cancellationToken).ConfigureAwait(false);
             case TargetKind.Operation:
                 if (model is null) return 0;
-                return await ScanOperationsAsync(scopeRoot, model, document, text, (OperationMatch)predicate, emit, fail, cancellationToken).ConfigureAwait(false);
+                return await ScanOperationsAsync(scopeRoot, model, document, text, (OperationMatch)predicate, hits, fail, cancellationToken).ConfigureAwait(false);
             default:
                 return 0;
         }
@@ -187,7 +247,7 @@ internal static class QueryEngine
     // cannot have a ref parameter (CS1988).
     private static async Task<int> ScanNodesAsync(
         SyntaxNode scopeRoot, SemanticModel model, Document document, SourceText text,
-        NodeMatch match, Action<QueryHit> emit, Action<Exception> fail, CancellationToken cancellationToken)
+        NodeMatch match, FileHits hits, Action<Exception> fail, CancellationToken cancellationToken)
     {
         var count = 0;
         foreach (var node in scopeRoot.DescendantNodesAndSelf())
@@ -203,7 +263,7 @@ internal static class QueryEngine
             }
             catch (Exception ex) { fail(ex); continue; }
 
-            if (hit) emit(QueryHit.Create(document, text, span, kind, TargetKind.SyntaxNode));
+            if (hit) hits.Add(document, text, span, kind, TargetKind.SyntaxNode);
         }
 
         return count;
@@ -211,7 +271,7 @@ internal static class QueryEngine
 
     private static async Task<int> ScanTokensAsync(
         SyntaxNode scopeRoot, SemanticModel model, Document document, SourceText text,
-        TokenMatch match, Action<QueryHit> emit, Action<Exception> fail, CancellationToken cancellationToken)
+        TokenMatch match, FileHits hits, Action<Exception> fail, CancellationToken cancellationToken)
     {
         var count = 0;
         foreach (var token in scopeRoot.DescendantTokens())
@@ -227,7 +287,7 @@ internal static class QueryEngine
             }
             catch (Exception ex) { fail(ex); continue; }
 
-            if (hit) emit(QueryHit.Create(document, text, span, kind, TargetKind.SyntaxToken));
+            if (hit) hits.Add(document, text, span, kind, TargetKind.SyntaxToken);
         }
 
         return count;
@@ -235,7 +295,7 @@ internal static class QueryEngine
 
     private static async Task<int> ScanOperationsAsync(
         SyntaxNode scopeRoot, SemanticModel model, Document document, SourceText text,
-        OperationMatch match, Action<QueryHit> emit, Action<Exception> fail, CancellationToken cancellationToken)
+        OperationMatch match, FileHits hits, Action<Exception> fail, CancellationToken cancellationToken)
     {
         var count = 0;
         var stack = new Stack<IOperation>();
@@ -267,7 +327,7 @@ internal static class QueryEngine
                 }
                 catch (Exception ex) { fail(ex); continue; }
 
-                if (hit) emit(QueryHit.Create(document, text, span, kind, TargetKind.Operation));
+                if (hit) hits.Add(document, text, span, kind, TargetKind.Operation);
             }
         }
 

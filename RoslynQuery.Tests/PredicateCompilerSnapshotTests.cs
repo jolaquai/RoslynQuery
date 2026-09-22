@@ -3,7 +3,9 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Reflection;
 
+using RoslynQuery.Favorites;
 using RoslynQuery.Query;
+using RoslynQuery.ToolWindow;
 
 using Xunit;
 
@@ -153,9 +155,11 @@ public class PredicateCompilerSnapshotTests
     {
         // Nothing evicts any more, so a key in CacheOrder that is absent from Cache is unreachable
         // by normal use; the filter stays as defence and reflection is the only way to exercise it.
-        var cacheOrderField = typeof(PredicateCompiler).GetField("CacheOrder", BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("PredicateCompiler.CacheOrder not found - has it been renamed?");
-        var cacheOrder = (ConcurrentQueue<(TargetKind, PredicateMode, string)>)cacheOrderField.GetValue(null);
+        var cacheField = typeof(PredicateCompiler).GetField("Cache", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("PredicateCompiler.Cache not found - has it been renamed?");
+        var cacheOrderField = typeof(ExpressionCache).GetField("_cacheOrder", BindingFlags.NonPublic | BindingFlags.Instance)
+            ?? throw new InvalidOperationException("ExpressionCache._cacheOrder not found - has it been renamed?");
+        var cacheOrder = (ConcurrentQueue<(TargetKind, PredicateMode, string)>)cacheOrderField.GetValue(cacheField.GetValue(null));
 
         var phantomText = "PHANTOM_" + Guid.NewGuid().ToString("N");
         cacheOrder.Enqueue((TargetKind.SyntaxNode, PredicateMode.Expression, phantomText));
@@ -167,5 +171,32 @@ public class PredicateCompilerSnapshotTests
 
         Assert.DoesNotContain(PredicateCompiler.Snapshot(), e => e.Text == phantomText);
         Assert.Contains(PredicateCompiler.Snapshot(), e => e.Text.Contains(token.ToString()));
+    }
+
+    /// <summary>
+    /// Dropping a row must never evict the compiled delegate behind it: on net472 the emitted assembly cannot be
+    /// unloaded, so evicting reclaims nothing and re-running the same text leaks a second assembly. The row is
+    /// unstarred, so the store is never touched and this needs no favorites isolation.
+    /// </summary>
+    [Fact]
+    public void DroppingAHistoryRow_LeavesTheCompiledEntryCached()
+    {
+        var text = $"true || {UniqueToken()} == -1";
+        PredicateCompiler.Compile(TargetKind.SyntaxNode, text);
+        var key = PredicateCompiler.KeyFor(TargetKind.SyntaxNode, text);
+        var list = new HistoryList(FavoritesStore.Queries);
+
+        list.Drop(new HistoryItem(key.Kind, key.Mode, key.Text, owner: list));
+
+        Assert.Contains(key, PredicateCompiler.Snapshot());
+    }
+
+    /// <summary>The cache exposes no removal at all, so no caller can evict one even by mistake.</summary>
+    [Fact]
+    public void TheCompilerCache_HasNoRemovalPath()
+    {
+        var methods = typeof(ExpressionCache).GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+
+        Assert.DoesNotContain(methods, m => m.Name.Contains("Remove") || m.Name.Contains("Clear") || m.Name.Contains("Evict"));
     }
 }

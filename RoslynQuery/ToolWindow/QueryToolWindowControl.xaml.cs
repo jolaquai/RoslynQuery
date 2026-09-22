@@ -22,6 +22,7 @@ using Microsoft.VisualStudio.TextManager.Interop;
 using Microsoft.VisualStudio.Threading;
 
 using RoslynQuery.Editor;
+using RoslynQuery.Favorites;
 using RoslynQuery.Navigation;
 using RoslynQuery.Options;
 using RoslynQuery.Query;
@@ -47,10 +48,8 @@ public partial class QueryToolWindowControl : UserControl
         return false;
         """;
     private readonly ObservableCollection<QueryHit> _hits = [];
-    private readonly ObservableCollection<CachedPredicateItem> _cachedPredicates = [];
-
-    // Rows the user dropped. Session-scoped on purpose: the compiler cache behind them is per-process too.
-    private readonly HashSet<(TargetKind Kind, PredicateMode Mode, string Text)> _hiddenRows = [];
+    private readonly HistoryList _queryHistory = new HistoryList(FavoritesStore.Queries);
+    private readonly HistoryList _replaceHistory = new HistoryList(FavoritesStore.Replacements);
     private readonly ObservableCollection<ReplacementItem> _replacements = [];
 
     private IComponentModel _componentModel;
@@ -60,6 +59,7 @@ public partial class QueryToolWindowControl : UserControl
     private CancellationTokenSource _cancellation;
     private bool _initialized;
     private double _sidebarWidth = 220;
+    private GridLength _replacementHistoryHeight = new GridLength(1, GridUnitType.Star);
 
     // Weak: a Solution roots its compilations, and the results can stay on screen for a while.
     private WeakReference<Solution> _ranAgainst;
@@ -69,7 +69,8 @@ public partial class QueryToolWindowControl : UserControl
         InitializeComponent();
 
         Results.ItemsSource = _hits;
-        CachedPredicates.ItemsSource = _cachedPredicates;
+        CachedPredicates.ItemsSource = _queryHistory.Items;
+        CachedReplacements.ItemsSource = _replaceHistory.Items;
         ReplaceResults.ItemsSource = _replacements;
         Loaded += OnLoaded;
     }
@@ -252,7 +253,7 @@ public partial class QueryToolWindowControl : UserControl
         // The star swallows selection, so without this a double-click on it would run whichever row
         // happened to be selected before rather than the one under the cursor.
         if (IsWithinButton(e.OriginalSource)) return;
-        if (CachedPredicates.SelectedItem is not CachedPredicateItem item) return;
+        if (CachedPredicates.SelectedItem is not HistoryItem item) return;
 
         // Pretty, not Display: the latter is truncated for the list and would restore a fragment.
         TargetCombo.SelectedIndex = (int)item.Kind;
@@ -260,15 +261,22 @@ public partial class QueryToolWindowControl : UserControl
         Run();
     }
 
+    /// <summary>Restores only: a replacement is previewed against whatever the Find box holds, which may not be ready.</summary>
+    private void OnCachedReplacementDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        if (IsWithinButton(e.OriginalSource)) return;
+        if (CachedReplacements.SelectedItem is not HistoryItem item) return;
+
+        _replacementInput.Text = item.Pretty;
+    }
+
     private void OnFavoriteClick(object sender, RoutedEventArgs e)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        if ((sender as FrameworkElement)?.DataContext is not CachedPredicateItem item) return;
-
-        item.IsFavorite = !item.IsFavorite;
-        if (item.IsFavorite) FavoritesStore.Add(item.Kind, item.Mode, item.Text, item.Name);
-        else FavoritesStore.Remove(item.Kind, item.Mode, item.Text);
+        if ((sender as FrameworkElement)?.DataContext is HistoryItem item) item.Owner.ToggleFavorite(item);
     }
 
     /// <summary>The README section that documents writing a predicate, which is what a new user needs first.</summary>
@@ -286,26 +294,16 @@ public partial class QueryToolWindowControl : UserControl
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        if ((sender as FrameworkElement)?.DataContext is not CachedPredicateItem item) return;
+        if ((sender as FrameworkElement)?.DataContext is not HistoryItem item) return;
 
         item.BeginEdit();
     }
 
-    /// <summary>
-    /// Dropping a row never touches <see cref="PredicateCompiler"/>'s cache: on net472 the emitted assembly
-    /// cannot be unloaded, so evicting it reclaims nothing and re-running the same text would leak a second one.
-    /// </summary>
     private void OnRemoveRowClick(object sender, RoutedEventArgs e)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        if ((sender as FrameworkElement)?.DataContext is not CachedPredicateItem item) return;
-
-        // Unstarred as well as hidden: a starred row would otherwise come back on the next refresh.
-        if (item.IsFavorite) FavoritesStore.Remove(item.Kind, item.Mode, item.Text);
-
-        _hiddenRows.Add((item.Kind, item.Mode, item.Text));
-        _cachedPredicates.Remove(item);
+        if ((sender as FrameworkElement)?.DataContext is HistoryItem item) item.Owner.Drop(item);
     }
 
     /// <summary>Not Loaded: a virtualizing list reuses the same editor, which loads once but is shown many times.</summary>
@@ -322,12 +320,12 @@ public partial class QueryToolWindowControl : UserControl
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        if (((TextBox)sender).DataContext is not CachedPredicateItem item) return;
+        if (((TextBox)sender).DataContext is not HistoryItem item) return;
 
         if (e.Key == Key.Enter)
         {
             e.Handled = true;
-            CommitRename(item);
+            item.Owner.CommitRename(item);
         }
         else if (e.Key == Key.Escape)
         {
@@ -340,20 +338,7 @@ public partial class QueryToolWindowControl : UserControl
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        if (((TextBox)sender).DataContext is CachedPredicateItem item) CommitRename(item);
-    }
-
-    /// <summary>A name matching the predicate, or an emptied box, clears the label rather than storing it.</summary>
-    private void CommitRename(CachedPredicateItem item)
-    {
-        ThreadHelper.ThrowIfNotOnUIThread();
-
-        // Escape already ended the edit, and collapsing the editor then raises LostKeyboardFocus.
-        if (!item.IsEditing) return;
-
-        item.CommitEdit();
-
-        if (item.IsFavorite) FavoritesStore.Rename(item.Kind, item.Mode, item.Text, item.Name);
+        if (((TextBox)sender).DataContext is HistoryItem item) item.Owner.CommitRename(item);
     }
 
     private static bool IsWithinButton(object originalSource)
@@ -397,35 +382,54 @@ public partial class QueryToolWindowControl : UserControl
         }
     }
 
-    /// <summary>Favorites pinned above the live cache snapshot, deduped on the shared cache key.</summary>
+    private void OnMainTabsSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        // SelectionChanged bubbles, so the result lists inside the tabs raise it here too.
+        if (!ReferenceEquals(e.OriginalSource, MainTabs)) return;
+
+        SetReplacementHistoryVisible(MainTabs.SelectedIndex == 1);
+    }
+
+    /// <summary>Zeroes the rows as well: Collapsed alone would leave a star-sized gap where the section was.</summary>
+    private void SetReplacementHistoryVisible(bool visible)
+    {
+        if (visible == (ReplacementHistoryPane.Visibility == Visibility.Visible)) return;
+
+        if (visible)
+        {
+            ReplacementHistorySplitterRow.Height = GridLength.Auto;
+            ReplacementHistoryRow.MinHeight = 60;
+            ReplacementHistoryRow.Height = _replacementHistoryHeight;
+            ReplacementHistorySplitter.Visibility = Visibility.Visible;
+            ReplacementHistoryPane.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            _replacementHistoryHeight = ReplacementHistoryRow.Height;
+            ReplacementHistoryRow.MinHeight = 0;
+            ReplacementHistoryRow.Height = new GridLength(0);
+            ReplacementHistorySplitterRow.Height = new GridLength(0);
+            ReplacementHistorySplitter.Visibility = Visibility.Collapsed;
+            ReplacementHistoryPane.Visibility = Visibility.Collapsed;
+        }
+    }
+
     private void RefreshCachedPredicates()
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        _cachedPredicates.Clear();
-        var seen = new HashSet<(TargetKind, PredicateMode, string)>(_hiddenRows);
+        _queryHistory.Refresh(PredicateCompiler.Snapshot());
+        _replaceHistory.Refresh(ReplaceCompiler.Snapshot());
 
-        foreach (var entry in FavoritesStore.All)
-        {
-            if (seen.Add((entry.Kind, entry.Mode, entry.Text)))
-                _cachedPredicates.Add(new CachedPredicateItem(entry.Kind, entry.Mode, entry.Text, isFavorite: true, name: entry.Name));
-        }
-
-        foreach (var (kind, mode, text) in PredicateCompiler.Snapshot())
-        {
-            if (seen.Add((kind, mode, text)))
-                _cachedPredicates.Add(new CachedPredicateItem(kind, mode, text));
-        }
-
-        ReportFavoritesWarning();
+        ReportFavoritesWarning(_queryHistory.Store.TakeWarning());
+        ReportFavoritesWarning(_replaceHistory.Store.TakeWarning());
     }
 
     /// <summary>Dispatched rather than shown inline: the first refresh runs while the window is still loading.</summary>
-    private void ReportFavoritesWarning()
+    private void ReportFavoritesWarning(string warning)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        var warning = FavoritesStore.TakeWarning();
         if (warning is null) return;
 
 #pragma warning disable VSTHRD001, VSTHRD110
@@ -535,9 +539,8 @@ public partial class QueryToolWindowControl : UserControl
         var solution = _workspace.CurrentSolution;
         _ranAgainst = new WeakReference<Solution>(solution);
 
-        // Running a dropped query is how it comes back: the row was hidden, not forgotten. Still on the
-        // UI thread here, which is the only thread _hiddenRows is touched from.
-        _hiddenRows.Remove(PredicateCompiler.KeyFor(target, expression));
+        // Still on the UI thread here, which is the only thread a HistoryList is touched from.
+        _queryHistory.Unhide(PredicateCompiler.KeyFor(target, expression));
 
         await TaskScheduler.Default;
 
@@ -650,6 +653,9 @@ public partial class QueryToolWindowControl : UserControl
         RunButton.IsEnabled = false;
         GeneratePreviewButton.IsEnabled = false;
         ApplySelectedButton.IsEnabled = false;
+
+        // Here rather than in GeneratePreviewCoreAsync, which runs off the UI thread.
+        _replaceHistory.Unhide(ReplaceCompiler.KeyFor(target, replacementExpression));
 
 #pragma warning disable VSSDK007
         ThreadHelper.JoinableTaskFactory.RunAsync(async () =>

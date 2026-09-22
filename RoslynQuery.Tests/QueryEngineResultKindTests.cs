@@ -151,7 +151,7 @@ public class QueryEngineResultKindTests
         Assert.Single(hits);
     }
 
-    /// <summary>The key is (document, span, kind); keyed on kind alone this would collapse to one row.</summary>
+    /// <summary>The key is (file, span, kind); keyed on kind alone this would collapse to one row.</summary>
     [Fact]
     public async Task RunAsync_SameKindAtDifferentSpans_StaySeparateHits()
     {
@@ -168,7 +168,7 @@ public class QueryEngineResultKindTests
         Assert.Equal(2, hits.Select(h => h.Span).Distinct().Count());
     }
 
-    /// <summary>Two files can hold the identical span and kind, so the document has to be part of the key.</summary>
+    /// <summary>Two files can hold the identical span and kind, so the file has to be part of the key.</summary>
     [Fact]
     public async Task RunAsync_SameSpanAndKindInDifferentDocuments_StaySeparateHits()
     {

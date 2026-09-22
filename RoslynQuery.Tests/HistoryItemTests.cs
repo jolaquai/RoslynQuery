@@ -8,12 +8,12 @@ using Xunit;
 
 namespace RoslynQuery.Tests;
 
-public class CachedPredicateItemTests
+public class HistoryItemTests
 {
     [Fact]
     public void Display_ShortText_IsUnchanged()
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null");
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null");
 
         Assert.Equal("n != null", item.Display);
     }
@@ -25,7 +25,7 @@ public class CachedPredicateItemTests
     [Fact]
     public void Display_OverLimit_IsTruncatedWithEllipsis()
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, LongExpression());
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, LongExpression());
 
         Assert.EndsWith("...", item.Display);
         Assert.Equal(2003, item.Display.Length);
@@ -36,7 +36,7 @@ public class CachedPredicateItemTests
     {
         // 300 was low enough to clip text a widened sidebar had room for.
         var text = string.Join(" || ", Enumerable.Repeat("n != null", 40));
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, text);
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, text);
 
         Assert.Equal(item.Pretty, item.Display);
         Assert.True(item.Display.Length > 300);
@@ -45,7 +45,7 @@ public class CachedPredicateItemTests
     [Fact]
     public void Pretty_IsNeverTruncated()
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, LongExpression());
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, LongExpression());
 
         // Restoring happens from Pretty; a truncated restore would silently run a fragment.
         Assert.True(item.Pretty.Length > 2000);
@@ -60,7 +60,7 @@ public class CachedPredicateItemTests
     [InlineData("n!=null", "n != null")]
     public void Pretty_Expression_IsReformatted(string stored, string expected)
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, stored);
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, stored);
 
         Assert.Equal(expected, item.Pretty);
     }
@@ -68,7 +68,7 @@ public class CachedPredicateItemTests
     [Fact]
     public void Pretty_Body_IsReformattedOnePerLineWithoutWrappingBraces()
     {
-        var item = new CachedPredicateItem(
+        var item = new HistoryItem(
             TargetKind.SyntaxNode,
             PredicateMode.Body,
             "await Task . Yield ( ) ; return true ;");
@@ -84,7 +84,7 @@ public class CachedPredicateItemTests
     public void Pretty_UnparseableText_FallsBackToTheStoredText()
     {
         const string junk = "this is ((( not c#";
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, junk);
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, junk);
 
         Assert.Equal(junk, item.Pretty);
     }
@@ -95,7 +95,7 @@ public class CachedPredicateItemTests
     [InlineData("   ")]
     public void Pretty_Empty_IsEmpty(string text)
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, text);
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, text);
 
         Assert.Equal(string.Empty, item.Pretty);
     }
@@ -109,7 +109,7 @@ public class CachedPredicateItemTests
     [InlineData((int)TargetKind.Operation, (int)PredicateMode.Expression, "Operation")]
     public void Subtitle_NamesTheKindAndFlagsBodyModeOnly(int kindValue, int modeValue, string expected)
     {
-        var item = new CachedPredicateItem((TargetKind)kindValue, (PredicateMode)modeValue, "n != null");
+        var item = new HistoryItem((TargetKind)kindValue, (PredicateMode)modeValue, "n != null");
 
         Assert.Equal(expected, item.Subtitle);
     }
@@ -117,11 +117,11 @@ public class CachedPredicateItemTests
     [Fact]
     public void IsFavorite_DefaultsToFalseAndRaisesPropertyChangedOnChangeOnly()
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
         var raised = 0;
         item.PropertyChanged += (s, e) =>
         {
-            Assert.Equal(nameof(CachedPredicateItem.IsFavorite), e.PropertyName);
+            Assert.Equal(nameof(HistoryItem.IsFavorite), e.PropertyName);
             raised++;
         };
 
@@ -137,7 +137,7 @@ public class CachedPredicateItemTests
     [Fact]
     public void Name_ReplacesTheDisplayTextAndMovesThePredicateToTheTooltip()
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null");
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null");
 
         Assert.Null(item.Tooltip);
 
@@ -155,7 +155,7 @@ public class CachedPredicateItemTests
     [InlineData("   ")]
     public void Name_ClearedBackToNothing_ShowsThePredicateAgain(string cleared)
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null") { Name = "Named" };
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null") { Name = "Named" };
 
         item.Name = cleared;
 
@@ -167,7 +167,7 @@ public class CachedPredicateItemTests
     [Fact]
     public void Name_IsTrimmed()
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null") { Name = "  padded  " };
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null") { Name = "  padded  " };
 
         Assert.Equal("padded", item.Name);
     }
@@ -175,7 +175,7 @@ public class CachedPredicateItemTests
     [Fact]
     public void Name_RaisesPropertyChangedForEverythingItAffects_OnChangeOnly()
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
         var raised = new List<string>();
         item.PropertyChanged += (s, e) => raised.Add(e.PropertyName);
 
@@ -183,7 +183,7 @@ public class CachedPredicateItemTests
         item.Name = "Named";
 
         Assert.Equal(
-            [nameof(CachedPredicateItem.Name), nameof(CachedPredicateItem.Display), nameof(CachedPredicateItem.Tooltip)],
+            [nameof(HistoryItem.Name), nameof(HistoryItem.Display), nameof(HistoryItem.Tooltip)],
             raised);
     }
 
@@ -191,7 +191,7 @@ public class CachedPredicateItemTests
     public void Name_LongerThanTheDisplayLimit_IsShownWhole()
     {
         var name = new string('x', 5000);
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null") { Name = name };
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null") { Name = name };
 
         Assert.Equal(name, item.Display);
     }
@@ -199,7 +199,7 @@ public class CachedPredicateItemTests
     [Fact]
     public void Tooltip_OfANamedLongPredicate_IsTruncated()
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, LongExpression()) { Name = "Named" };
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, LongExpression()) { Name = "Named" };
 
         Assert.EndsWith("...", item.Tooltip);
         Assert.Equal(2003, item.Tooltip.Length);
@@ -208,7 +208,7 @@ public class CachedPredicateItemTests
     [Fact]
     public void Constructor_CanStartNamed()
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null", name: "  Named  ");
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null", name: "  Named  ");
 
         Assert.Equal("Named", item.Name);
         Assert.Equal("Named", item.Display);
@@ -217,11 +217,11 @@ public class CachedPredicateItemTests
     [Fact]
     public void IsEditing_DefaultsToFalseAndRaisesPropertyChangedOnChangeOnly()
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
         var raised = 0;
         item.PropertyChanged += (s, e) =>
         {
-            Assert.Equal(nameof(CachedPredicateItem.IsEditing), e.PropertyName);
+            Assert.Equal(nameof(HistoryItem.IsEditing), e.PropertyName);
             raised++;
         };
 
@@ -237,7 +237,7 @@ public class CachedPredicateItemTests
     [Fact]
     public void EditText_IsIndependentOfTheName()
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
 
         item.EditText = "abandoned";
 
@@ -249,11 +249,11 @@ public class CachedPredicateItemTests
     [Fact]
     public void EditText_RaisesPropertyChangedOnChangeOnly()
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null");
         var raised = 0;
         item.PropertyChanged += (s, e) =>
         {
-            Assert.Equal(nameof(CachedPredicateItem.EditText), e.PropertyName);
+            Assert.Equal(nameof(HistoryItem.EditText), e.PropertyName);
             raised++;
         };
 
@@ -266,7 +266,7 @@ public class CachedPredicateItemTests
     [Fact]
     public void BeginEdit_OnAnUnnamedRow_SeedsTheWholePredicate()
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null");
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null");
 
         item.BeginEdit();
 
@@ -277,7 +277,7 @@ public class CachedPredicateItemTests
     [Fact]
     public void BeginEdit_OnANamedRow_SeedsTheName()
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null", name: "Named");
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null", name: "Named");
 
         item.BeginEdit();
 
@@ -288,7 +288,7 @@ public class CachedPredicateItemTests
     [Fact]
     public void BeginEdit_OnALongPredicate_SeedsTheUntruncatedText()
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, LongExpression());
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, LongExpression());
 
         item.BeginEdit();
 
@@ -301,7 +301,7 @@ public class CachedPredicateItemTests
     [InlineData("   ")]
     public void CommitEdit_AnEmptiedBox_BringsTheDefaultBack(string emptied)
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null", name: "Named");
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null", name: "Named");
 
         item.BeginEdit();
         item.EditText = emptied;
@@ -316,7 +316,7 @@ public class CachedPredicateItemTests
     [Fact]
     public void CommitEdit_ThePredicateTypedBackUnchanged_IsNotAName()
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null", name: "Named");
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null", name: "Named");
 
         item.BeginEdit();
         item.EditText = "  n != null  ";
@@ -330,7 +330,7 @@ public class CachedPredicateItemTests
     [Fact]
     public void CommitEdit_ALongPredicateLeftUnchanged_IsNotAName()
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, LongExpression());
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, LongExpression());
 
         item.BeginEdit();
         item.CommitEdit();
@@ -342,7 +342,7 @@ public class CachedPredicateItemTests
     [Fact]
     public void CommitEdit_ARealName_IsKeptTrimmed()
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null");
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null");
 
         item.BeginEdit();
         item.EditText = "  Non-null nodes  ";
@@ -356,7 +356,7 @@ public class CachedPredicateItemTests
     [Fact]
     public void AbandoningAnEdit_LeavesTheNameAlone()
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null", name: "Named");
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n!=null", name: "Named");
 
         item.BeginEdit();
         item.EditText = "abandoned";
@@ -368,7 +368,7 @@ public class CachedPredicateItemTests
     [Fact]
     public void Constructor_CanStartFavorited()
     {
-        var item = new CachedPredicateItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null", isFavorite: true);
+        var item = new HistoryItem(TargetKind.SyntaxNode, PredicateMode.Expression, "n != null", isFavorite: true);
 
         Assert.True(item.IsFavorite);
     }
@@ -376,7 +376,7 @@ public class CachedPredicateItemTests
     [Fact]
     public void Constructor_ExposesKindModeAndTextUnchanged()
     {
-        var item = new CachedPredicateItem(TargetKind.Operation, PredicateMode.Body, "return op != null;");
+        var item = new HistoryItem(TargetKind.Operation, PredicateMode.Body, "return op != null;");
 
         Assert.Equal(TargetKind.Operation, item.Kind);
         Assert.Equal(PredicateMode.Body, item.Mode);
