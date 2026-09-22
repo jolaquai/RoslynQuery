@@ -97,6 +97,9 @@ neither navigation nor a later Replace pass could resolve it back to anything re
 
 Different matches that end up reporting the same location - three statements in one method that
 all report that method, say - collapse to a single result rather than repeating it once per match.
+The same goes for a file compiled into several projects, as every file of a multi-targeted project is
+once per target framework: each copy is searched, so code behind any `#if` is covered, but each
+location is listed once. A file's results always appear together and in source order.
 
 Write either a single boolean expression or a full statement body ending in a `return` - which one
 you meant is detected from the text, so nothing needs switching:
