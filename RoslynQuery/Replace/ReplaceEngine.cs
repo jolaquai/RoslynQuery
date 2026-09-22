@@ -136,11 +136,12 @@ internal static class ReplaceEngine
 
     /// <summary>
     /// Unchecks (and flags) any item whose span overlaps a still-included item earlier in the same
-    /// document: applying both would splice one replacement's text into the middle of another.
+    /// file: applying both would splice one replacement's text into the middle of another. Per file, not
+    /// per document, because two linked copies of one file are written back as one text.
     /// </summary>
     public static void MarkConflicts(IReadOnlyList<ReplacementItem> items)
     {
-        foreach (var group in items.Where(i => i.Included).GroupBy(i => i.Hit.DocumentId))
+        foreach (var group in items.Where(i => i.Included).GroupBy(i => i.Hit.FileId))
         {
             ReplacementItem previous = null;
             foreach (var item in group.OrderBy(i => i.Hit.Span.Start))
