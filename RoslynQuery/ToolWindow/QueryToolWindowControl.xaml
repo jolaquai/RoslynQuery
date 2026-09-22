@@ -253,11 +253,14 @@
                           IsEnabled="{Binding Warning, Converter={StaticResource NullToEnabled}}" />
 
                 <StackPanel Grid.Column="1">
-                    <TextBlock Text="{Binding Before}" FontFamily="{x:Static local:MonospaceFont.Family}" TextTrimming="CharacterEllipsis"
-                               TextDecorations="Strikethrough"
-                               Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" />
-                    <TextBlock Text="{Binding After}" FontFamily="{x:Static local:MonospaceFont.Family}" TextTrimming="CharacterEllipsis"
-                               Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}" />
+                    <TextBlock FontFamily="{x:Static local:MonospaceFont.Family}" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}"
+                               local:DiffHighlight.Before="{Binding Before}" local:DiffHighlight.After="{Binding After}"
+                               local:DiffHighlight.Side="Removed" />
+                    <TextBlock FontFamily="{x:Static local:MonospaceFont.Family}" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource {x:Static vsshell:VsBrushes.ToolWindowTextKey}}"
+                               local:DiffHighlight.Before="{Binding Before}" local:DiffHighlight.After="{Binding After}"
+                               local:DiffHighlight.Side="Added" />
                     <TextBlock Margin="0,1,0,0" TextTrimming="CharacterEllipsis">
                         <Run Text="{Binding Hit.Kind, Mode=OneWay}"
                              Foreground="{DynamicResource {x:Static vsshell:VsBrushes.GrayTextKey}}" />
