@@ -140,6 +140,29 @@ public class ReplaceEngineTests
     }
 
     [Fact]
+    public async Task MarkConflicts_OverlappingHitsInLinkedCopiesOfOneFile_UnchecksTheLaterOne()
+    {
+        const string source = "class C { void M() { int x = 1; } }";
+        var (doc, root, text) = await DocumentAsync(source);
+        var (copy, _, _) = await DocumentAsync(source);
+        var local = root.DescendantNodes().OfType<LocalDeclarationStatementSyntax>().First();
+        var declarator = local.DescendantNodes().OfType<VariableDeclaratorSyntax>().First();
+
+        var outer = QueryHit.Create(doc, text, local.Span, local.Kind().ToString(), TargetKind.SyntaxNode);
+        var inner = QueryHit.Create(copy, text, declarator.Span, declarator.Kind().ToString(), TargetKind.SyntaxNode, fileId: doc.Id);
+
+        var items = new List<ReplacementItem>
+        {
+            new ReplacementItem { Hit = outer, Before = outer.Preview, After = "a" },
+            new ReplacementItem { Hit = inner, Before = inner.Preview, After = "b" },
+        };
+
+        ReplaceEngine.MarkConflicts(items);
+
+        Assert.Single(items, i => i.Included);
+    }
+
+    [Fact]
     public async Task MarkConflicts_NonOverlappingHits_BothStayIncluded()
     {
         var (doc, root, text) = await DocumentAsync("class C { void M() { int x = 1; int y = 2; } }");
