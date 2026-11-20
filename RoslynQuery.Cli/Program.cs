@@ -18,6 +18,7 @@ internal static class Program
         roslynquery run    [options]   search (and optionally replace) a solution, print JSON
         roslynquery schema             JSON Schemas of the request and response
         roslynquery docs               how to write predicates (markdown, for agents)
+        roslynquery mcp                MCP server on stdio (search, replace, docs, bridges); same engine, attaches to Visual Studio when it can
 
         run options:
           -s, --solution <path>      .sln/.slnx/.csproj (default: the only one in the cwd)
@@ -58,6 +59,7 @@ internal static class Program
                 case "run": return await RunAsync(args.AsSpan(1).ToArray()).ConfigureAwait(false);
                 case "schema": return Write(Schema(), pretty: true);
                 case "docs": return Write(Docs.Build(), pretty: false);
+                case "mcp": return await McpServer.RunAsync().ConfigureAwait(false);
                 default: return Usage2($"Unknown command '{args[0]}'.");
             }
         }
@@ -86,9 +88,9 @@ internal static class Program
         return response.ExitCode;
     }
 
-    private enum AttachMode { Auto, Force, Never }
+    internal enum AttachMode { Auto, Force, Never }
 
-    private static async Task<RunResponse> ExecuteAsync(RunRequest request, AttachMode mode, CancellationToken cancellationToken)
+    internal static async Task<RunResponse> ExecuteAsync(RunRequest request, AttachMode mode, CancellationToken cancellationToken)
     {
         if (mode != AttachMode.Never)
         {
@@ -181,7 +183,7 @@ internal static class Program
         return (request, pretty, attach);
     }
 
-    private static TargetKind ParseTarget(string value) => value.ToLowerInvariant() switch
+    internal static TargetKind ParseTarget(string value) => value.ToLowerInvariant() switch
     {
         "node" or "syntaxnode" => TargetKind.SyntaxNode,
         "token" or "syntaxtoken" => TargetKind.SyntaxToken,
@@ -189,7 +191,7 @@ internal static class Program
         _ => throw new UsageException($"Unknown target '{value}' (node, token, operation).")
     };
 
-    private static ScopeKind ParseScope(string value) => value.ToLowerInvariant() switch
+    internal static ScopeKind ParseScope(string value) => value.ToLowerInvariant() switch
     {
         "solution" => ScopeKind.Solution,
         "project" => ScopeKind.Project,
@@ -228,5 +230,5 @@ internal static class Program
         return 2;
     }
 
-    private sealed class UsageException(string message) : Exception(message);
+    internal sealed class UsageException(string message) : Exception(message);
 }

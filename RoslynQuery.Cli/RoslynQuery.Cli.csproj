@@ -11,10 +11,6 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <TieredPGO>true</TieredPGO>
 
-    <PackAsTool>true</PackAsTool>
-    <ToolCommandName>roslynquery</ToolCommandName>
-    <PackageId>RoslynQuery.Tool</PackageId>
-    <Version>0.1.0</Version>
   </PropertyGroup>
 
   <!-- The engine is compiled from the VSIX project's sources instead of referenced: the release workflow
@@ -33,6 +29,8 @@
     <!-- Same Roslyn the VSIX compiles against. Unlike the VSIX, the tool ships its own copy. -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.6.0" />
     <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="5.6.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="11.0.0" />
+    <PackageReference Include="ModelContextProtocol" Version="2.4.0" />
   </ItemGroup>
 
 </Project>

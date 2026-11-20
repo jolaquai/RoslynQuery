@@ -47,6 +47,27 @@ internal static class Attach
         return best;
     }
 
+    /// <summary>The live hosts as JSON, for the MCP 'bridges' tool.</summary>
+    public static string Describe()
+    {
+        var directory = BridgePaths.Directory;
+        var hosts = new System.Collections.Generic.List<object>();
+        if (Directory.Exists(directory))
+        {
+            foreach (var file in Directory.EnumerateFiles(directory, "*.json"))
+            {
+                try
+                {
+                    var info = JsonSerializer.Deserialize(File.ReadAllText(file), CliJson.Default.BridgeHostInfo);
+                    if (info?.Solution != null && IsAlive(info.Pid)) hosts.Add(new { pid = info.Pid, solution = info.Solution, version = info.Version, startedUtc = info.StartedUtc });
+                }
+                catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { }
+            }
+        }
+
+        return JsonSerializer.Serialize(hosts, new JsonSerializerOptions { TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver() });
+    }
+
     // Exact solution beats "same folder" beats "cwd is somewhere below the solution"; the deepest such solution wins.
     private static int Score(string solution, string wanted, string cwd)
     {

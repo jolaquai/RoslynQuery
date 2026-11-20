@@ -600,15 +600,28 @@ your source and `Used By` could report framework callers.
 `RoslynQuery.Cli` runs the same predicate compiler, scanner and replace pipeline without Visual Studio, for scripts, CI and coding agents. It loads the solution with `MSBuildWorkspace`, so it sees what is on disk, not unsaved editor buffers.
 
 ```
-dotnet pack RoslynQuery.Cli -c Release
-dotnet tool install -g RoslynQuery.Tool --add-source RoslynQuery.Cli/bin/Release
-
 roslynquery run -s App.slnx -q "n is MethodDeclarationSyntax m && m.Modifiers.Any(SyntaxKind.AsyncKeyword)"
 roslynquery run -s App.slnx -q "..." -r "..."                       # dry run: unified diffs + planId
 roslynquery run -s App.slnx -q "..." -r "..." --apply --expect <planId>
 roslynquery docs      # predicate/replace reference for agents, generated from the code that compiles them
 roslynquery schema    # JSON Schemas of the --request payload and the output
+roslynquery mcp       # the same as an MCP server on stdio
 ```
+
+There is no separate install: the executable ships inside the VSIX (see below). For CI without Visual Studio, the
+release workflow's `Publish CLI` step (or `scripts/publish-cli.ps1`) produces the same self-contained build.
+
+### MCP
+
+`roslynquery mcp` serves `search`, `replace` (dry run, then `apply` + `expectPlan`), `docs` and `bridges` over
+stdio, so MCP clients need nothing but the path (`Tools > Roslyn Query > Copy roslynquery CLI Path`):
+
+```json
+{ "mcpServers": { "roslynquery": { "command": "C:\\...\\Cli\\win-x64\\roslynquery.exe", "args": ["mcp"] } } }
+```
+
+Start it with the project as the working directory and it uses the Visual Studio that has that solution open
+(see the bridge below), falling back to loading from disk.
 
 Output is one JSON document on stdout, exit code 0 on success. Replace never writes without `--apply`, and
 `--expect` refuses to write anything but the plan a dry run reported.
