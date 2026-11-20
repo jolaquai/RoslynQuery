@@ -31,7 +31,8 @@ jobs:
 
       # Restore dominates the job (VS SDK + Roslyn + MCP packages) and was paid by three separate restores below.
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        id: nuget
+        uses: actions/cache/restore@v4
         with:
           path: ~\.nuget\packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Packages.props', '**/packages.lock.json') }}
@@ -115,6 +116,15 @@ jobs:
           name: vsix
           path: artifacts/*.vsix
           if-no-files-found: error
+
+      # Saved explicitly (not via actions/cache's post step) so a red run still fills the cache: that post step is skipped
+      # when the job fails, and a failing build is exactly when the next attempt needs the restore to be fast.
+      - name: Save NuGet packages
+        if: always() && steps.nuget.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~\.nuget\packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Packages.props', '**/packages.lock.json') }}
 
   # Releases the artifact the build job produced - it never rebuilds, so what ships is exactly
   # what was verified. Only pushes to main get here; other branches, PRs and manual
