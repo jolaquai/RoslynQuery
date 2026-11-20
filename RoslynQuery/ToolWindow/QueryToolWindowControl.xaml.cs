@@ -207,6 +207,64 @@ public partial class QueryToolWindowControl : UserControl
         NavigateTo(hit.DocumentId, hit.Span);
     }
 
+    /// <summary>A right click should act on the row under the cursor, which a ListBox does not select by itself.</summary>
+    private void OnResultsPreviewRightClick(object sender, MouseButtonEventArgs e)
+    {
+        var item = ItemsControl.ContainerFromElement((ItemsControl)sender, (DependencyObject)e.OriginalSource) as ListBoxItem;
+        if (item != null) item.IsSelected = true;
+    }
+
+    private static QueryHit HitOf(object menuItemSender)
+    {
+        var menu = (menuItemSender as MenuItem)?.Parent as ContextMenu;
+        return (menu?.PlacementTarget as ListBox)?.SelectedItem switch
+        {
+            QueryHit hit => hit,
+            ReplacementItem item => item.Hit,
+            _ => null
+        };
+    }
+
+    private static void CopyToClipboard(string text)
+    {
+        try
+        {
+            Clipboard.SetText(text);
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            // Another process holds the clipboard open; nothing sensible to do about it from a menu click.
+        }
+    }
+
+    private static string PathOf(QueryHit hit) => string.IsNullOrEmpty(hit.FilePath) ? hit.FileName : hit.FilePath;
+
+    private void OnCopyLocationClick(object sender, RoutedEventArgs e)
+    {
+        if (HitOf(sender) is { } hit) CopyToClipboard(HitLocation.CodeSearch(PathOf(hit), hit.Line + 1));
+    }
+
+    private void OnCopyMsBuildLocationClick(object sender, RoutedEventArgs e)
+    {
+        if (HitOf(sender) is { } hit)
+            CopyToClipboard(HitLocation.MSBuild(PathOf(hit), hit.Line + 1, hit.Column + 1, hit.EndLine + 1, hit.EndColumn + 1));
+    }
+
+    /// <summary>The matched source exactly as written, not the whitespace-collapsed, truncated preview the row shows.</summary>
+    private void OnCopyMatchClick(object sender, RoutedEventArgs e)
+    {
+        if (HitOf(sender) is not { } hit) return;
+
+        string text = null;
+        Solution solution = null;
+        _ranAgainst?.TryGetTarget(out solution);
+
+        if (solution?.GetDocument(hit.DocumentId) is { } document && document.TryGetText(out var source) && hit.Span.End <= source.Length)
+            text = source.ToString(hit.Span);
+
+        CopyToClipboard(text ?? hit.Preview);
+    }
+
     private void OnReplaceResultDoubleClick(object sender, MouseButtonEventArgs e)
     {
         ThreadHelper.ThrowIfNotOnUIThread();

@@ -17,6 +17,19 @@
         <local:NullToVisibilityConverter x:Key="NullToVisibility" />
         <local:NullToBooleanConverter x:Key="NullToEnabled" />
 
+        <!-- Shared by both result lists; one instance per use, since a ContextMenu cannot have two owners. -->
+        <ContextMenu x:Key="HitMenu" x:Shared="False"
+                     Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ContextMenuStyleKey}}">
+            <MenuItem Header="Copy" Click="OnCopyMatchClick"
+                      Style="{DynamicResource {x:Static vsshell:VsResourceKeys.MenuItemStyleKey}}" />
+            <MenuItem Header="Copy location" Click="OnCopyLocationClick"
+                      ToolTip="Full path and line, as Code Search prints it: C:\src\File.cs:12"
+                      Style="{DynamicResource {x:Static vsshell:VsResourceKeys.MenuItemStyleKey}}" />
+            <MenuItem Header="Copy location (MSBuild)" Click="OnCopyMsBuildLocationClick"
+                      ToolTip="Full path and the whole range, as an MSBuild diagnostic location: C:\src\File.cs(12,5-18)"
+                      Style="{DynamicResource {x:Static vsshell:VsResourceKeys.MenuItemStyleKey}}" />
+        </ContextMenu>
+
         <Style x:Key="Caption" TargetType="TextBlock">
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Margin" Value="0,0,5,0" />
@@ -387,6 +400,8 @@
                                  VirtualizingStackPanel.VirtualizationMode="Recycling"
                                  ItemContainerStyle="{StaticResource ResultRow}"
                                  ItemTemplate="{StaticResource ResultTemplate}"
+                                 ContextMenu="{StaticResource HitMenu}"
+                                 PreviewMouseRightButtonDown="OnResultsPreviewRightClick"
                                  MouseDoubleClick="OnResultDoubleClick" />
                     </Grid>
                 </TabItem>
@@ -470,6 +485,8 @@
                                      VirtualizingStackPanel.VirtualizationMode="Recycling"
                                      ItemContainerStyle="{StaticResource ResultRow}"
                                      ItemTemplate="{StaticResource ReplacementTemplate}"
+                                     ContextMenu="{StaticResource HitMenu}"
+                                     PreviewMouseRightButtonDown="OnResultsPreviewRightClick"
                                      MouseDoubleClick="OnReplaceResultDoubleClick"
                                      PreviewKeyDown="OnReplaceResultsPreviewKeyDown" />
                         </Grid>

@@ -40,7 +40,6 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 11.0.x
-          dotnet-quality: preview
 
       # The headless CLI ships inside the VSIX (Cli/<rid>/), self-contained so it needs no runtime install. It compiles
       # the engine from the extension's sources, so this also catches a VS-only dependency creeping into a shared file.
