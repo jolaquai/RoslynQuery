@@ -24,8 +24,11 @@ internal static class Attach
         var wanted = string.IsNullOrEmpty(request.Solution) ? null : Path.GetFullPath(request.Solution);
         var cwd = Directory.GetCurrentDirectory();
 
+        // A client started from inside a VS (its terminal, an agent panel) belongs to that VS, whatever else is open.
+        var ancestors = ProcessTree.Ancestors();
+
         BridgeHostInfo best = null;
-        var bestScore = 0;
+        (bool Ancestor, int Score, string Started) bestKey = default;
 
         foreach (var file in Directory.EnumerateFiles(directory, "*.json"))
         {
@@ -41,7 +44,11 @@ internal static class Attach
             }
 
             var score = Score(info.Solution, wanted, cwd);
-            if (score > bestScore) { best = info; bestScore = score; }
+            if (score == 0) continue;
+
+            // Ancestry first, then how well the solution matches, then the newest instance, so ties are never arbitrary.
+            var key = (ancestors.Contains(info.Pid), score, info.StartedUtc ?? string.Empty);
+            if (best is null || key.CompareTo(bestKey) > 0) { best = info; bestKey = key; }
         }
 
         return best;
