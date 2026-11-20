@@ -101,7 +101,7 @@ internal static class PredicateTemplate
             }
         }
 
-        return sw.ToString() + ExpressionSupport.IndexRangeSupport;
+        return sw.ToString() + ExpressionSupport.TemplateSuffix;
     }
 }
 internal static class ItwExtensions

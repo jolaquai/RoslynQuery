@@ -35,6 +35,10 @@ jobs:
       # Runs before the VSIX build so a broken predicate emitter/normalizer fails fast instead of
       # spending time packaging a VSIX. This restores and builds RoslynQuery.Tests (and its
       # ProjectReference to RoslynQuery) on its own; separate from the msbuild restore above.
+      # The CLI compiles the engine from the VSIX project's sources, so this catches a VS-only dependency creeping into a shared file.
+      - name: Build CLI
+        run: dotnet build RoslynQuery.Cli/RoslynQuery.Cli.csproj -c Release
+
       - name: Build tests
         run: dotnet build RoslynQuery.Tests/RoslynQuery.Tests.csproj -c Release
 

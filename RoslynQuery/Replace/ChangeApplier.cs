@@ -34,13 +34,73 @@ internal static class ChangeApplier
         Workspace workspace, Solution ranAgainst, IReadOnlyList<ReplacementItem> items,
         System.Action<DocumentId> enrollDocument, CancellationToken cancellationToken)
     {
+        var plan = await PlanAsync(workspace, ranAgainst, items, cancellationToken).ConfigureAwait(true);
+        var outcome = plan.Outcome;
+        if (outcome.Applied == 0)
+            return outcome;
+
+        var solution = plan.Solution;
+        var changedDocuments = plan.ChangedDocuments;
+        var warnings = (List<string>)outcome.Warnings;
+
+        if (enrollDocument != null)
+        {
+            foreach (var id in changedDocuments)
+                enrollDocument(id);
+        }
+
+        // Rebased onto the freshest CurrentSolution: background work can advance it during the awaits
+        // above, and TryApplyChanges silently rejects a solution diffed against a stale baseline.
+        var latest = workspace.CurrentSolution;
+        foreach (var id in changedDocuments)
+        {
+            var finalText = await solution.GetDocument(id).GetTextAsync(cancellationToken).ConfigureAwait(true);
+            latest = latest.WithDocumentText(id, finalText);
+        }
+
+        var diagnostics = new List<string>();
+        bool applied;
+        using (workspace.RegisterWorkspaceFailedHandler(e => diagnostics.Add(e.Diagnostic.Message)))
+        {
+            applied = workspace.TryApplyChanges(latest);
+        }
+
+        if (!applied)
+        {
+            outcome.Skipped += outcome.Applied;
+            outcome.Applied = 0;
+            var detail = diagnostics.Count > 0 ? string.Join("; ", diagnostics) : "no diagnostic reported";
+            warnings.Add($"The workspace rejected the change set ({detail}).");
+        }
+
+        return outcome;
+    }
+
+    /// <summary>The result of <see cref="PlanAsync"/>: the edited solution, not yet written anywhere.</summary>
+    internal sealed class ApplyPlan
+    {
+        public Solution Solution { get; set; }
+        public IReadOnlyList<DocumentId> ChangedDocuments { get; set; }
+
+        /// <summary>Applied counts what the plan would write; Warnings is always a <see cref="List{T}"/>.</summary>
+        public ApplyOutcome Outcome { get; set; }
+    }
+
+    /// <summary>
+    /// Everything <see cref="ApplyAsync(Workspace, Solution, IReadOnlyList{ReplacementItem}, System.Action{DocumentId}, CancellationToken)"/>
+    /// does short of touching the workspace: remaps spans, splices the replacements in and formats them. The
+    /// headless CLI uses it on its own for a dry run.
+    /// </summary>
+    internal static async Task<ApplyPlan> PlanAsync(
+        Workspace workspace, Solution ranAgainst, IReadOnlyList<ReplacementItem> items, CancellationToken cancellationToken)
+    {
         var outcome = new ApplyOutcome();
         var warnings = new List<string>();
         var included = items.Where(i => i.Included && i.After != null).ToList();
         if (included.Count == 0)
         {
             outcome.Warnings = warnings;
-            return outcome;
+            return new ApplyPlan { Solution = workspace.CurrentSolution, ChangedDocuments = new List<DocumentId>(), Outcome = outcome };
         }
 
         var current = workspace.CurrentSolution;
@@ -143,39 +203,6 @@ internal static class ChangeApplier
         }
 
         outcome.Warnings = warnings;
-        if (outcome.Applied == 0)
-            return outcome;
-
-        if (enrollDocument != null)
-        {
-            foreach (var id in changedDocuments)
-                enrollDocument(id);
-        }
-
-        // Rebased onto the freshest CurrentSolution: background work can advance it during the awaits
-        // above, and TryApplyChanges silently rejects a solution diffed against a stale baseline.
-        var latest = workspace.CurrentSolution;
-        foreach (var id in changedDocuments)
-        {
-            var finalText = await solution.GetDocument(id).GetTextAsync(cancellationToken).ConfigureAwait(true);
-            latest = latest.WithDocumentText(id, finalText);
-        }
-
-        var diagnostics = new List<string>();
-        bool applied;
-        using (workspace.RegisterWorkspaceFailedHandler(e => diagnostics.Add(e.Diagnostic.Message)))
-        {
-            applied = workspace.TryApplyChanges(latest);
-        }
-
-        if (!applied)
-        {
-            outcome.Skipped += outcome.Applied;
-            outcome.Applied = 0;
-            var detail = diagnostics.Count > 0 ? string.Join("; ", diagnostics) : "no diagnostic reported";
-            warnings.Add($"The workspace rejected the change set ({detail}).");
-        }
-
-        return outcome;
+        return new ApplyPlan { Solution = solution, ChangedDocuments = changedDocuments, Outcome = outcome };
     }
 }

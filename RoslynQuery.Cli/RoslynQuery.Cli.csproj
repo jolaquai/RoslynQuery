@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <LangVersion>preview</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>RoslynQuery.Cli</RootNamespace>
+    <AssemblyName>roslynquery</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TieredPGO>true</TieredPGO>
+
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>roslynquery</ToolCommandName>
+    <PackageId>RoslynQuery.Tool</PackageId>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <!-- The engine is compiled from the VSIX project's sources instead of referenced: the release workflow
+       fails any VSIX that carries a DLL besides RoslynQuery.dll, so a shared core library is not an option,
+       and this keeps one copy of the predicate compiler, scanner and replace pipeline. Everything left out
+       here needs the VS shell (ScopeResolver.Vs.cs, GlobalUndoScope, the tool windows, navigation), or is a
+       net472 polyfill (ArrayPoolMemoryStream, Extensions; see Shims.cs). -->
+  <ItemGroup>
+    <Compile Include="..\RoslynQuery\Query\*.cs" Exclude="..\RoslynQuery\Query\ScopeResolver.Vs.cs" LinkBase="Shared\Query" />
+    <Compile Include="..\RoslynQuery\Replace\ChangeApplier.cs;..\RoslynQuery\Replace\ReplaceCompiler.cs;..\RoslynQuery\Replace\ReplaceEngine.cs;..\RoslynQuery\Replace\ReplaceTemplate.cs;..\RoslynQuery\Replace\ReplacementItem.cs" LinkBase="Shared\Replace" />
+    <Compile Include="..\RoslynQuery\Navigation\SpanMapper.cs" LinkBase="Shared\Navigation" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Same Roslyn the VSIX compiles against. Unlike the VSIX, the tool ships its own copy. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.6.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="5.6.0" />
+  </ItemGroup>
+
+</Project>

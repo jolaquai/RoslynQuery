@@ -33,6 +33,7 @@ be analyzed in turn.
     - [Symbols from referenced assemblies](#symbols-from-referenced-assemblies)
     - [Scope](#scope)
     - [Settings](#settings)
+  - [Command line](#command-line)
   - [Environment](#environment)
   - [Building](#building)
 
@@ -593,6 +594,27 @@ The scope the window starts on is configurable; see `Default scope` below.
 
 The two IL analysis settings would read the IL of framework methods so that `Uses` could continue past
 your source and `Used By` could report framework callers.
+
+## Command line
+
+`RoslynQuery.Cli` runs the same predicate compiler, scanner and replace pipeline without Visual Studio, for scripts, CI and coding agents. It loads the solution with `MSBuildWorkspace`, so it sees what is on disk, not unsaved editor buffers.
+
+```
+dotnet pack RoslynQuery.Cli -c Release
+dotnet tool install -g RoslynQuery.Tool --add-source RoslynQuery.Cli/bin/Release
+
+roslynquery run -s App.slnx -q "n is MethodDeclarationSyntax m && m.Modifiers.Any(SyntaxKind.AsyncKeyword)"
+roslynquery run -s App.slnx -q "..." -r "..."                       # dry run: unified diffs + planId
+roslynquery run -s App.slnx -q "..." -r "..." --apply --expect <planId>
+roslynquery docs      # predicate/replace reference for agents, generated from the code that compiles them
+roslynquery schema    # JSON Schemas of the --request payload and the output
+```
+
+Output is one JSON document on stdout, exit code 0 on success. Replace never writes without `--apply`, and
+`--expect` refuses to write anything but the plan a dry run reported.
+
+The CLI compiles the engine's sources straight from `RoslynQuery/` (see `RoslynQuery.Cli.csproj`) instead of
+referencing them, because the VSIX must not ship a second DLL.
 
 ## Environment
 

@@ -95,6 +95,9 @@ internal static class ExpressionSupport
         }
         """;
 
+    /// <summary>What the templates append: the <see cref="IndexRangeSupport"/> shim, unless the runtime already has <c>System.Index</c> (everything but .NET Framework).</summary>
+    public static readonly string TemplateSuffix = typeof(object).Assembly.GetType("System.Index") is null ? IndexRangeSupport : string.Empty;
+
     private static ImmutableArray<MetadataReference> BuildReferences()
     {
         // Keyed on simple name, not path: two files with the same identity in one reference set is
