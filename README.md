@@ -11,6 +11,9 @@ uses it, what it uses, what overrides, implements and derives from it, and more,
 be analyzed in turn.
 `View > Other Windows > Reference Graph`, or right-click in the editor.
 
+Coding agents are a target audience as well: the same query and replace engine is available as a command line tool
+and an MCP server that ships inside the extension, see [AI and coding agents](#ai-and-coding-agents).
+
 ## Contents
 
 - [Roslyn Query](#roslyn-query)
@@ -33,6 +36,7 @@ be analyzed in turn.
     - [Symbols from referenced assemblies](#symbols-from-referenced-assemblies)
     - [Scope](#scope)
     - [Settings](#settings)
+  - [AI and coding agents](#ai-and-coding-agents)
   - [Command line](#command-line)
   - [Environment](#environment)
   - [Building](#building)
@@ -594,6 +598,54 @@ The scope the window starts on is configurable; see `Default scope` below.
 
 The two IL analysis settings would read the IL of framework methods so that `Uses` could continue past
 your source and `Used By` could report framework callers.
+
+## AI and coding agents
+
+Roslyn Query answers questions text search cannot: "every `async` method that never awaits", "calls to this overload,
+not to its namesake", "attributes with this argument". Those are queries over syntax and semantics, so an agent gets
+exact hits (file, line, column, range) instead of grepping and guessing, and can rewrite them mechanically instead of
+editing file by file. The extension ships a command line tool and an MCP server for this; nothing extra is installed.
+
+**What an agent can do**
+
+| Tool (MCP) / command            | Does                                                                                                   |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `search` / `roslynquery run`    | Runs a C# predicate over nodes, tokens or operations of a solution, project, file, type or member.    |
+| `replace` / `run -r ... `       | Dry run returns unified diffs and a `planId`; applying needs that same `planId` (`--expect`).          |
+| `docs` / `roslynquery docs`     | The predicate and replace reference, generated from the code that compiles them, so it cannot drift.   |
+| `bridges`                       | Lists running Visual Studio instances an agent can attach to.                                          |
+
+**Set up an MCP client** (Claude Code, Cursor, VS Code, anything that speaks MCP over stdio)
+
+1. Install the extension, then `Tools > Roslyn Query > Copy roslynquery CLI Path`. The path is also in
+   `%LOCALAPPDATA%\RoslynQuery\cli-path.txt`, which is the place for an agent or script to look it up.
+2. Register it as a stdio server, with the project folder as the working directory:
+
+   ```json
+   { "mcpServers": { "roslynquery": { "command": "C:\\...\\Cli\\win-x64\\roslynquery.exe", "args": ["mcp"] } } }
+   ```
+
+   Claude Code: `claude mcp add roslynquery -- "<path>" mcp`.
+3. Optional, for the live workspace: `Tools > Roslyn Query > Enable Agent Bridge` (see [Agent bridge](#agent-bridge)).
+
+Without the bridge the tools load the solution from disk, which takes seconds and ignores unsaved editor changes. With
+it they run in the Visual Studio that has the solution open: unsaved edits are visible, there is no load time, and an
+applied replace is one undoable edit in the editor. When several Visual Studio instances run, the one that started the
+agent's process wins (terminal or tool launched from inside it), then the best solution match, then the newest.
+
+**Safety model**
+
+- Replace never writes on its own. It returns diffs; a write needs `apply` plus the `planId` of the dry run the
+  reviewer saw, and is refused (exit code 3) if the sources or the query changed since.
+- The bridge is off by default, listens on a named pipe only the current Windows user can open, and requires a
+  per-session token. A predicate is C# that runs in your Visual Studio, so only enable it for clients you trust.
+- Search is read-only; the MCP tool annotations mark `search`, `docs` and `bridges` read-only and `replace` destructive.
+
+**For agents reading this:** run `roslynquery docs` first. It lists the predicate parameters per target, the imports in
+scope, the response fields and examples. A compile error in the predicate returns within about a second, before any
+solution is loaded, so iterate on the predicate with a narrow `--scope` and a small `--max`, then widen. Reading
+`stats.errors`, `stats.truncated` and `workspaceWarnings` in the response tells you whether the result is complete.
+Command line details are in [Command line](#command-line).
 
 ## Command line
 
