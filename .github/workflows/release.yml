@@ -35,20 +35,23 @@ jobs:
       # Runs before the VSIX build so a broken predicate emitter/normalizer fails fast instead of
       # spending time packaging a VSIX. This restores and builds RoslynQuery.Tests (and its
       # ProjectReference to RoslynQuery) on its own; separate from the msbuild restore above.
-      # The CLI targets net11.0, newer than the SDK the runner image ships.
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: 11.0.x
-
-      # The headless CLI ships inside the VSIX (Cli/<rid>/), self-contained so it needs no runtime install. It compiles
-      # the engine from the extension's sources, so this also catches a VS-only dependency creeping into a shared file.
+      # The CLI targets net11.0, newer than the SDK the runner image ships. The 11 SDK goes into its own folder and is only
+      # invoked by the publish step: installed globally it also becomes the SDK `dotnet build` picks for the WPF net472
+      # projects, where its markup compiler fails (MC1000 on System.Runtime facades), and the tests and VSIX must keep
+      # building with the SDK they always have.
+      #
+      # The CLI ships inside the VSIX (Cli/<rid>/), self-contained so it needs no runtime install, and compiles the
+      # engine from the extension's sources, so this also catches a VS-only dependency creeping into a shared file.
       # RoslynQuery.csproj picks the output up from RoslynQuery.Cli/publish. win-x86 is skipped: devenv is 64-bit only.
       - name: Publish CLI
         shell: pwsh
         run: |
+          $sdk = Join-Path $env:RUNNER_TEMP 'dotnet11'
+          Invoke-WebRequest https://dot.net/v1/dotnet-install.ps1 -OutFile (Join-Path $env:RUNNER_TEMP 'dotnet-install.ps1')
+          & (Join-Path $env:RUNNER_TEMP 'dotnet-install.ps1') -Channel 11.0 -InstallDir $sdk
+          if ($LASTEXITCODE -ne 0) { throw "Installing the .NET 11 SDK failed." }
           foreach ($rid in 'win-x64', 'win-arm64') {
-            dotnet publish RoslynQuery.Cli/RoslynQuery.Cli.csproj -c Release -r $rid --self-contained -p:PublishReadyToRun=true -o "RoslynQuery.Cli/publish/$rid"
+            & "$sdk\dotnet.exe" publish RoslynQuery.Cli/RoslynQuery.Cli.csproj -c Release -r $rid --self-contained -p:PublishReadyToRun=true -o "RoslynQuery.Cli/publish/$rid"
             if ($LASTEXITCODE -ne 0) { throw "CLI publish failed for $rid" }
           }
 
