@@ -35,10 +35,23 @@ jobs:
       # Runs before the VSIX build so a broken predicate emitter/normalizer fails fast instead of
       # spending time packaging a VSIX. This restores and builds RoslynQuery.Tests (and its
       # ProjectReference to RoslynQuery) on its own; separate from the msbuild restore above.
-      # The CLI targets net11.0, newer than the SDK the runner image ships. The 11 SDK goes into its own folder and is only
-      # invoked by the publish step: installed globally it also becomes the SDK `dotnet build` picks for the WPF net472
-      # projects, where its markup compiler fails (MC1000 on System.Runtime facades), and the tests and VSIX must keep
-      # building with the SDK they always have.
+      - name: Build tests
+        run: dotnet build RoslynQuery.Tests/RoslynQuery.Tests.csproj -c Release
+
+      # xunit.v3 on Microsoft.Testing.Platform emits a self-contained runner, so the exe is invoked
+      # directly. That skips the `dotnet test` bridge entirely, which the .NET 10 SDK no longer
+      # supports without an opt-in, and makes the runner's own exit code the step's result.
+      - name: Test
+        shell: pwsh
+        run: |
+          $exe = "RoslynQuery.Tests/bin/Release/net472/RoslynQuery.Tests.exe"
+          if (-not (Test-Path $exe)) { throw "Test runner not found at $exe" }
+          & $exe
+          if ($LASTEXITCODE -ne 0) { throw "Tests failed with exit code $LASTEXITCODE." }
+
+      # Runs after the tests on purpose: with RoslynQuery.Cli/publish present, the net472 WPF markup compile of the
+      # extension project (what `dotnet build` of the tests triggers) fails with MC1000 on the published net11 assemblies.
+      # The 11 SDK goes into its own folder so nothing else picks it up.
       #
       # The CLI ships inside the VSIX (Cli/<rid>/), self-contained so it needs no runtime install, and compiles the
       # engine from the extension's sources, so this also catches a VS-only dependency creeping into a shared file.
@@ -54,20 +67,6 @@ jobs:
             & "$sdk\dotnet.exe" publish RoslynQuery.Cli/RoslynQuery.Cli.csproj -c Release -r $rid --self-contained -p:PublishReadyToRun=true -o "RoslynQuery.Cli/publish/$rid"
             if ($LASTEXITCODE -ne 0) { throw "CLI publish failed for $rid" }
           }
-
-      - name: Build tests
-        run: dotnet build RoslynQuery.Tests/RoslynQuery.Tests.csproj -c Release
-
-      # xunit.v3 on Microsoft.Testing.Platform emits a self-contained runner, so the exe is invoked
-      # directly. That skips the `dotnet test` bridge entirely, which the .NET 10 SDK no longer
-      # supports without an opt-in, and makes the runner's own exit code the step's result.
-      - name: Test
-        shell: pwsh
-        run: |
-          $exe = "RoslynQuery.Tests/bin/Release/net472/RoslynQuery.Tests.exe"
-          if (-not (Test-Path $exe)) { throw "Test runner not found at $exe" }
-          & $exe
-          if ($LASTEXITCODE -ne 0) { throw "Tests failed with exit code $LASTEXITCODE." }
 
       - name: Build
         run: msbuild RoslynQuery/RoslynQuery.csproj -t:Rebuild -p:Configuration=Release -p:DeployExtension=false
