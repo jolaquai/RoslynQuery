@@ -37,15 +37,19 @@
        Added from a target right before the VSIX items are collected, not as a static item: as evaluation-time Content the
        published net11 assemblies reach the WPF markup compile, which fails with MC1000 on them. -->
   <Target Name="BundleCli" BeforeTargets="GetVsixSourceItems">
+    <PropertyGroup>
+      <_CliRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)..\RoslynQuery.Cli\publish'))</_CliRoot>
+    </PropertyGroup>
     <ItemGroup>
-      <Content Include="$(MSBuildThisFileDirectory)..\RoslynQuery.Cli\publish\**\*" Exclude="$(MSBuildThisFileDirectory)..\RoslynQuery.Cli\publish\**\*.pdb">
+      <_CliFile Include="$(_CliRoot)**\*" Exclude="$(_CliRoot)**\*.pdb" />
+      <!-- %(RecursiveDir) is empty for items created inside a target, so the sub-path is derived from each file's folder. -->
+      <Content Include="@(_CliFile)">
         <IncludeInVSIX>true</IncludeInVSIX>
-        <VSIXSubPath>Cli\%(RecursiveDir)</VSIXSubPath>
-        <Link>Cli\%(RecursiveDir)%(Filename)%(Extension)</Link>
+        <VSIXSubPath>Cli\$([MSBuild]::MakeRelative('$(_CliRoot)', '%(_CliFile.RootDir)%(_CliFile.Directory)'))</VSIXSubPath>
         <CopyToOutputDirectory>DoNotCopy</CopyToOutputDirectory>
       </Content>
     </ItemGroup>
-    <Message Importance="high" Text="BundleCli: @(Content->WithMetadataValue('IncludeInVSIX','true')->Count()) content items for the VSIX (publish dir exists: $([System.IO.Directory]::Exists('$(MSBuildThisFileDirectory)..\RoslynQuery.Cli\publish')))" />
+    <Message Importance="high" Text="BundleCli: @(_CliFile->Count()) files from $(_CliRoot)" />
   </Target>
 
   <ItemGroup>
