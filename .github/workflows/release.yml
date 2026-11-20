@@ -29,6 +29,14 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v3
 
+      # Restore dominates the job (VS SDK + Roslyn + MCP packages) and was paid by three separate restores below.
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~\.nuget\packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Packages.props', '**/packages.lock.json') }}
+          restore-keys: nuget-${{ runner.os }}-
+
       - name: Restore
         run: msbuild RoslynQuery/RoslynQuery.csproj -t:Restore -p:Configuration=Release
 
