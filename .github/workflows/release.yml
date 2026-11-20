@@ -102,7 +102,9 @@ jobs:
           $unexpected = $dlls | Where-Object { $_.Name -ne 'RoslynQuery.dll' -and $_.FullName -notlike 'Cli/*' }
           $cli = @($zip.Entries | Where-Object { $_.FullName -in 'Cli/win-x64/roslynquery.exe', 'Cli/win-arm64/roslynquery.exe' })
           $cliBytes = ($zip.Entries | Where-Object { $_.FullName -like 'Cli/*' } | Measure-Object -Property CompressedLength -Sum).Sum
+          $names = ($zip.Entries | Where-Object { $_.FullName -like '*roslynquery*' -or $_.FullName -like 'Cli*' } | Select-Object -First 20 | ForEach-Object FullName) -join ', '
           $zip.Dispose()
+          Write-Host "CLI-ish entries: $names"
           if ($unexpected) { throw "VSIX carries assemblies it must not ship: $(($unexpected | ForEach-Object FullName) -join ', ')" }
           if ($cli.Count -ne 2) { throw "VSIX is missing the bundled CLI (found $($cli.Count) of 2 roslynquery.exe)." }
           Write-Host ("VSIX payload is clean. CLI payload: {0:N1} MB compressed." -f ($cliBytes / 1MB))

@@ -45,6 +45,7 @@
         <CopyToOutputDirectory>DoNotCopy</CopyToOutputDirectory>
       </Content>
     </ItemGroup>
+    <Message Importance="high" Text="BundleCli: @(Content->WithMetadataValue('IncludeInVSIX','true')->Count()) content items for the VSIX (publish dir exists: $([System.IO.Directory]::Exists('$(MSBuildThisFileDirectory)..\RoslynQuery.Cli\publish')))" />
   </Target>
 
   <ItemGroup>
