@@ -42,6 +42,9 @@
     </PropertyGroup>
     <ItemGroup>
       <_CliFile Include="$(_CliRoot)**\*" Exclude="$(_CliRoot)**\*.pdb" />
+    </ItemGroup>
+    <!-- No publish folder (local builds, the test build): nothing to bundle, and the metadata below would batch over nothing. -->
+    <ItemGroup Condition="'@(_CliFile)' != ''">
       <!-- %(RecursiveDir) is empty for items created inside a target, so the sub-path is derived from each file's folder. -->
       <Content Include="@(_CliFile)">
         <IncludeInVSIX>true</IncludeInVSIX>
