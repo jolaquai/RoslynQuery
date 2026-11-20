@@ -614,7 +614,19 @@ Output is one JSON document on stdout, exit code 0 on success. Replace never wri
 `--expect` refuses to write anything but the plan a dry run reported.
 
 The CLI compiles the engine's sources straight from `RoslynQuery/` (see `RoslynQuery.Cli.csproj`) instead of
-referencing them, because the VSIX must not ship a second DLL.
+referencing them. The VSIX also bundles it, self-contained, under `Cli/win-x64` and `Cli/win-arm64` in its install
+folder (`Tools > Roslyn Query > Copy roslynquery CLI Path`; the path is also written to
+`%LOCALAPPDATA%\RoslynQuery\cli-path.txt`). That folder is the only place the VSIX may carry extra DLLs, since it runs
+as its own process and devenv never loads from it; `release.yml` checks exactly that.
+
+### Agent bridge
+
+`Tools > Roslyn Query > Enable Agent Bridge` makes this Visual Studio answer the CLI's requests over a named pipe that
+only the current Windows user can open (plus a per-session token kept in `%LOCALAPPDATA%\RoslynQuery\bridge`). `run`
+then uses the live workspace instead of loading from disk, so unsaved edits are seen, there is no solution load, and
+`--apply` is a single undoable edit. The response says `"source":"vs"` or `"headless"`; `--attach` / `--no-attach`
+force one. Restart and the request log (Output window, "Roslyn Query") are in the same menu. It is off by default
+because it executes the C# a client sends; the choice is remembered (`Tools > Options > RoslynQuery > General`).
 
 ## Environment
 

@@ -31,6 +31,18 @@
     <InternalsVisibleTo Include="RoslynQuery.Tests" />
   </ItemGroup>
 
+  <!-- The headless CLI, published per RID by the release workflow into RoslynQuery.Cli/publish/<rid>. It runs as its own
+       process out of Cli/<rid>/ in the install folder, so it must not be mistaken for in-proc assemblies (see the payload
+       check in release.yml). A plain local build has no publish folder and simply does not bundle it. -->
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\RoslynQuery.Cli\publish')">
+    <Content Include="..\RoslynQuery.Cli\publish\**\*" Exclude="..\RoslynQuery.Cli\publish\**\*.pdb">
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <VSIXSubPath>Cli\%(RecursiveDir)</VSIXSubPath>
+      <Link>Cli\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>DoNotCopy</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectCapability Include="CreateVsixContainer" />
 

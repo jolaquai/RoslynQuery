@@ -7,6 +7,7 @@ using System.Text.Json.Schema;
 using System.Threading;
 using System.Threading.Tasks;
 
+using RoslynQuery.Protocol;
 using RoslynQuery.Query;
 
 namespace RoslynQuery.Cli;
@@ -35,6 +36,8 @@ internal static class Program
               --max <n>              result cap (default 200)
               --include-generated
               --request <path|->     a RunRequest JSON; flags override it
+              --attach               use the running Visual Studio's bridge or fail (default: use it when there is one for the solution)
+              --no-attach            always load the solution headless, from disk
               --pretty               indent the output
 
         exit codes: 0 ok, 1 failed, 2 usage, 3 --apply refused (plan changed)
@@ -70,12 +73,12 @@ internal static class Program
 
     private static async Task<int> RunAsync(string[] args)
     {
-        var (request, pretty) = Parse(args);
+        var (request, pretty, attach) = Parse(args);
 
         using var cts = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
-        var response = await Runner.RunAsync(request, cts.Token).ConfigureAwait(false);
+        var response = await ExecuteAsync(request, attach, cts.Token).ConfigureAwait(false);
 
         using var stdout = Console.OpenStandardOutput();
         JsonSerializer.Serialize(stdout, response, pretty ? CliJsonOut.Pretty : CliJsonOut.Compact);
@@ -83,7 +86,36 @@ internal static class Program
         return response.ExitCode;
     }
 
-    private static (RunRequest Request, bool Pretty) Parse(string[] args)
+    private enum AttachMode { Auto, Force, Never }
+
+    private static async Task<RunResponse> ExecuteAsync(RunRequest request, AttachMode mode, CancellationToken cancellationToken)
+    {
+        if (mode != AttachMode.Never)
+        {
+            var host = Attach.Find(request);
+            if (host is null && mode == AttachMode.Force)
+                return new RunResponse { Error = "No Visual Studio bridge is running for this solution. Enable it under Tools > Roslyn Query > Agent Bridge.", ExitCode = 1 };
+
+            if (host != null)
+            {
+                try
+                {
+                    return await Attach.RunAsync(host, request, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException && !cancellationToken.IsCancellationRequested)
+                {
+                    if (mode == AttachMode.Force)
+                        return new RunResponse { Error = "Could not reach the Visual Studio bridge: " + ex.Message, ExitCode = 1 };
+
+                    Console.Error.WriteLine("Visual Studio bridge unreachable (" + ex.Message + "); loading the solution headless instead.");
+                }
+            }
+        }
+
+        return await Runner.RunAsync(request, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static (RunRequest Request, bool Pretty, AttachMode Attach) Parse(string[] args)
     {
         string requestPath = null;
         for (var i = 0; i < args.Length - 1; i++)
@@ -95,6 +127,7 @@ internal static class Program
                 ?? throw new UsageException("Empty request.");
 
         var pretty = false;
+        var attach = AttachMode.Auto;
         var scopeGiven = requestPath != null;
         var stdinUsed = requestPath == "-";
 
@@ -132,6 +165,8 @@ internal static class Program
                 case "--apply": request.Apply = true; break;
                 case "--include-generated": request.IncludeGenerated = true; break;
                 case "--pretty": pretty = true; break;
+                case "--attach": attach = AttachMode.Force; break;
+                case "--no-attach": attach = AttachMode.Never; break;
                 case "--request": i++; break;
                 default: throw new UsageException($"Unknown option '{args[i]}'.");
             }
@@ -143,7 +178,7 @@ internal static class Program
             else if (request.Project != null) request.Scope = ScopeKind.Project;
         }
 
-        return (request, pretty);
+        return (request, pretty, attach);
     }
 
     private static TargetKind ParseTarget(string value) => value.ToLowerInvariant() switch
@@ -194,21 +229,4 @@ internal static class Program
     }
 
     private sealed class UsageException(string message) : Exception(message);
-}
-
-/// <summary>
-/// The generated context with the default encoder swapped out: the default escapes <c>'</c>, <c>+</c>, <c>&lt;</c> and
-/// every non-ASCII character as \uXXXX, which is pure token overhead for the code snippets this prints.
-/// </summary>
-internal static class CliJsonOut
-{
-    public static readonly System.Text.Json.Serialization.Metadata.JsonTypeInfo<RunResponse> Compact = Make(false);
-    public static readonly System.Text.Json.Serialization.Metadata.JsonTypeInfo<RunResponse> Pretty = Make(true);
-
-    private static System.Text.Json.Serialization.Metadata.JsonTypeInfo<RunResponse> Make(bool indented) =>
-        new CliJson(new JsonSerializerOptions(CliJson.Default.Options)
-        {
-            WriteIndented = indented,
-            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-        }).RunResponse;
 }

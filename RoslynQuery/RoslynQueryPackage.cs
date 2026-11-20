@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel.Design;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Windows;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -10,6 +11,7 @@ using Microsoft.VisualStudio.LanguageServices;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Threading;
 
+using RoslynQuery.Bridge;
 using RoslynQuery.Options;
 using RoslynQuery.Query;
 using RoslynQuery.ReferenceGraph;
@@ -47,6 +49,12 @@ public sealed class RoslynQueryPackage : AsyncPackage
     public const int ShowToolWindowCommandId = 0x0100;
     public const int ShowReferenceGraphCommandId = 0x0101;
     public const int ViewReferenceGraphCommandId = 0x0102;
+    public const int BridgeToggleCommandId = 0x0210;
+    public const int BridgeRestartCommandId = 0x0211;
+    public const int BridgeLogCommandId = 0x0212;
+    public const int CopyCliPathCommandId = 0x0213;
+
+    private AgentBridge _bridge;
 
     /// <summary>Set before anything can reach a tool window: opening one force-loads this package first.</summary>
     public static RoslynQueryPackage Instance { get; private set; }
@@ -65,6 +73,82 @@ public sealed class RoslynQueryPackage : AsyncPackage
         var viewReferenceGraph = new OleMenuCommand(ViewReferenceGraph, new CommandID(CommandSet, ViewReferenceGraphCommandId));
         viewReferenceGraph.BeforeQueryStatus += OnViewReferenceGraphQueryStatus;
         commands.AddCommand(viewReferenceGraph);
+
+        var toggle = new OleMenuCommand(ToggleBridge, new CommandID(CommandSet, BridgeToggleCommandId));
+        toggle.BeforeQueryStatus += (_, _) => toggle.Text = _bridge?.IsRunning == true ? "Disable Agent Bridge" : "Enable Agent Bridge";
+        commands.AddCommand(toggle);
+
+        var restart = new OleMenuCommand((_, _) => _bridge?.Restart(), new CommandID(CommandSet, BridgeRestartCommandId));
+        restart.BeforeQueryStatus += (_, _) => restart.Visible = _bridge?.IsRunning == true;
+        commands.AddCommand(restart);
+
+        commands.AddCommand(new MenuCommand(ShowBridgeLog, new CommandID(CommandSet, BridgeLogCommandId)));
+        commands.AddCommand(new MenuCommand(CopyCliPath, new CommandID(CommandSet, CopyCliPathCommandId)));
+
+        // Wherever the CLI shipped to, agents read this one stable file to find it.
+        BridgeCli.PublishPath();
+
+        if (((RoslynQueryOptions)GetDialogPage(typeof(RoslynQueryOptions))).AutoStartAgentBridge)
+            await EnsureBridgeAsync().ConfigureAwait(true);
+    }
+
+    private async Task<AgentBridge> EnsureBridgeAsync()
+    {
+        await JoinableTaskFactory.SwitchToMainThreadAsync(DisposalToken);
+        if (_bridge != null) return _bridge;
+
+        if (await GetServiceAsync(typeof(SComponentModel)) is not IComponentModel componentModel) return null;
+
+        _bridge = new AgentBridge(this, componentModel, typeof(RoslynQueryPackage).Assembly.GetName().Version.ToString());
+        _bridge.Start();
+        return _bridge;
+    }
+
+    private void ToggleBridge(object sender, EventArgs e) => JoinableTaskFactory.RunAsync(async () =>
+    {
+        var options = (RoslynQueryOptions)GetDialogPage(typeof(RoslynQueryOptions));
+
+        if (_bridge?.IsRunning == true)
+        {
+            _bridge.Stop();
+            options.AutoStartAgentBridge = false;
+        }
+        else
+        {
+            var bridge = await EnsureBridgeAsync();
+            if (bridge is null) return;
+            if (!bridge.IsRunning) bridge.Start();
+            options.AutoStartAgentBridge = true;
+        }
+
+        options.SaveSettingsToStorage();
+    }).FileAndForget("vs/roslynquery/togglebridge");
+
+    private void ShowBridgeLog(object sender, EventArgs e) => JoinableTaskFactory.RunAsync(async () =>
+    {
+        var bridge = await EnsureBridgeAsync();
+        bridge?.ShowLog();
+    }).FileAndForget("vs/roslynquery/bridgelog");
+
+    private void CopyCliPath(object sender, EventArgs e)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        var path = BridgeCli.Locate();
+        if (path is null)
+        {
+            VsShellUtilities.ShowMessageBox(this, "This build of the extension does not bundle the roslynquery CLI (it is added by the release build).", "Roslyn Query",
+                Microsoft.VisualStudio.Shell.Interop.OLEMSGICON.OLEMSGICON_INFO, Microsoft.VisualStudio.Shell.Interop.OLEMSGBUTTON.OLEMSGBUTTON_OK, Microsoft.VisualStudio.Shell.Interop.OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
+            return;
+        }
+
+        Clipboard.SetText(path);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _bridge?.Dispose();
+        base.Dispose(disposing);
     }
 
     private void ShowToolWindow(object sender, EventArgs e) => JoinableTaskFactory.RunAsync(async () =>

@@ -35,9 +35,23 @@ jobs:
       # Runs before the VSIX build so a broken predicate emitter/normalizer fails fast instead of
       # spending time packaging a VSIX. This restores and builds RoslynQuery.Tests (and its
       # ProjectReference to RoslynQuery) on its own; separate from the msbuild restore above.
-      # The CLI compiles the engine from the VSIX project's sources, so this catches a VS-only dependency creeping into a shared file.
-      - name: Build CLI
-        run: dotnet build RoslynQuery.Cli/RoslynQuery.Cli.csproj -c Release
+      # The CLI targets net11.0, newer than the SDK the runner image ships.
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 11.0.x
+          dotnet-quality: preview
+
+      # The headless CLI ships inside the VSIX (Cli/<rid>/), self-contained so it needs no runtime install. It compiles
+      # the engine from the extension's sources, so this also catches a VS-only dependency creeping into a shared file.
+      # RoslynQuery.csproj picks the output up from RoslynQuery.Cli/publish. win-x86 is skipped: devenv is 64-bit only.
+      - name: Publish CLI
+        shell: pwsh
+        run: |
+          foreach ($rid in 'win-x64', 'win-arm64') {
+            dotnet publish RoslynQuery.Cli/RoslynQuery.Cli.csproj -c Release -r $rid --self-contained -p:PublishReadyToRun=true -o "RoslynQuery.Cli/publish/$rid"
+            if ($LASTEXITCODE -ne 0) { throw "CLI publish failed for $rid" }
+          }
 
       - name: Build tests
         run: dotnet build RoslynQuery.Tests/RoslynQuery.Tests.csproj -c Release
@@ -67,17 +81,22 @@ jobs:
           "path=artifacts/$($vsix.Name)" >> $env:GITHUB_OUTPUT
           Write-Host "Staged VSIX: $($vsix.Name)"
 
-      # A bundled Microsoft.CodeAnalysis.* would be a duplicate assembly identity in devenv and
-      # would break MEF composition, so a payload beyond our own dll is a hard failure.
+      # A bundled Microsoft.CodeAnalysis.* next to RoslynQuery.dll would be a duplicate assembly identity in devenv
+      # and would break MEF composition, so a payload beyond our own dll is a hard failure. The CLI is the one
+      # exception: it runs as its own process out of Cli/<rid>/, where devenv never loads anything from.
       - name: Verify VSIX payload
         shell: pwsh
         run: |
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path "${{ steps.vsix.outputs.path }}").Path)
-          $unexpected = $zip.Entries.Name | Where-Object { $_ -like '*.dll' -and $_ -ne 'RoslynQuery.dll' }
+          $dlls = $zip.Entries | Where-Object { $_.Name -like '*.dll' }
+          $unexpected = $dlls | Where-Object { $_.Name -ne 'RoslynQuery.dll' -and $_.FullName -notlike 'Cli/*' }
+          $cli = @($zip.Entries | Where-Object { $_.FullName -in 'Cli/win-x64/roslynquery.exe', 'Cli/win-arm64/roslynquery.exe' })
+          $cliBytes = ($zip.Entries | Where-Object { $_.FullName -like 'Cli/*' } | Measure-Object -Property CompressedLength -Sum).Sum
           $zip.Dispose()
-          if ($unexpected) { throw "VSIX carries assemblies it must not ship: $($unexpected -join ', ')" }
-          Write-Host "VSIX payload is clean."
+          if ($unexpected) { throw "VSIX carries assemblies it must not ship: $(($unexpected | ForEach-Object FullName) -join ', ')" }
+          if ($cli.Count -ne 2) { throw "VSIX is missing the bundled CLI (found $($cli.Count) of 2 roslynquery.exe)." }
+          Write-Host ("VSIX payload is clean. CLI payload: {0:N1} MB compressed." -f ($cliBytes / 1MB))
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7

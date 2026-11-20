@@ -1,9 +1,7 @@
+using System;
 using System.Collections.Generic;
-using System.Text.Json.Serialization;
 
-using RoslynQuery.Query;
-
-namespace RoslynQuery.Cli;
+namespace RoslynQuery.Protocol;
 
 /// <summary>
 /// One request, whichever way it arrives (CLI flags, <c>--request</c> JSON, later the in-VS pipe). Lines and columns
@@ -14,8 +12,8 @@ public sealed class RunRequest
     /// <summary>.sln, .slnx or .csproj. Defaults to the only one in the working directory.</summary>
     public string Solution { get; set; }
 
-    public TargetKind Target { get; set; } = TargetKind.SyntaxNode;
-    public ScopeKind Scope { get; set; } = ScopeKind.Solution;
+    public RoslynQuery.Query.TargetKind Target { get; set; } = RoslynQuery.Query.TargetKind.SyntaxNode;
+    public RoslynQuery.Query.ScopeKind Scope { get; set; } = RoslynQuery.Query.ScopeKind.Solution;
 
     /// <summary>Scope=Project without a File: project name or path.</summary>
     public string Project { get; set; }
@@ -61,8 +59,10 @@ public sealed class RunResponse
     public bool Applied { get; set; }
     public List<string> Warnings { get; set; }
 
+    /// <summary>"headless" (MSBuildWorkspace, what is on disk) or "vs" (the live Visual Studio workspace, unsaved edits included).</summary>
+    public string Source { get; set; }
+
     /// <summary>Process exit code: 0 ok, 1 failed (bad query, bad request, workspace), 3 Apply refused because the plan changed.</summary>
-    [JsonIgnore]
     public int ExitCode { get; set; }
 }
 
@@ -111,13 +111,32 @@ public sealed class FileChange
     public string Diff { get; set; }
 }
 
-[JsonSourceGenerationOptions(
-    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    UseStringEnumConverter = true,
-    PropertyNameCaseInsensitive = true,
-    ReadCommentHandling = System.Text.Json.JsonCommentHandling.Skip,
-    AllowTrailingCommas = true)]
-[JsonSerializable(typeof(RunRequest))]
-[JsonSerializable(typeof(RunResponse))]
-internal sealed partial class CliJson : JsonSerializerContext;
+/// <summary>What a bridge host writes to <c>%LOCALAPPDATA%/RoslynQuery/bridge/&lt;pid&gt;.json</c> so clients can find it.</summary>
+public sealed class BridgeHostInfo
+{
+    public int Pid { get; set; }
+    public string Pipe { get; set; }
+
+    /// <summary>First line a client sends. The file is only readable by the current user, so holding it proves the client could read it.</summary>
+    public string Token { get; set; }
+
+    /// <summary>Full path of the open solution, or null while none is.</summary>
+    public string Solution { get; set; }
+    public string StartedUtc { get; set; }
+    public string Version { get; set; }
+}
+
+/// <summary>Thrown by an apply callback to refuse writing; the run then fails with exit code 3 and nothing was written.</summary>
+public sealed class ApplyRefusedException(string message) : Exception(message);
+
+public static class BridgePaths
+{
+    public static string Directory
+    {
+        get
+        {
+            var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            return System.IO.Path.Combine(local, "RoslynQuery", "bridge");
+        }
+    }
+}

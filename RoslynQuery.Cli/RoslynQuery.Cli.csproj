@@ -25,6 +25,7 @@
   <ItemGroup>
     <Compile Include="..\RoslynQuery\Query\*.cs" Exclude="..\RoslynQuery\Query\ScopeResolver.Vs.cs" LinkBase="Shared\Query" />
     <Compile Include="..\RoslynQuery\Replace\ChangeApplier.cs;..\RoslynQuery\Replace\ReplaceCompiler.cs;..\RoslynQuery\Replace\ReplaceEngine.cs;..\RoslynQuery\Replace\ReplaceTemplate.cs;..\RoslynQuery\Replace\ReplacementItem.cs" LinkBase="Shared\Replace" />
+    <Compile Include="..\RoslynQuery\Protocol\*.cs" LinkBase="Shared\Protocol" />
     <Compile Include="..\RoslynQuery\Navigation\SpanMapper.cs" LinkBase="Shared\Navigation" />
   </ItemGroup>
 

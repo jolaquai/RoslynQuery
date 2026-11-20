@@ -6,6 +6,26 @@
   <Include href="KnownImageIds.vsct" />
 
   <Commands package="guidRoslynQueryPackage">
+    <Menus>
+      <!-- Tools > Roslyn Query -->
+      <Menu guid="guidRoslynQueryCmdSet" id="menuRoslynQuery" priority="0x0700" type="Menu">
+        <Parent guid="guidRoslynQueryCmdSet" id="groupToolsRoslynQuery" />
+        <Strings>
+          <ButtonText>Roslyn Query</ButtonText>
+          <CommandName>Roslyn Query</CommandName>
+        </Strings>
+      </Menu>
+    </Menus>
+
+    <Groups>
+      <Group guid="guidRoslynQueryCmdSet" id="groupToolsRoslynQuery" priority="0x0700">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_TOOLS" />
+      </Group>
+      <Group guid="guidRoslynQueryCmdSet" id="groupBridge" priority="0x0100">
+        <Parent guid="guidRoslynQueryCmdSet" id="menuRoslynQuery" />
+      </Group>
+    </Groups>
+
     <Buttons>
       <!-- View > Other Windows > Roslyn Query -->
       <Button guid="guidRoslynQueryCmdSet" id="cmdidShowQueryToolWindow" priority="0x0100" type="Button">
@@ -38,6 +58,34 @@
           <ButtonText>View Reference Graph</ButtonText>
         </Strings>
       </Button>
+
+      <!-- Tools > Roslyn Query > ... : the agent bridge the roslynquery CLI attaches to -->
+      <Button guid="guidRoslynQueryCmdSet" id="cmdidBridgeToggle" priority="0x0100" type="Button">
+        <Parent guid="guidRoslynQueryCmdSet" id="groupBridge" />
+        <CommandFlag>TextChanges</CommandFlag>
+        <Strings>
+          <ButtonText>Enable Agent Bridge</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="guidRoslynQueryCmdSet" id="cmdidBridgeRestart" priority="0x0101" type="Button">
+        <Parent guid="guidRoslynQueryCmdSet" id="groupBridge" />
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <Strings>
+          <ButtonText>Restart Agent Bridge</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="guidRoslynQueryCmdSet" id="cmdidBridgeLog" priority="0x0102" type="Button">
+        <Parent guid="guidRoslynQueryCmdSet" id="groupBridge" />
+        <Strings>
+          <ButtonText>Show Agent Bridge Log</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="guidRoslynQueryCmdSet" id="cmdidCopyCliPath" priority="0x0103" type="Button">
+        <Parent guid="guidRoslynQueryCmdSet" id="groupBridge" />
+        <Strings>
+          <ButtonText>Copy roslynquery CLI Path</ButtonText>
+        </Strings>
+      </Button>
     </Buttons>
   </Commands>
 
@@ -47,6 +95,14 @@
       <IDSymbol name="cmdidShowQueryToolWindow" value="0x0100" />
       <IDSymbol name="cmdidShowReferenceGraphToolWindow" value="0x0101" />
       <IDSymbol name="cmdidViewReferenceGraph" value="0x0102" />
+
+      <IDSymbol name="menuRoslynQuery" value="0x0200" />
+      <IDSymbol name="groupToolsRoslynQuery" value="0x0201" />
+      <IDSymbol name="groupBridge" value="0x0202" />
+      <IDSymbol name="cmdidBridgeToggle" value="0x0210" />
+      <IDSymbol name="cmdidBridgeRestart" value="0x0211" />
+      <IDSymbol name="cmdidBridgeLog" value="0x0212" />
+      <IDSymbol name="cmdidCopyCliPath" value="0x0213" />
     </GuidSymbol>
   </Symbols>
 

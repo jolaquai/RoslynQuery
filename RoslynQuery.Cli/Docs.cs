@@ -1,5 +1,6 @@
 using System.Text;
 
+using RoslynQuery.Protocol;
 using RoslynQuery.Query;
 using RoslynQuery.Replace;
 
@@ -57,6 +58,13 @@ internal static class Docs
         sb.AppendLine("```");
 
         sb.AppendLine("""
+
+            ## Live Visual Studio
+
+            When Visual Studio has the solution open and its bridge is enabled (Tools > Roslyn Query > Agent Bridge),
+            `run` talks to it by default: the same request runs against the live workspace, unsaved edits included,
+            and an `--apply` becomes one undoable edit in the editor. The response says `"source":"vs"`; without a
+            bridge it is `"headless"` (solution loaded from disk, ~seconds). `--no-attach` / `--attach` force either.
 
             ## Scope
 

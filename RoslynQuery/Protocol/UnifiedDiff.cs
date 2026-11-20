@@ -4,7 +4,7 @@ using System.Text;
 
 using Microsoft.CodeAnalysis.Text;
 
-namespace RoslynQuery.Cli;
+namespace RoslynQuery.Protocol;
 
 /// <summary>Line-based unified diff (Myers) between two versions of one file.</summary>
 internal static class UnifiedDiff

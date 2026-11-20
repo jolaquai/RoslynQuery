@@ -54,4 +54,10 @@ public sealed class RoslynQueryOptions : DialogPage
     [Description("Whether the Find box starts pre-filled with the example query. Turn off to start with an empty box.")]
     [DefaultValue(true)]
     public bool ShowExampleQuery { get; set; } = true;
+
+    [Category("Agent Bridge")]
+    [DisplayName("Start the agent bridge with Visual Studio")]
+    [Description("Lets the roslynquery CLI run against this Visual Studio's live workspace (unsaved edits included). Off by default: the bridge executes C# that the CLI sends, over a pipe only this Windows user can open. Tools > Roslyn Query > Agent Bridge flips it.")]
+    [DefaultValue(false)]
+    public bool AutoStartAgentBridge { get; set; }
 }
