@@ -216,6 +216,32 @@ public class QueryEngineResultKindTests
     }
 
     [Fact]
+    public async Task RunAsync_NodePredicateReturnsAToken_HitUsesThatTokensSpanAndKind()
+    {
+        var unit = await UnitAsync("class C { void M() { } }");
+        var hits = new List<QueryHit>();
+
+        var outcome = await RunAsync(unit, TargetKind.SyntaxNode, "n is MethodDeclarationSyntax m ? m.Identifier : null", hits);
+
+        Assert.Equal(1, outcome.Matched);
+        Assert.Equal(0, outcome.Errors);
+        Assert.Equal("IdentifierToken", Assert.Single(hits).Kind);
+    }
+
+    [Fact]
+    public async Task RunAsync_TokenPredicateReturnsANode_HitUsesThatNodesSpanAndKind()
+    {
+        var unit = await UnitAsync("class C { void M() { } }");
+        var hits = new List<QueryHit>();
+
+        var outcome = await RunAsync(unit, TargetKind.SyntaxToken, "t.Text == \"M\" ? t.Parent : null", hits);
+
+        Assert.Equal(1, outcome.Matched);
+        Assert.Equal(0, outcome.Errors);
+        Assert.Equal("MethodDeclaration", Assert.Single(hits).Kind);
+    }
+
+    [Fact]
     public async Task RunAsync_NodePredicateReturnsANodeBuiltWithSyntaxFactory_CountsAsAnErrorNotAHit()
     {
         var unit = await UnitAsync("class C { void M() { if (true) { } } }");

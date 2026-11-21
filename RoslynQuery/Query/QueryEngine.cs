@@ -351,13 +351,13 @@ internal static class QueryEngine
                 span = defaultSpan;
                 kind = defaultKind;
                 return matched;
-            case SyntaxNode node when target == TargetKind.SyntaxNode:
+            case SyntaxNode node when target != TargetKind.Operation:
                 if (node.SyntaxTree != tree)
                     throw new InvalidOperationException("The query returned a SyntaxNode that is not part of the tree being searched - only a node obtained from 'n' (or one of its descendants) can be returned as a result.");
                 span = node.Span;
                 kind = node.Kind().ToString();
                 return true;
-            case SyntaxToken token when target == TargetKind.SyntaxToken:
+            case SyntaxToken token when target != TargetKind.Operation:
                 if (token.SyntaxTree != tree)
                     throw new InvalidOperationException("The query returned a SyntaxToken that is not part of the tree being searched - only a token obtained from 't' (or a sibling/descendant token) can be returned as a result.");
                 span = token.Span;
