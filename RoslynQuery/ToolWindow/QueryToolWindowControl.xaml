@@ -399,6 +399,7 @@
                                  ItemTemplate="{StaticResource ResultTemplate}"
                                  ContextMenu="{StaticResource HitMenu}"
                                  PreviewMouseRightButtonDown="OnResultsPreviewRightClick"
+                                 ContextMenuOpening="OnResultsContextMenuOpening"
                                  MouseDoubleClick="OnResultDoubleClick" />
                     </Grid>
                 </TabItem>
@@ -484,6 +485,7 @@
                                      ItemTemplate="{StaticResource ReplacementTemplate}"
                                      ContextMenu="{StaticResource HitMenu}"
                                      PreviewMouseRightButtonDown="OnResultsPreviewRightClick"
+                                     ContextMenuOpening="OnResultsContextMenuOpening"
                                      MouseDoubleClick="OnReplaceResultDoubleClick"
                                      PreviewKeyDown="OnReplaceResultsPreviewKeyDown" />
                         </Grid>

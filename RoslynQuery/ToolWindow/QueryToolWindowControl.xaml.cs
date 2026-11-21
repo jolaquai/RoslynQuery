@@ -212,6 +212,12 @@ public partial class QueryToolWindowControl : UserControl
     {
         var item = ItemsControl.ContainerFromElement((ItemsControl)sender, (DependencyObject)e.OriginalSource) as ListBoxItem;
         if (item != null) item.IsSelected = true;
+        else ((ListBox)sender).SelectedItem = null;
+    }
+
+    private void OnResultsContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        if (((ListBox)sender).SelectedItem == null) e.Handled = true;
     }
 
     private static QueryHit HitOf(object menuItemSender)
