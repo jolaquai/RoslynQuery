@@ -40,6 +40,8 @@ namespace RoslynQuery;
     expression: "CSharp",
     termNames: ["CSharp"],
     termValues: ["ActiveEditorContentType:CSharp"])]
+// Loads at every start so the stable CLI copy is refreshed after an update even before a solution is opened.
+[ProvideAutoLoad(VSConstants.UICONTEXT.ShellInitialized_string, PackageAutoLoadFlags.BackgroundLoad)]
 // The C# editor rule alone never fires when a solution opens with no C# document focused, so the bridge would not auto-start.
 [ProvideAutoLoad(BridgeAutoStartContextGuidString, PackageAutoLoadFlags.BackgroundLoad)]
 [ProvideUIContextRule(

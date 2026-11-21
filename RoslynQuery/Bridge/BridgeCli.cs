@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Text;
 
 namespace RoslynQuery.Bridge;
@@ -32,20 +33,40 @@ internal static class BridgeCli
             var stamp = info.Length + ":" + info.LastWriteTimeUtc.Ticks;
             var stampFile = Path.Combine(target, ".stamp");
 
-            if (File.Exists(targetExe) && File.Exists(stampFile) && File.ReadAllText(stampFile) == stamp) return targetExe;
+            bool UpToDate() => File.Exists(targetExe) && File.Exists(stampFile) && File.ReadAllText(stampFile) == stamp;
 
-            Directory.CreateDirectory(target);
-            Kill(targetExe);
+            if (UpToDate()) return targetExe;
 
-            foreach (var file in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+            // Several Visual Studios start at once after an update; only one may kill and copy.
+            using var mutex = new Mutex(false, @"Local\RoslynQueryCliInstall");
+            bool owned;
+            try { owned = mutex.WaitOne(TimeSpan.FromSeconds(30)); }
+            catch (AbandonedMutexException) { owned = true; }
+
+            if (!owned) return UpToDate() ? targetExe : source;
+
+            try
             {
-                var destination = Path.Combine(target, file.Substring(sourceDirectory.Length).TrimStart('\\', '/'));
-                Directory.CreateDirectory(Path.GetDirectoryName(destination));
-                File.Copy(file, destination, overwrite: true);
-            }
+                if (UpToDate()) return targetExe;
 
-            File.WriteAllText(stampFile, stamp);
-            return targetExe;
+                Directory.CreateDirectory(target);
+                File.Delete(stampFile);
+                Kill(targetExe);
+
+                foreach (var file in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+                {
+                    var destination = Path.Combine(target, file.Substring(sourceDirectory.Length).TrimStart('\\', '/'));
+                    Directory.CreateDirectory(Path.GetDirectoryName(destination));
+                    File.Copy(file, destination, overwrite: true);
+                }
+
+                File.WriteAllText(stampFile, stamp);
+                return targetExe;
+            }
+            finally
+            {
+                mutex.ReleaseMutex();
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
