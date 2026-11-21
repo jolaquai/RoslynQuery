@@ -16,9 +16,10 @@ namespace RoslynQuery.Cli;
 internal static class Attach
 {
     /// <summary>Null when no matching host is running.</summary>
-    public static BridgeHostInfo Find(RunRequest request, out List<int> candidates)
+    public static BridgeHostInfo Find(RunRequest request, out List<int> candidates, out BridgeMatch match)
     {
         candidates = [];
+        match = BridgeMatch.None;
         var directory = BridgePaths.Directory;
         if (!Directory.Exists(directory)) return null;
 
@@ -46,7 +47,7 @@ internal static class Attach
             hosts.Add(info);
         }
 
-        return BridgeSelection.Pick(hosts, wanted, cwd, ancestors, out candidates);
+        return BridgeSelection.Pick(hosts, wanted, cwd, ancestors, out candidates, out match);
     }
 
     /// <summary>Solutions that live bridges have open, "path (pid n)" each.</summary>

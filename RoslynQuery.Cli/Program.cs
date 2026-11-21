@@ -94,7 +94,7 @@ internal static class Program
     {
         if (mode != AttachMode.Never)
         {
-            var host = Attach.Find(request, out var candidates);
+            var host = Attach.Find(request, out var candidates, out var match);
             if (host is null && mode == AttachMode.Force)
                 return new RunResponse { Error = "No Visual Studio bridge is running for this solution. Enable it under Extensions > Roslyn Query > Agent Bridge.", ExitCode = 1 };
 
@@ -104,8 +104,8 @@ internal static class Program
                 {
                     var answer = await Attach.RunAsync(host, request, cancellationToken).ConfigureAwait(false);
                     answer.BridgePid = host.Pid;
-                    if (BridgeSelection.AmbiguityWarning(candidates, host.Pid) is { } ambiguity)
-                        (answer.Warnings ??= []).Add(ambiguity);
+                    if (BridgeSelection.Explanation(candidates, host, match) is { } explanation)
+                        (answer.Warnings ??= []).Add(explanation);
 
                     return answer;
                 }
