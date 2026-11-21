@@ -16,8 +16,9 @@ namespace RoslynQuery.Cli;
 internal static class Attach
 {
     /// <summary>Null when no matching host is running.</summary>
-    public static BridgeHostInfo Find(RunRequest request)
+    public static BridgeHostInfo Find(RunRequest request, out List<int> candidates)
     {
+        candidates = [];
         var directory = BridgePaths.Directory;
         if (!Directory.Exists(directory)) return null;
 
@@ -45,6 +46,7 @@ internal static class Attach
 
             var score = Score(info.Solution, wanted, cwd);
             if (score == 0) continue;
+            candidates.Add(info.Pid);
 
             // Ancestry first, then how well the solution matches, then the newest instance, so ties are never arbitrary.
             var key = (ancestors.Contains(info.Pid), score, info.StartedUtc ?? string.Empty);

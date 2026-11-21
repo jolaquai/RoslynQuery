@@ -62,6 +62,9 @@ public sealed class RunResponse
     /// <summary>"headless" (MSBuildWorkspace, what is on disk) or "vs" (the live Visual Studio workspace, unsaved edits included).</summary>
     public string Source { get; set; }
 
+    /// <summary>Process id of the Visual Studio that answered; set only when Source is "vs".</summary>
+    public int? BridgePid { get; set; }
+
     /// <summary>Process exit code: 0 ok, 1 failed (bad query, bad request, workspace), 3 Apply refused because the plan changed.</summary>
     public int ExitCode { get; set; }
 }

@@ -94,7 +94,7 @@ internal static class Program
     {
         if (mode != AttachMode.Never)
         {
-            var host = Attach.Find(request);
+            var host = Attach.Find(request, out var candidates);
             if (host is null && mode == AttachMode.Force)
                 return new RunResponse { Error = "No Visual Studio bridge is running for this solution. Enable it under Extensions > Roslyn Query > Agent Bridge.", ExitCode = 1 };
 
@@ -102,7 +102,13 @@ internal static class Program
             {
                 try
                 {
-                    return await Attach.RunAsync(host, request, cancellationToken).ConfigureAwait(false);
+                    var answer = await Attach.RunAsync(host, request, cancellationToken).ConfigureAwait(false);
+                    answer.BridgePid = host.Pid;
+                    if (candidates.Count > 1)
+                        (answer.Warnings ??= []).Add("Several Visual Studio instances have this solution open (pids " + string.Join(", ", candidates) + "); the one that answered is pid " + host.Pid
+                            + " (an ancestor of this process if there is one, else the most recently started). Unsaved edits in the others were not seen.");
+
+                    return answer;
                 }
                 catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException && !cancellationToken.IsCancellationRequested)
                 {
