@@ -617,8 +617,9 @@ editing file by file. The extension ships a command line tool and an MCP server 
 
 **Set up an MCP client** (Claude Code, Cursor, VS Code, anything that speaks MCP over stdio)
 
-1. Install the extension, then `Tools > Roslyn Query > Copy roslynquery CLI Path`. The path is also in
-   `%LOCALAPPDATA%\RoslynQuery\cli-path.txt`, which is the place for an agent or script to look it up.
+1. Install the extension, then `Extensions > Roslyn Query > Copy roslynquery CLI Path`. The path is also in
+   `%LOCALAPPDATA%\RoslynQuery\cli-path.txt`, which is the place for an agent or script to look it up. The extension copies the CLI to
+   `%LOCALAPPDATA%\Programs\RoslynQuery\mcp` (stable across updates; a running copy is killed when it is replaced).
 2. Register it as a stdio server, with the project folder as the working directory:
 
    ```json
@@ -626,7 +627,7 @@ editing file by file. The extension ships a command line tool and an MCP server 
    ```
 
    Claude Code: `claude mcp add roslynquery -- "<path>" mcp`.
-3. Optional, for the live workspace: `Tools > Roslyn Query > Enable Agent Bridge` (see [Agent bridge](#agent-bridge)).
+3. Optional, for the live workspace: `Extensions > Roslyn Query > Enable Agent Bridge` (see [Agent bridge](#agent-bridge)).
 
 Without the bridge the tools load the solution from disk, which takes seconds and ignores unsaved editor changes. With
 it they run in the Visual Studio that has the solution open: unsaved edits are visible, there is no load time, and an
@@ -637,8 +638,9 @@ agent's process wins (terminal or tool launched from inside it), then the best s
 
 - Replace never writes on its own. It returns diffs; a write needs `apply` plus the `planId` of the dry run the
   reviewer saw, and is refused (exit code 3) if the sources or the query changed since.
-- The bridge is off by default, listens on a named pipe only the current Windows user can open, and requires a
-  per-session token. A predicate is C# that runs in your Visual Studio, so only enable it for clients you trust.
+- The bridge starts with Visual Studio by default, listens on a named pipe only the current Windows user can open, and requires a
+  per-session token. A predicate is C# that runs in your Visual Studio, so disable it if you do not trust every process
+  running as your Windows user.
 - Search is read-only; the MCP tool annotations mark `search`, `docs` and `bridges` read-only and `replace` destructive.
 
 **For agents reading this:** run `roslynquery docs` first. It lists the predicate parameters per target, the imports in
@@ -666,7 +668,7 @@ release workflow's `Publish CLI` step (or `scripts/publish-cli.ps1`) produces th
 ### MCP
 
 `roslynquery mcp` serves `search`, `replace` (dry run, then `apply` + `expectPlan`), `docs` and `bridges` over
-stdio, so MCP clients need nothing but the path (`Tools > Roslyn Query > Copy roslynquery CLI Path`):
+stdio, so MCP clients need nothing but the path (`Extensions > Roslyn Query > Copy roslynquery CLI Path`):
 
 ```json
 { "mcpServers": { "roslynquery": { "command": "C:\\...\\Cli\\win-x64\\roslynquery.exe", "args": ["mcp"] } } }
@@ -680,18 +682,18 @@ Output is one JSON document on stdout, exit code 0 on success. Replace never wri
 
 The CLI compiles the engine's sources straight from `RoslynQuery/` (see `RoslynQuery.Cli.csproj`) instead of
 referencing them. The VSIX also bundles it, self-contained, under `Cli/win-x64` and `Cli/win-arm64` in its install
-folder (`Tools > Roslyn Query > Copy roslynquery CLI Path`; the path is also written to
+folder, copied to `%LOCALAPPDATA%\Programs\RoslynQuery\mcp` (`Extensions > Roslyn Query > Copy roslynquery CLI Path`; the path is also written to
 `%LOCALAPPDATA%\RoslynQuery\cli-path.txt`). That folder is the only place the VSIX may carry extra DLLs, since it runs
 as its own process and devenv never loads from it; `release.yml` checks exactly that.
 
 ### Agent bridge
 
-`Tools > Roslyn Query > Enable Agent Bridge` makes this Visual Studio answer the CLI's requests over a named pipe that
+The agent bridge (on by default, `Extensions > Roslyn Query > Disable Agent Bridge` turns it off) makes this Visual Studio answer the CLI's requests over a named pipe that
 only the current Windows user can open (plus a per-session token kept in `%LOCALAPPDATA%\RoslynQuery\bridge`). `run`
 then uses the live workspace instead of loading from disk, so unsaved edits are seen, there is no solution load, and
 `--apply` is a single undoable edit. The response says `"source":"vs"` or `"headless"`; `--attach` / `--no-attach`
-force one. Restart and the request log (Output window, "Roslyn Query") are in the same menu. It is off by default
-because it executes the C# a client sends; the choice is remembered (`Tools > Options > RoslynQuery > General`).
+force one. Restart and the request log (Output window, "Roslyn Query") are in the same menu. It executes the C# a client
+sends; the choice is remembered (`Tools > Options > RoslynQuery > General`).
 
 ## Environment
 

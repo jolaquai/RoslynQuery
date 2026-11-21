@@ -14,8 +14,8 @@ Do not change code to make a test pass: record the failure (see "Reporting") and
 3. Test solution: clone this repo and open `RoslynQuery.slnx` in VS. It has C# of every shape needed and a test project.
    Keep a second scratch copy of a small solution (`git worktree` or a copy) for destructive replace tests.
 4. Work in a normal terminal unless a test says "VS terminal" (View > Terminal, started by devenv).
-5. Locate the CLI: Tools > Roslyn Query > **Copy CLI path**, paste it. Also readable in
-   `%LOCALAPPDATA%\RoslynQuery\cli-path.txt`. Expected: `...\Cli\win-x64\roslynquery.exe` (or `win-arm64` on ARM).
+5. Locate the CLI: Extensions > Roslyn Query > **Copy CLI path**, paste it. Also readable in
+   `%LOCALAPPDATA%\RoslynQuery\cli-path.txt`. Expected: `%LOCALAPPDATA%\Programs\RoslynQuery\mcp\roslynquery.exe` (copied from the bundled `Cli\win-x64` or `win-arm64`).
    Set `$cli` to it. Every `roslynquery` below means `& $cli`.
 
 ## 1. Headless CLI (VS closed or `--no-attach`)
@@ -55,7 +55,7 @@ Always use `--no-attach` here. Output is one JSON line on stdout; diagnostics go
 
 ## 2. Agent Bridge (in VS)
 
-1. Tools > **Roslyn Query** menu exists with: enable/disable bridge, restart, show log, copy CLI path. Bridge is OFF by default.
+1. Extensions > **Roslyn Query** menu exists with: enable/disable bridge, restart, show log, copy CLI path. Bridge is ON by default (fresh profile); Restart is hidden while it is off.
 2. Enable. Expected: log (Show log, Output pane) says listening; file `%LOCALAPPDATA%\RoslynQuery\bridge\<devenv pid>.json` exists
    (pid, pipe, token, solution). Opening/closing a solution rewrites `solution` in it.
 3. Run 1.4 *without* `--no-attach` from a normal terminal. Expected: `source:"vs"`. `--attach` works too; with the bridge
@@ -67,7 +67,7 @@ Always use `--no-attach` here. Output is one JSON line on stdout; diagnostics go
    (mismatch -> exit 3). Dirty documents / files changed in the editor after the dry run -> refused, not clobbered.
 6. Disable -> the pipe and host file disappear; CLI falls back to headless. Re-enable; **Restart** keeps working.
    Close VS with bridge on: host file removed (or cleaned up as dead pid by the next CLI call).
-7. Remembered state: enable, close VS, reopen: bridge auto-starts (option `AutoStartAgentBridge`). Disable, restart VS: stays off.
+7. Remembered state: enable, close VS, reopen with no C# file focused: bridge auto-starts once the solution loads (option `AutoStartAgentBridge`). Disable, restart VS: stays off and the package does not load until a C# editor is active.
 8. Auth (security): from PowerShell open `\\.\pipe\<pipe name from host file>` with `NamedPipeClientStream`, send a WRONG
    token line then a request. Expected: rejected, no workspace access. Pipe ACL is current-user only
    (`icacls`-style check not possible on pipes; confirm via a second Windows user if available).
@@ -109,7 +109,7 @@ Run any search in the tool window (View > Other Windows > Roslyn Query), then in
 
 - Existing tool window: search, replace preview, apply, Ctrl+Z, result navigation (double-click) all still work.
 - `RoslynQuery.Tests` run green locally: `dotnet build RoslynQuery.Tests -c Release; .\RoslynQuery.Tests\bin\Release\net472\RoslynQuery.Tests.exe`.
-- VS startup time / package load unaffected with the bridge off (bridge must not start by default).
+- VS startup time / package load unaffected with the bridge disabled (no auto-load until a C# editor is active).
 - Install on a clean VS profile (`devenv /rootsuffix Exp` or a VM): extension loads, no MEF composition errors in
   `%APPDATA%\Microsoft\VisualStudio\<ver>\ActivityLog.xml` (look for RoslynQuery / duplicate assembly identity).
 - [ARM] On Windows on ARM, `Copy CLI path` yields `win-arm64` and 1.4 works.
