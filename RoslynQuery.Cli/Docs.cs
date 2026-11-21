@@ -65,6 +65,10 @@ internal static class Docs
             `run` talks to it by default: the same request runs against the live workspace, unsaved edits included,
             and an `--apply` becomes one undoable edit in the editor. The response says `"source":"vs"`; without a
             bridge it is `"headless"` (solution loaded from disk, ~seconds). `--no-attach` / `--attach` force either.
+            Pass the solution Visual Studio has open as `solution` (`-s`): without it, a process not started from
+            inside Visual Studio only attaches when the working directory is in the solution or one instance is open.
+            `bridgePid` names the instance that answered; `warnings` say when the run was headless although a bridge
+            was open, or when several instances matched equally well. `bridges` lists the open instances.
 
             ## Scope
 

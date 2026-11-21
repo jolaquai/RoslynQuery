@@ -631,8 +631,17 @@ editing file by file. The extension ships a command line tool and an MCP server 
 
 Without the bridge the tools load the solution from disk, which takes seconds and ignores unsaved editor changes. With
 it they run in the Visual Studio that has the solution open: unsaved edits are visible, there is no load time, and an
-applied replace is one undoable edit in the editor. When several Visual Studio instances run, the one that started the
-agent's process wins (terminal or tool launched from inside it), then the best solution match, then the newest.
+applied replace is one undoable edit in the editor.
+
+Which Visual Studio answers, in order: the one matching an explicit `solution` best (exact file, same folder, or a folder
+containing the other, nearer first); without `solution`, the one that started the agent's process (its terminal, or an
+MCP server it launched, as Copilot does), then the one whose solution contains the working directory, then the only
+open instance. Ties go to the newest. Agents hosted elsewhere (Claude Desktop) usually have an unrelated working
+directory, so they should pass `solution`; the `bridges` tool lists what is open.
+
+A response that left the live workspace carries a warning, so an agent can tell: a headless run while a bridge was
+open names the open solutions, an attach to several equally good instances lists their pids, and every VS answer
+carries `bridgePid`.
 
 **Safety model**
 
@@ -692,7 +701,7 @@ The agent bridge (on by default, `Extensions > Roslyn Query > Disable Agent Brid
 only the current Windows user can open (plus a per-session token kept in `%LOCALAPPDATA%\RoslynQuery\bridge`). `run`
 then uses the live workspace instead of loading from disk, so unsaved edits are seen, there is no solution load, and
 `--apply` is a single undoable edit. The response says `"source":"vs"` or `"headless"`; `--attach` / `--no-attach`
-force one. Restart and the request log (Output window, "Roslyn Query") are in the same menu. It executes the C# a client
+force one; `bridgePid` names the instance that answered. Restart and the request log (Output window, "Roslyn Query") are in the same menu. It executes the C# a client
 sends; the choice is remembered (`Tools > Options > RoslynQuery > General`).
 
 ## Environment
