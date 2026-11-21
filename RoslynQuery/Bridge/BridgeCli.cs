@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -16,12 +17,71 @@ internal static class BridgeCli
         return File.Exists(path) ? path : null;
     }
 
+    /// <summary>Copies the bundled CLI to <c>%LOCALAPPDATA%/Programs/RoslynQuery/mcp</c>, whose path survives extension updates; running copies are killed first, agents restart them. Falls back to the bundled path.</summary>
+    public static string Install()
+    {
+        var source = Locate();
+        if (source is null) return null;
+
+        try
+        {
+            var sourceDirectory = Path.GetDirectoryName(source);
+            var target = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "RoslynQuery", "mcp");
+            var targetExe = Path.Combine(target, "roslynquery.exe");
+            var info = new FileInfo(source);
+            var stamp = info.Length + ":" + info.LastWriteTimeUtc.Ticks;
+            var stampFile = Path.Combine(target, ".stamp");
+
+            if (File.Exists(targetExe) && File.Exists(stampFile) && File.ReadAllText(stampFile) == stamp) return targetExe;
+
+            Directory.CreateDirectory(target);
+            Kill(targetExe);
+
+            foreach (var file in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+            {
+                var destination = Path.Combine(target, file.Substring(sourceDirectory.Length).TrimStart('\\', '/'));
+                Directory.CreateDirectory(Path.GetDirectoryName(destination));
+                File.Copy(file, destination, overwrite: true);
+            }
+
+            File.WriteAllText(stampFile, stamp);
+            return targetExe;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return source;
+        }
+    }
+
+    private static void Kill(string exe)
+    {
+        foreach (var process in Process.GetProcessesByName("roslynquery"))
+        {
+            try
+            {
+                if (string.Equals(process.MainModule?.FileName, exe, StringComparison.OrdinalIgnoreCase))
+                {
+                    process.Kill();
+                    process.WaitForExit(3000);
+                }
+            }
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or NotSupportedException)
+            {
+                // Exited meanwhile or not ours to inspect.
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        }
+    }
+
     /// <summary>Writes the path to <c>%LOCALAPPDATA%/RoslynQuery/cli-path.txt</c>, the one stable place an agent can look it up.</summary>
     public static void PublishPath()
     {
         try
         {
-            var path = Locate();
+            var path = Install();
             if (path is null) return;
 
             var directory = Path.GetDirectoryName(Protocol.BridgePaths.Directory);
