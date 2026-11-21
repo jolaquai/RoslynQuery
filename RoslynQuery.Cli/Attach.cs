@@ -61,12 +61,13 @@ internal static class Attach
         var hosts = new System.Collections.Generic.List<object>();
         if (Directory.Exists(directory))
         {
+            var ancestors = ProcessTree.Ancestors();
             foreach (var file in Directory.EnumerateFiles(directory, "*.json"))
             {
                 try
                 {
                     var info = JsonSerializer.Deserialize(File.ReadAllText(file), CliJson.Default.BridgeHostInfo);
-                    if (info?.Solution != null && IsAlive(info.Pid)) hosts.Add(new { pid = info.Pid, solution = info.Solution, version = info.Version, startedUtc = info.StartedUtc });
+                    if (info?.Solution != null && IsAlive(info.Pid)) hosts.Add(new { pid = info.Pid, solution = info.Solution, version = info.Version, startedUtc = info.StartedUtc, ancestor = ancestors.Contains(info.Pid) });
                 }
                 catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { }
             }

@@ -70,14 +70,16 @@ internal static class McpServer
             [Description("Write the change. Pass together with expectPlan.")] bool apply = false,
             [Description("The planId of the dry run that was reviewed.")] string expectPlan = null,
             CancellationToken cancellationToken = default)
-            => await Run(new RunRequest { Query = query, Replace = replacement, Apply = apply, ExpectPlan = expectPlan, Solution = solution, Project = project, File = file, Line = line, Column = column, Max = max, IncludeGenerated = includeGenerated }, target, scope, cancellationToken).ConfigureAwait(false);
+            => apply && string.IsNullOrEmpty(expectPlan)
+                ? JsonSerializer.Serialize(new RunResponse { Error = "apply=true needs expectPlan: run without apply first, review the diff, then pass its planId.", ExitCode = 1 }, CliJsonOut.Compact)
+                : await Run(new RunRequest { Query = query, Replace = replacement, Apply = apply, ExpectPlan = expectPlan, Solution = solution, Project = project, File = file, Line = line, Column = column, Max = max, IncludeGenerated = includeGenerated }, target, scope, cancellationToken).ConfigureAwait(false);
 
         [McpServerTool(Name = "docs", ReadOnly = true)]
         [Description("How to write predicates and replacements: parameter signatures per target, the imports already in scope, examples.")]
         public static string Docs() => Cli.Docs.Build();
 
         [McpServerTool(Name = "bridges", ReadOnly = true)]
-        [Description("Lists the Visual Studio instances whose agent bridge is enabled (pid, open solution). 'search' and 'replace' use the one matching their solution/working directory; pass 'solution' to choose between several.")]
+        [Description("Lists the Visual Studio instances whose agent bridge is enabled (pid, open solution, ancestor = started from inside that instance). 'search' and 'replace' use the one matching their solution/working directory; pass 'solution' to choose between several.")]
         public static string Bridges() => Attach.Describe();
 
         private static async Task<string> Run(RunRequest request, string target, string scope, CancellationToken cancellationToken)
