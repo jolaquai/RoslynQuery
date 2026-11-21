@@ -79,6 +79,15 @@ internal static class BridgeSelection
         return best;
     }
 
+    public static string Name(BridgeMatch match) => match switch
+    {
+        BridgeMatch.Solution => "solution",
+        BridgeMatch.Ancestor => "ancestor",
+        BridgeMatch.WorkingDirectory => "workingDirectory",
+        BridgeMatch.OnlyInstance => "onlyInstance",
+        _ => null
+    };
+
     /// <summary>Null unless the answer was not the only plausible one.</summary>
     public static string Explanation(IReadOnlyList<int> candidates, BridgeHostInfo answered, BridgeMatch match) => match switch
     {

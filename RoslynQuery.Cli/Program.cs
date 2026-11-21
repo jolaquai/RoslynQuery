@@ -104,6 +104,7 @@ internal static class Program
                 {
                     var answer = await Attach.RunAsync(host, request, cancellationToken).ConfigureAwait(false);
                     answer.BridgePid = host.Pid;
+                    answer.BridgeMatch = BridgeSelection.Name(match);
                     if (BridgeSelection.Explanation(candidates, host, match) is { } explanation)
                         (answer.Warnings ??= []).Add(explanation);
 

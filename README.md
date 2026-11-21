@@ -641,7 +641,7 @@ directory, so they should pass `solution`; the `bridges` tool lists what is open
 
 A response that left the live workspace carries a warning, so an agent can tell: a headless run while a bridge was
 open names the open solutions, an attach to several equally good instances lists their pids, and every VS answer
-carries `bridgePid`.
+carries `bridgePid` and `bridgeMatch` (why it was chosen: `solution`, `ancestor`, `workingDirectory` or `onlyInstance`).
 
 **Safety model**
 
@@ -701,7 +701,7 @@ The agent bridge (on by default, `Extensions > Roslyn Query > Disable Agent Brid
 only the current Windows user can open (plus a per-session token kept in `%LOCALAPPDATA%\RoslynQuery\bridge`). `run`
 then uses the live workspace instead of loading from disk, so unsaved edits are seen, there is no solution load, and
 `--apply` is a single undoable edit. The response says `"source":"vs"` or `"headless"`; `--attach` / `--no-attach`
-force one; `bridgePid` names the instance that answered. Restart and the request log (Output window, "Roslyn Query") are in the same menu. It executes the C# a client
+force one; `bridgePid` names the instance that answered (`bridgeMatch` says why). Restart and the request log (Output window, "Roslyn Query") are in the same menu. It executes the C# a client
 sends; the choice is remembered (`Tools > Options > RoslynQuery > General`).
 
 ## Environment

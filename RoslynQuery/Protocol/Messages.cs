@@ -65,6 +65,9 @@ public sealed class RunResponse
     /// <summary>Process id of the Visual Studio that answered; set only when Source is "vs".</summary>
     public int? BridgePid { get; set; }
 
+    /// <summary>Why that instance was chosen: "solution" (explicit match), "ancestor" (it started this process), "workingDirectory" or "onlyInstance".</summary>
+    public string BridgeMatch { get; set; }
+
     /// <summary>Process exit code: 0 ok, 1 failed (bad query, bad request, workspace), 3 Apply refused because the plan changed.</summary>
     public int ExitCode { get; set; }
 }

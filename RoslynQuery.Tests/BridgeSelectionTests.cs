@@ -103,6 +103,14 @@ public class BridgeSelectionTests
         Assert.Null(picked);
     }
 
+    [Theory]
+    [InlineData("Solution", "solution")]
+    [InlineData("Ancestor", "ancestor")]
+    [InlineData("WorkingDirectory", "workingDirectory")]
+    [InlineData("OnlyInstance", "onlyInstance")]
+    [InlineData("None", null)]
+    public void Name_IsTheWireValue(string match, string expected) => Assert.Equal(expected, BridgeSelection.Name((BridgeMatch)System.Enum.Parse(typeof(BridgeMatch), match)));
+
     [Fact]
     public void Explanation_AncestorOrSingleCandidate_IsNull()
     {

@@ -67,7 +67,8 @@ internal static class Docs
             bridge it is `"headless"` (solution loaded from disk, ~seconds). `--no-attach` / `--attach` force either.
             Pass the solution Visual Studio has open as `solution` (`-s`): without it, a process not started from
             inside Visual Studio only attaches when the working directory is in the solution or one instance is open.
-            `bridgePid` names the instance that answered; `warnings` say when the run was headless although a bridge
+            `bridgePid` names the instance that answered and `bridgeMatch` why (`solution`, `ancestor`,
+            `workingDirectory`, `onlyInstance`); `warnings` say when the run was headless although a bridge
             was open, or when several instances matched equally well. `bridges` lists the open instances.
 
             ## Scope
