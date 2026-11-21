@@ -114,7 +114,19 @@ internal static class Program
             }
         }
 
-        return await Runner.RunAsync(request, cancellationToken).ConfigureAwait(false);
+        var response = await Runner.RunAsync(request, cancellationToken).ConfigureAwait(false);
+
+        if (mode == AttachMode.Auto)
+        {
+            var open = Attach.LiveSolutions();
+            if (open.Count > 0)
+            {
+                (response.Warnings ??= []).Add("Ran headless on the files on disk (unsaved editor changes are not seen) although Visual Studio has an agent bridge open: "
+                    + string.Join("; ", open) + ". If one of those is the solution you mean, pass its path as 'solution' (--solution) to use the live workspace.");
+            }
+        }
+
+        return response;
     }
 
     private static (RunRequest Request, bool Pretty, AttachMode Attach) Parse(string[] args)

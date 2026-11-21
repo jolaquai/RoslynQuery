@@ -35,7 +35,7 @@ internal static class McpServer
     [McpServerToolType]
     private sealed class Tools
     {
-        private const string Common = " Lines and columns are 1-based. Read the 'docs' tool once for the predicate signatures and examples.";
+        private const string Common = " Lines and columns are 1-based. If Visual Studio has the solution open, pass its path as 'solution' to run against the live workspace (unsaved edits included); otherwise the files on disk are used. Read the 'docs' tool once for the predicate signatures and examples.";
 
         [McpServerTool(Name = "search", ReadOnly = true, Destructive = false)]
         [Description("Runs a C# predicate over every syntax node, token or operation of a solution and returns the matches as JSON (file, line, column, end, kind, preview)." + Common)]

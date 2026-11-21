@@ -54,6 +54,26 @@ internal static class Attach
         return best;
     }
 
+    /// <summary>Solutions that live bridges have open, "path (pid n)" each.</summary>
+    public static List<string> LiveSolutions()
+    {
+        var result = new List<string>();
+        var directory = BridgePaths.Directory;
+        if (!Directory.Exists(directory)) return result;
+
+        foreach (var file in Directory.EnumerateFiles(directory, "*.json"))
+        {
+            try
+            {
+                var info = JsonSerializer.Deserialize(File.ReadAllText(file), CliJson.Default.BridgeHostInfo);
+                if (info?.Solution != null && IsAlive(info.Pid)) result.Add(info.Solution + " (pid " + info.Pid + ")");
+            }
+            catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { }
+        }
+
+        return result;
+    }
+
     /// <summary>The live hosts as JSON, for the MCP 'bridges' tool.</summary>
     public static string Describe()
     {
