@@ -6,6 +6,7 @@ using System.Windows;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.LanguageServices;
 using Microsoft.VisualStudio.Shell;
@@ -39,11 +40,20 @@ namespace RoslynQuery;
     expression: "CSharp",
     termNames: ["CSharp"],
     termValues: ["ActiveEditorContentType:CSharp"])]
+// The C# editor rule alone never fires when a solution opens with no C# document focused, so the bridge would not auto-start.
+[ProvideAutoLoad(BridgeAutoStartContextGuidString, PackageAutoLoadFlags.BackgroundLoad)]
+[ProvideUIContextRule(
+    BridgeAutoStartContextGuidString,
+    name: "Solution loaded, agent bridge not disabled",
+    expression: "Solution & !Disabled",
+    termNames: ["Solution", "Disabled"],
+    termValues: [VSConstants.UICONTEXT.SolutionExistsAndFullyLoaded_string, "UserSettingsStoreQuery:" + RoslynQueryOptions.SettingsCollection + "\\" + RoslynQueryOptions.BridgeDisabledProperty])]
 public sealed class RoslynQueryPackage : AsyncPackage
 {
     public const string PackageGuidString = "943e02ac-bfd8-4648-9948-4b7d144f6a2d";
 
     private const string CSharpEditorContextGuidString = "c6829cab-589c-4037-b587-0ac4a1bb2aa8";
+    private const string BridgeAutoStartContextGuidString = "69516635-5dc6-44bc-b879-718e1f2216f0";
 
     public static readonly Guid CommandSet = new Guid("7acc99ae-d964-461e-94d9-9ef567e60889");
     public const int ShowToolWindowCommandId = 0x0100;
@@ -86,9 +96,11 @@ public sealed class RoslynQueryPackage : AsyncPackage
         commands.AddCommand(new MenuCommand(CopyCliPath, new CommandID(CommandSet, CopyCliPathCommandId)));
 
         // Wherever the CLI shipped to, agents read this one stable file to find it.
-        BridgeCli.PublishPath();
+        System.Threading.Tasks.Task.Run(BridgeCli.PublishPath).FileAndForget("vs/roslynquery/publishcli");
 
-        if (((RoslynQueryOptions)GetDialogPage(typeof(RoslynQueryOptions))).AutoStartAgentBridge)
+        var options = (RoslynQueryOptions)GetDialogPage(typeof(RoslynQueryOptions));
+        options.SyncBridgeDisabledFlag();
+        if (options.AutoStartAgentBridge)
             await EnsureBridgeAsync().ConfigureAwait(true);
     }
 
@@ -134,7 +146,7 @@ public sealed class RoslynQueryPackage : AsyncPackage
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
-        var path = BridgeCli.Locate();
+        var path = BridgeCli.Install();
         if (path is null)
         {
             VsShellUtilities.ShowMessageBox(this, "This build of the extension does not bundle the roslynquery CLI (it is added by the release build).", "Roslyn Query",

@@ -1,6 +1,8 @@
 using System.ComponentModel;
 
+using Microsoft.VisualStudio.Settings;
 using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Shell.Settings;
 
 using RoslynQuery.Query;
 
@@ -57,7 +59,24 @@ public sealed class RoslynQueryOptions : DialogPage
 
     [Category("Agent Bridge")]
     [DisplayName("Start the agent bridge with Visual Studio")]
-    [Description("Lets the roslynquery CLI run against this Visual Studio's live workspace (unsaved edits included). Off by default: the bridge executes C# that the CLI sends, over a pipe only this Windows user can open. Tools > Roslyn Query > Agent Bridge flips it.")]
-    [DefaultValue(false)]
-    public bool AutoStartAgentBridge { get; set; }
+    [Description("Lets the roslynquery CLI run against this Visual Studio's live workspace (unsaved edits included). The bridge executes C# that the CLI sends, over a token-guarded pipe only this Windows user can open. The Roslyn Query menu's Enable/Disable Agent Bridge command flips it too.")]
+    [DefaultValue(true)]
+    public bool AutoStartAgentBridge { get; set; } = true;
+
+    public const string SettingsCollection = "RoslynQuery";
+    public const string BridgeDisabledProperty = "AgentBridgeDisabled";
+
+    public override void SaveSettingsToStorage()
+    {
+        base.SaveSettingsToStorage();
+        SyncBridgeDisabledFlag();
+    }
+
+    /// <summary>DialogPage stores bools as strings, which a UIContext rule's UserSettingsStoreQuery cannot read; this int mirror is what the auto-load rule tests.</summary>
+    public void SyncBridgeDisabledFlag()
+    {
+        var store = new ShellSettingsManager(ServiceProvider.GlobalProvider).GetWritableSettingsStore(SettingsScope.UserSettings);
+        if (!store.CollectionExists(SettingsCollection)) store.CreateCollection(SettingsCollection);
+        store.SetInt32(SettingsCollection, BridgeDisabledProperty, AutoStartAgentBridge ? 0 : 1);
+    }
 }
