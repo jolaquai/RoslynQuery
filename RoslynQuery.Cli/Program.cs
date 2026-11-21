@@ -96,7 +96,7 @@ internal static class Program
         {
             var host = Attach.Find(request);
             if (host is null && mode == AttachMode.Force)
-                return new RunResponse { Error = "No Visual Studio bridge is running for this solution. Enable it under Tools > Roslyn Query > Agent Bridge.", ExitCode = 1 };
+                return new RunResponse { Error = "No Visual Studio bridge is running for this solution. Enable it under Extensions > Roslyn Query > Agent Bridge.", ExitCode = 1 };
 
             if (host != null)
             {

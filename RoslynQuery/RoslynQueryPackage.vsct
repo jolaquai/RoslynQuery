@@ -7,9 +7,9 @@
 
   <Commands package="guidRoslynQueryPackage">
     <Menus>
-      <!-- Tools > Roslyn Query -->
+      <!-- Extensions > Roslyn Query -->
       <Menu guid="guidRoslynQueryCmdSet" id="menuRoslynQuery" priority="0x0700" type="Menu">
-        <Parent guid="guidRoslynQueryCmdSet" id="groupToolsRoslynQuery" />
+        <Parent guid="guidRoslynQueryCmdSet" id="groupExtensionsRoslynQuery" />
         <Strings>
           <ButtonText>Roslyn Query</ButtonText>
           <CommandName>Roslyn Query</CommandName>
@@ -18,8 +18,8 @@
     </Menus>
 
     <Groups>
-      <Group guid="guidRoslynQueryCmdSet" id="groupToolsRoslynQuery" priority="0x0700">
-        <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_TOOLS" />
+      <Group guid="guidRoslynQueryCmdSet" id="groupExtensionsRoslynQuery" priority="0x0700">
+        <Parent guid="guidMainMenu" id="IDM_VS_MENU_EXTENSIONS" />
       </Group>
       <Group guid="guidRoslynQueryCmdSet" id="groupBridge" priority="0x0100">
         <Parent guid="guidRoslynQueryCmdSet" id="menuRoslynQuery" />
@@ -59,7 +59,7 @@
         </Strings>
       </Button>
 
-      <!-- Tools > Roslyn Query > ... : the agent bridge the roslynquery CLI attaches to -->
+      <!-- Extensions > Roslyn Query > ... : the agent bridge the roslynquery CLI attaches to -->
       <Button guid="guidRoslynQueryCmdSet" id="cmdidBridgeToggle" priority="0x0100" type="Button">
         <Parent guid="guidRoslynQueryCmdSet" id="groupBridge" />
         <CommandFlag>TextChanges</CommandFlag>
@@ -70,6 +70,7 @@
       <Button guid="guidRoslynQueryCmdSet" id="cmdidBridgeRestart" priority="0x0101" type="Button">
         <Parent guid="guidRoslynQueryCmdSet" id="groupBridge" />
         <CommandFlag>DynamicVisibility</CommandFlag>
+        <CommandFlag>DefaultInvisible</CommandFlag>
         <Strings>
           <ButtonText>Restart Agent Bridge</ButtonText>
         </Strings>
@@ -90,6 +91,10 @@
   </Commands>
 
   <Symbols>
+    <!-- guidSHLMainMenu; the vsshlids.h in Microsoft.VSSDK.BuildTools lacks IDM_VS_MENU_EXTENSIONS -->
+    <GuidSymbol name="guidMainMenu" value="{d309f791-903f-11d0-9efc-00a0c911004f}">
+      <IDSymbol name="IDM_VS_MENU_EXTENSIONS" value="0x0091" />
+    </GuidSymbol>
     <GuidSymbol name="guidRoslynQueryPackage" value="{943e02ac-bfd8-4648-9948-4b7d144f6a2d}" />
     <GuidSymbol name="guidRoslynQueryCmdSet" value="{7acc99ae-d964-461e-94d9-9ef567e60889}">
       <IDSymbol name="cmdidShowQueryToolWindow" value="0x0100" />
@@ -97,7 +102,7 @@
       <IDSymbol name="cmdidViewReferenceGraph" value="0x0102" />
 
       <IDSymbol name="menuRoslynQuery" value="0x0200" />
-      <IDSymbol name="groupToolsRoslynQuery" value="0x0201" />
+      <IDSymbol name="groupExtensionsRoslynQuery" value="0x0201" />
       <IDSymbol name="groupBridge" value="0x0202" />
       <IDSymbol name="cmdidBridgeToggle" value="0x0210" />
       <IDSymbol name="cmdidBridgeRestart" value="0x0211" />
