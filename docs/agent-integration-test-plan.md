@@ -109,11 +109,13 @@ Run any search in the tool window (View > Other Windows > Roslyn Query), then in
 
 - Existing tool window: search, replace preview, apply, Ctrl+Z, result navigation (double-click) all still work.
 - `RoslynQuery.Tests` run green locally: `dotnet build RoslynQuery.Tests -c Release; .\RoslynQuery.Tests\bin\Release\net472\RoslynQuery.Tests.exe`.
-- VS startup time / package load unaffected with the bridge disabled (no auto-load until a C# editor is active).
+- The package now auto-loads at shell startup (background load) so the stable CLI copy is refreshed after an update: VS startup is not noticeably slower, and with no solution open the bridge file shows `solution: null`.
+- Stable CLI copy: after an update, opening VS (no solution needed) rewrites `%LOCALAPPDATA%\Programs\RoslynQuery\mcp` and `.stamp`; a running `roslynquery.exe` from that folder is killed and its agent restarts it.
+- Bridge selection (README "Which Visual Studio answers"): with two instances, `bridgePid`/`bridgeMatch` and the warnings in the response name the answering one; a VS-launched MCP server (Copilot via `%USERPROFILE%\.mcp.json`) reports `bridgeMatch: ancestor`.
 - Install on a clean VS profile (`devenv /rootsuffix Exp` or a VM): extension loads, no MEF composition errors in
   `%APPDATA%\Microsoft\VisualStudio\<ver>\ActivityLog.xml` (look for RoslynQuery / duplicate assembly identity).
 - [ARM] On Windows on ARM, `Copy CLI path` yields `win-arm64` and 1.4 works.
-- Uninstall: bridge host files left behind are harmless; CLI folder removed with the extension.
+- Uninstall: bridge host files left behind are harmless. The CLI copy under `%LOCALAPPDATA%\Programs\RoslynQuery\mcp` is NOT removed with the extension (a VSIX cannot clean outside its own folder); delete it by hand.
 
 ## Reporting
 
