@@ -104,9 +104,8 @@ internal static class Program
                 {
                     var answer = await Attach.RunAsync(host, request, cancellationToken).ConfigureAwait(false);
                     answer.BridgePid = host.Pid;
-                    if (candidates.Count > 1)
-                        (answer.Warnings ??= []).Add("Several Visual Studio instances have this solution open (pids " + string.Join(", ", candidates) + "); the one that answered is pid " + host.Pid
-                            + " (an ancestor of this process if there is one, else the most recently started). Unsaved edits in the others were not seen.");
+                    if (BridgeSelection.AmbiguityWarning(candidates, host.Pid) is { } ambiguity)
+                        (answer.Warnings ??= []).Add(ambiguity);
 
                     return answer;
                 }

@@ -28,8 +28,7 @@ internal static class Attach
         // A client started from inside a VS (its terminal, an agent panel) belongs to that VS, whatever else is open.
         var ancestors = ProcessTree.Ancestors();
 
-        BridgeHostInfo best = null;
-        (bool Ancestor, int Score, string Started) bestKey = default;
+        var hosts = new List<BridgeHostInfo>();
 
         foreach (var file in Directory.EnumerateFiles(directory, "*.json"))
         {
@@ -44,16 +43,10 @@ internal static class Attach
                 continue;
             }
 
-            var score = Score(info.Solution, wanted, cwd);
-            if (score == 0) continue;
-            candidates.Add(info.Pid);
-
-            // Ancestry first, then how well the solution matches, then the newest instance, so ties are never arbitrary.
-            var key = (ancestors.Contains(info.Pid), score, info.StartedUtc ?? string.Empty);
-            if (best is null || key.CompareTo(bestKey) > 0) { best = info; bestKey = key; }
+            hosts.Add(info);
         }
 
-        return best;
+        return BridgeSelection.Pick(hosts, wanted, cwd, ancestors, out candidates);
     }
 
     /// <summary>Solutions that live bridges have open, "path (pid n)" each.</summary>
@@ -96,21 +89,6 @@ internal static class Attach
         }
 
         return JsonSerializer.Serialize(hosts, new JsonSerializerOptions { TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver() });
-    }
-
-    // Exact solution beats "same folder" beats "cwd is somewhere below the solution"; the deepest such solution wins.
-    private static int Score(string solution, string wanted, string cwd)
-    {
-        var folder = Path.GetDirectoryName(solution);
-        if (wanted != null)
-        {
-            if (string.Equals(wanted, solution, StringComparison.OrdinalIgnoreCase)) return int.MaxValue;
-            var wantedFolder = Path.GetDirectoryName(wanted);
-            return string.Equals(wantedFolder, folder, StringComparison.OrdinalIgnoreCase) ? int.MaxValue - 1 : 0;
-        }
-
-        var prefix = folder.TrimEnd('\\', '/') + Path.DirectorySeparatorChar;
-        return (cwd + Path.DirectorySeparatorChar).StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? folder.Length : 0;
     }
 
     private static bool IsAlive(int pid)
