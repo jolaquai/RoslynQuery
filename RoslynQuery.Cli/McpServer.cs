@@ -37,8 +37,8 @@ internal static class McpServer
     {
         private const string Common = " Lines and columns are 1-based. If Visual Studio has the solution open, pass its path as 'solution' to run against the live workspace (unsaved edits included); otherwise the files on disk are used. Read the 'docs' tool once for the predicate signatures and examples.";
 
-        [McpServerTool(Name = "search", ReadOnly = true, Destructive = false)]
-        [Description("Runs a C# predicate over every syntax node, token or operation of a solution and returns the matches as JSON (file, line, column, end, kind, preview)." + Common)]
+        [McpServerTool(Name = "search", Destructive = true)]
+        [Description("Runs a C# predicate over every syntax node, token or operation of a solution and returns the matches as JSON (file, line, column, end, kind, preview). The predicate is compiled and executed as ordinary C# with the user's permissions, not sandboxed; treat it like running code." + Common)]
         public static async Task<string> Search(
             [Description("C# bool expression, or statements that return, over n/t/op, model and doc (see docs).")] string query,
             [Description("Solution/project path; default the only one in the working directory, or the one Visual Studio has open there.")] string solution = null,

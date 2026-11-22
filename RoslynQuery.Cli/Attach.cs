@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -11,6 +12,12 @@ using System.Threading.Tasks;
 using RoslynQuery.Protocol;
 
 namespace RoslynQuery.Cli;
+
+/// <summary>The request reached the bridge but no reply came back; its outcome is unknown.</summary>
+internal sealed class BridgeReplyLostException : Exception
+{
+    public BridgeReplyLostException(string message, Exception inner) : base(message, inner) { }
+}
 
 /// <summary>Client for the bridge a running Visual Studio hosts: same request, live workspace including unsaved edits.</summary>
 internal static class Attach
@@ -47,7 +54,10 @@ internal static class Attach
             hosts.Add(info);
         }
 
-        return BridgeSelection.Pick(hosts, wanted, cwd, ancestors, out candidates, out match);
+        // Without a solution argument, a working directory that has a solution of its own is for headless to open, not for a stranger's VS.
+        var cwdHasSolution = wanted is null && new[] { "*.slnx", "*.sln", "*.csproj" }.Any(pattern => Directory.GetFiles(cwd, pattern).Length > 0);
+
+        return BridgeSelection.Pick(hosts, wanted, cwd, ancestors, out candidates, out match, allowOnlyInstance: !cwdHasSolution);
     }
 
     /// <summary>Solutions that live bridges have open, "path (pid n)" each.</summary>
@@ -94,14 +104,37 @@ internal static class Attach
 
     private static bool IsAlive(int pid)
     {
-        try { return !Process.GetProcessById(pid).HasExited; }
+        try
+        {
+            // A recycled pid belongs to some other process by now.
+            using var process = Process.GetProcessById(pid);
+            return !process.HasExited && process.ProcessName.Equals("devenv", StringComparison.OrdinalIgnoreCase);
+        }
         catch (ArgumentException) { return false; }
+        catch (InvalidOperationException) { return false; }
+    }
+
+    /// <summary>Hit paths come back relative to the solution folder, so a relative path that is not under the working directory is tried there.</summary>
+    private static string ResolveFile(string file, string solution)
+    {
+        var full = Path.GetFullPath(file);
+        if (File.Exists(full) || Path.IsPathRooted(file) || string.IsNullOrEmpty(solution)) return full;
+
+        var underSolution = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(solution), file));
+        return File.Exists(underSolution) ? underSolution : full;
     }
 
     public static async Task<RunResponse> RunAsync(BridgeHostInfo host, RunRequest request, CancellationToken cancellationToken)
     {
+        // The live workspace holds the whole solution, so a project given as the solution means that project's scope.
+        if (request.Scope == RoslynQuery.Query.ScopeKind.Solution && !string.IsNullOrEmpty(request.Solution) && request.Solution.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+        {
+            request.Scope = RoslynQuery.Query.ScopeKind.Project;
+            request.Project = Path.GetFullPath(request.Solution);
+        }
+
         // The host resolves paths against its own working directory, which is not ours.
-        if (!string.IsNullOrEmpty(request.File)) request.File = Path.GetFullPath(request.File);
+        if (!string.IsNullOrEmpty(request.File)) request.File = ResolveFile(request.File, host.Solution);
         if (!string.IsNullOrEmpty(request.Project) && File.Exists(request.Project)) request.Project = Path.GetFullPath(request.Project);
 
         using var pipe = new NamedPipeClientStream(".", host.Pipe, PipeDirection.InOut, PipeOptions.Asynchronous);
@@ -118,10 +151,27 @@ internal static class Attach
         await writer.WriteLineAsync(host.Token).ConfigureAwait(false);
         await writer.WriteLineAsync(JsonSerializer.Serialize(request, CliJson.Default.RunRequest)).ConfigureAwait(false);
 
-        var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)
-            ?? throw new IOException("The Visual Studio bridge closed the connection without answering.");
+        // From here on the bridge has the request: whatever it did, running it again elsewhere could do it twice.
+        string line;
+        try
+        {
+            line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (IOException ex)
+        {
+            throw new BridgeReplyLostException("The connection to the Visual Studio bridge broke after the request was sent: " + ex.Message, ex);
+        }
 
-        return JsonSerializer.Deserialize(line, CliJson.Default.RunResponse)
-            ?? throw new IOException("The Visual Studio bridge sent an empty response.");
+        if (line is null) throw new BridgeReplyLostException("The Visual Studio bridge closed the connection without answering.", null);
+
+        try
+        {
+            return JsonSerializer.Deserialize(line, CliJson.Default.RunResponse)
+                ?? throw new BridgeReplyLostException("The Visual Studio bridge sent an empty response.", null);
+        }
+        catch (JsonException ex)
+        {
+            throw new BridgeReplyLostException("The Visual Studio bridge sent an unreadable response: " + ex.Message, ex);
+        }
     }
 }

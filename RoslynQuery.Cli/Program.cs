@@ -105,12 +105,22 @@ internal static class Program
                     var answer = await Attach.RunAsync(host, request, cancellationToken).ConfigureAwait(false);
                     answer.BridgePid = host.Pid;
                     answer.BridgeMatch = BridgeSelection.Name(match);
-                    if (BridgeSelection.Explanation(candidates, host, match) is { } explanation)
+                    var wanted = string.IsNullOrEmpty(request.Solution) ? null : Path.GetFullPath(request.Solution);
+                    if (BridgeSelection.Explanation(candidates, host, match, wanted) is { } explanation)
                         (answer.Warnings ??= []).Add(explanation);
 
                     return answer;
                 }
-                catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException && !cancellationToken.IsCancellationRequested)
+                catch (BridgeReplyLostException ex) when (request.Apply)
+                {
+                    return new RunResponse
+                    {
+                        Error = ex.Message + " The outcome of the apply is unknown and it was not retried: check the open files in Visual Studio (Edit > Undo), then run a dry run again before another apply.",
+                        ExitCode = 1,
+                        BridgePid = host.Pid
+                    };
+                }
+                catch (Exception ex) when (ex is IOException or TimeoutException or BridgeReplyLostException or OperationCanceledException && !cancellationToken.IsCancellationRequested)
                 {
                     if (mode == AttachMode.Force)
                         return new RunResponse { Error = "Could not reach the Visual Studio bridge: " + ex.Message, ExitCode = 1 };

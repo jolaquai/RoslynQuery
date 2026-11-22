@@ -112,12 +112,83 @@ public class BridgeSelectionTests
     public void Name_IsTheWireValue(string match, string expected) => Assert.Equal(expected, BridgeSelection.Name((BridgeMatch)System.Enum.Parse(typeof(BridgeMatch), match)));
 
     [Fact]
-    public void Explanation_AncestorOrSingleCandidate_IsNull()
+    public void Explanation_SingleCandidate_IsNull()
     {
         var host = Host(2, Sln);
 
-        Assert.Null(BridgeSelection.Explanation([1, 2], host, BridgeMatch.Ancestor));
-        Assert.Null(BridgeSelection.Explanation([2], host, BridgeMatch.Solution));
+        Assert.Null(BridgeSelection.Explanation([2], host, BridgeMatch.Ancestor));
+        Assert.Null(BridgeSelection.Explanation([2], host, BridgeMatch.Solution, Sln));
+    }
+
+    [Fact]
+    public void Explanation_SeveralAncestors_NamesThem()
+    {
+        var text = BridgeSelection.Explanation([1, 2], Host(2, Sln), BridgeMatch.Ancestor);
+
+        Assert.Contains("pids 1, 2", text);
+        Assert.Contains("started from", text);
+    }
+
+    [Fact]
+    public void Explanation_RequestedSolutionNotItselfOpen_SaysWhichOneAnswered()
+    {
+        var text = BridgeSelection.Explanation([2], Host(2, Sln), BridgeMatch.Solution, @"C:\src\App\tools\Tool.csproj");
+
+        Assert.Contains("not itself open", text);
+        Assert.Contains(Sln, text);
+    }
+
+    [Fact]
+    public void Pick_ExplicitSolutionFileNeverMatchesAnotherSolutionInTheSameFolder()
+    {
+        var picked = BridgeSelection.Pick([Host(1, Sln)], @"C:\src\App\Other.slnx", @"C:\elsewhere", None, out var candidates, out var match);
+
+        Assert.Null(picked);
+        Assert.Empty(candidates);
+        Assert.Equal(BridgeMatch.None, match);
+    }
+
+    [Fact]
+    public void Pick_ExplicitTie_PrefersTheInstanceTheProcessWasStartedFromOverANewerOne()
+    {
+        var picked = BridgeSelection.Pick([Host(1, Sln), Host(2, Sln, "2026-01-01T11:00:00Z")], Sln, @"C:\elsewhere", new HashSet<int> { 1 }, out var candidates, out _);
+
+        Assert.Equal(1, picked.Pid);
+        Assert.Equal([1, 2], candidates);
+    }
+
+    [Fact]
+    public void Pick_SolutionAtADriveRoot_DoesNotClaimEveryWorkingDirectoryOnThatDrive()
+    {
+        var picked = BridgeSelection.Pick([Host(1, @"C:\Root.slnx"), Host(2, @"D:\x\B.slnx")], null, @"C:\Users\someone\work", None, out _, out _);
+
+        Assert.Null(picked);
+    }
+
+    [Fact]
+    public void Pick_ExplicitDriveRoot_MatchesNoSolutionBelowIt()
+    {
+        var picked = BridgeSelection.Pick([Host(1, Sln)], @"C:\", @"C:\elsewhere", None, out _, out _);
+
+        Assert.Null(picked);
+    }
+
+    [Fact]
+    public void Pick_OnlyInstanceNotAllowed_ReturnsNull()
+    {
+        var picked = BridgeSelection.Pick([Host(1, Sln)], null, @"C:\Users\someone", None, out _, out var match, allowOnlyInstance: false);
+
+        Assert.Null(picked);
+        Assert.Equal(BridgeMatch.None, match);
+    }
+
+    [Fact]
+    public void Pick_FolderWithTrailingSlashAndOtherCase_MatchesTheSolutionInside()
+    {
+        var picked = BridgeSelection.Pick([Host(1, Sln)], @"c:\SRC\app\", @"C:\elsewhere", None, out _, out var match);
+
+        Assert.Equal(1, picked.Pid);
+        Assert.Equal(BridgeMatch.Solution, match);
     }
 
     [Fact]
