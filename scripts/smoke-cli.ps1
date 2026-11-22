@@ -11,24 +11,52 @@ $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true
 $psi.UseShellExecute = $false
 $p = [Diagnostics.Process]::Start($psi)
-$out = $p.StandardOutput.ReadToEndAsync()
 $err = $p.StandardError.ReadToEndAsync()
+$lines = [Collections.Generic.List[string]]::new()
+$script:pending = $p.StandardOutput.ReadLineAsync()
+$script:eof = $false
+
+function Drain {
+    while (-not $script:eof -and $script:pending.IsCompleted) {
+        $line = $script:pending.Result
+        if ($null -eq $line) { $script:eof = $true; break }
+        if ($line.Trim()) { $lines.Add($line) }
+        $script:pending = $p.StandardOutput.ReadLineAsync()
+    }
+}
+
+function WaitFrames([int]$count) {
+    $deadline = [DateTime]::UtcNow.AddSeconds(30)
+    Drain
+    while ($lines.Count -lt $count -and -not $script:eof -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 100; Drain }
+    if ($lines.Count -lt $count) { $p.Kill(); throw "'mcp' answered $($lines.Count) frames, expected $count. stderr: $($err.Result)" }
+}
+
 $p.StandardInput.WriteLine('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"1"}}}')
+WaitFrames 1
 $p.StandardInput.WriteLine('{"jsonrpc":"2.0","method":"notifications/initialized"}')
 $p.StandardInput.WriteLine('{"jsonrpc":"2.0","id":2,"method":"tools/list"}')
 $p.StandardInput.WriteLine('{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"bridges","arguments":{}}}')
-Start-Sleep -Seconds 3
+WaitFrames 3
 $p.StandardInput.Close()
 if (-not $p.WaitForExit(15000)) { $p.Kill(); throw "'mcp' did not exit after its stdin closed." }
+$p.WaitForExit()
+Drain
+if ($p.ExitCode -ne 0) { throw "'mcp' exited with $($p.ExitCode)." }
 
-$lines = @($out.Result -split "`r?`n" | Where-Object { $_.Trim() })
-if ($lines.Count -lt 3) { throw "'mcp' answered $($lines.Count) frames, expected 3. stderr: $($err.Result)" }
-foreach ($line in $lines) {
-    $frame = $line | ConvertFrom-Json
-    if ($frame.jsonrpc -ne '2.0') { throw "Non JSON-RPC line on stdout: $line" }
-}
+$frames = @($lines | ForEach-Object {
+        try { $_ | ConvertFrom-Json } catch { throw "Non JSON line on stdout: $_" }
+    })
+foreach ($frame in $frames) { if ($frame.jsonrpc -ne '2.0') { throw "Non JSON-RPC frame on stdout: $($frame | ConvertTo-Json -Compress)" } }
 
-$tools = ($lines | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.id -eq 2 }).result.tools.name | Sort-Object
+$list = $frames | Where-Object { $_.id -eq 2 }
+$tools = @($list.result.tools | ForEach-Object { $_.name } | Sort-Object)
 if (($tools -join ',') -ne 'bridges,docs,replace,search') { throw "Unexpected tools: $($tools -join ',')" }
 
-Write-Host "CLI smoke test passed ($($lines.Count) frames, tools: $($tools -join ', '))."
+$search = $list.result.tools | Where-Object { $_.name -eq 'search' }
+if ($search.annotations.readOnlyHint -eq $true) { throw "'search' must not be annotated read-only: its predicate is arbitrary C#." }
+
+$call = $frames | Where-Object { $_.id -eq 3 }
+if ($call.error -or $call.result.isError) { throw "'bridges' failed: $($call | ConvertTo-Json -Compress -Depth 6)" }
+
+Write-Host "CLI smoke test passed ($($frames.Count) frames, tools: $($tools -join ', '))."

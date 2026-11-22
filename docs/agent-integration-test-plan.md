@@ -80,7 +80,8 @@ Always use `--no-attach` here. Output is one JSON line on stdout; diagnostics go
 12. [Admin] Start Visual Studio as administrator with the bridge option on. Expected: the bridge does NOT start (no host file). `Extensions > Roslyn Query > Enable Agent Bridge` shows a warning with Yes/No; No leaves it off, Yes starts it for this session only (the next elevated start is off again). `Show Bridge Log` never starts the bridge.
 13. Edit during apply: dry run through the bridge, then type into one of the affected files and `--apply --expect <planId>`. Expected: refused (exit 3, "changed since the plan was reviewed" or "edited while ..."), your typing intact.
 14. Lost reply: `--apply` through the bridge while closing VS or killing the CLI's pipe. Expected: error says the outcome is unknown and was not retried; files on disk are not rewritten headless.
-15. Exact solution: with `A.slnx` open, `run -s B.slnx` (same folder) must not attach to it (headless or "no bridge" with `--attach`); `run -s <project>.csproj` attaches and searches that project only; a response about a non-identical solution carries the "is not itself open" warning.
+15. Bridge busy and limits: start a query that never ends (`while (true) { }` as the predicate), then another request. Expected: the second gets "bridge busy" within about 30 s instead of waiting; Restart recovers. A request body over 1 MiB gets a "Rejected" reply.
+16. Exact solution: with `A.slnx` open, `run -s B.slnx` (same folder) must not attach to it (headless or "no bridge" with `--attach`); `run -s <project>.csproj` attaches and searches that project only; a response about a non-identical solution carries the "is not itself open" warning.
 
 ## 3. MCP server (`roslynquery mcp`, stdio)
 

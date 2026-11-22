@@ -657,6 +657,9 @@ carries `bridgePid` and `bridgeMatch` (why it was chosen: `solution`, `ancestor`
   named pipe only the current Windows user can open, refuses network clients, and requires a per-session token. A
   predicate is C# that runs in your Visual Studio, so disable it if you do not trust every process running as your
   Windows user.
+- "Administrator" means a process with an elevated token. With UAC off every Visual Studio counts as elevated, so the
+  bridge never starts on its own there; enable it from the menu (the Yes/No dialog is for this session only). An elevated
+  Visual Studio also leaves the stable CLI copy alone; the next normal start, or Copy CLI Path, refreshes it.
 - A predicate is arbitrary C# with your permissions, not a sandboxed query: `search` can do anything the process can.
   The MCP annotations therefore mark `search` and `replace` as destructive and only `docs` and `bridges` as read-only.
 - Requests are size and time limited, and a client that goes away cancels its run.
