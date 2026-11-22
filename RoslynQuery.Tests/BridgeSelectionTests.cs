@@ -174,6 +174,14 @@ public class BridgeSelectionTests
     }
 
     [Fact]
+    public void Pick_SolutionAtAShareRoot_DoesNotClaimEveryWorkingDirectoryOnTheShare()
+    {
+        var picked = BridgeSelection.Pick([Host(1, @"\\server\share\Root.slnx"), Host(2, @"D:\x\B.slnx")], null, @"\\server\share\team\work", None, out _, out _);
+
+        Assert.Null(picked);
+    }
+
+    [Fact]
     public void Pick_OnlyInstanceNotAllowed_ReturnsNull()
     {
         var picked = BridgeSelection.Pick([Host(1, Sln)], null, @"C:\Users\someone", None, out _, out var match, allowOnlyInstance: false);

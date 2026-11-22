@@ -135,6 +135,9 @@ public sealed class BridgeHostInfo
 /// <summary>Thrown by an apply callback to refuse writing; the run then fails with exit code 3 and nothing was written.</summary>
 public sealed class ApplyRefusedException(string message) : Exception(message);
 
+/// <summary>Thrown by an apply callback when writing failed part way; unlike a refusal, something may have been written.</summary>
+public sealed class ApplyFailedException(string message) : Exception(message);
+
 public static class BridgePaths
 {
     public static string Directory

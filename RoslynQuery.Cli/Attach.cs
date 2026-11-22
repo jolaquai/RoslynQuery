@@ -47,7 +47,7 @@ internal static class Attach
             if (info?.Pipe is null || info.Solution is null) continue;
             if (!IsAlive(info.Pid))
             {
-                try { File.Delete(file); } catch (IOException) { }
+                try { File.Delete(file); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
                 continue;
             }
 
@@ -55,9 +55,15 @@ internal static class Attach
         }
 
         // Without a solution argument, a working directory that has a solution of its own is for headless to open, not for a stranger's VS.
-        var cwdHasSolution = wanted is null && new[] { "*.slnx", "*.sln", "*.csproj" }.Any(pattern => Directory.GetFiles(cwd, pattern).Length > 0);
+        var cwdHasSolution = wanted is null && CwdHasSolution(cwd);
 
         return BridgeSelection.Pick(hosts, wanted, cwd, ancestors, out candidates, out match, allowOnlyInstance: !cwdHasSolution);
+    }
+
+    private static bool CwdHasSolution(string cwd)
+    {
+        try { return new[] { "*.slnx", "*.sln", "*.csproj" }.Any(pattern => Directory.GetFiles(cwd, pattern).Length > 0); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
     }
 
     /// <summary>Solutions that live bridges have open, "path (pid n)" each.</summary>
@@ -126,6 +132,10 @@ internal static class Attach
 
     public static async Task<RunResponse> RunAsync(BridgeHostInfo host, RunRequest request, CancellationToken cancellationToken)
     {
+        // Work on a copy: when the bridge cannot be reached the caller runs the original headless.
+        request = JsonSerializer.Deserialize(JsonSerializer.Serialize(request, CliJson.Default.RunRequest), CliJson.Default.RunRequest);
+        if (!string.IsNullOrEmpty(request.Solution)) request.Solution = Path.GetFullPath(request.Solution);
+
         // The live workspace holds the whole solution, so a project given as the solution means that project's scope.
         if (request.Scope == RoslynQuery.Query.ScopeKind.Solution && !string.IsNullOrEmpty(request.Solution) && request.Solution.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
         {
@@ -148,8 +158,15 @@ internal static class Attach
         using var writer = new StreamWriter(pipe, utf8, 4096, leaveOpen: true) { AutoFlush = true, NewLine = "\n" };
         using var reader = new StreamReader(pipe, utf8, false, 4096, leaveOpen: true);
 
-        await writer.WriteLineAsync(host.Token).ConfigureAwait(false);
-        await writer.WriteLineAsync(JsonSerializer.Serialize(request, CliJson.Default.RunRequest)).ConfigureAwait(false);
+        try
+        {
+            await writer.WriteLineAsync(host.Token).ConfigureAwait(false);
+            await writer.WriteLineAsync(JsonSerializer.Serialize(request, CliJson.Default.RunRequest)).ConfigureAwait(false);
+        }
+        catch (IOException ex)
+        {
+            throw new BridgeReplyLostException("The connection to the Visual Studio bridge broke while the request was being sent: " + ex.Message, ex);
+        }
 
         // From here on the bridge has the request: whatever it did, running it again elsewhere could do it twice.
         string line;

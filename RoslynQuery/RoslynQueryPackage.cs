@@ -97,8 +97,10 @@ public sealed class RoslynQueryPackage : AsyncPackage
         commands.AddCommand(new MenuCommand(ShowBridgeLog, new CommandID(CommandSet, BridgeLogCommandId)));
         commands.AddCommand(new MenuCommand(CopyCliPath, new CommandID(CommandSet, CopyCliPathCommandId)));
 
-        // Wherever the CLI shipped to, agents read this one stable file to find it.
-        System.Threading.Tasks.Task.Run(BridgeCli.PublishPath).FileAndForget("vs/roslynquery/publishcli");
+        // Wherever the CLI shipped to, agents read this one stable file to find it. An elevated Visual Studio leaves the
+        // user's folders alone: the copy is refreshed by the next normal start or by Copy CLI Path.
+        if (!Elevation.IsElevated())
+            System.Threading.Tasks.Task.Run(BridgeCli.PublishPath).FileAndForget("vs/roslynquery/publishcli");
 
         var options = (RoslynQueryOptions)GetDialogPage(typeof(RoslynQueryOptions));
         options.SyncBridgeDisabledFlag();
@@ -152,7 +154,9 @@ public sealed class RoslynQueryPackage : AsyncPackage
 
             var bridge = await EnsureBridgeAsync(start: true);
             if (bridge is null) return;
-            options.AutoStartAgentBridge = true;
+
+            // Confirming in an elevated Visual Studio is for this session only.
+            if (!Elevation.IsElevated()) options.AutoStartAgentBridge = true;
         }
 
         options.SaveSettingsToStorage();
@@ -178,6 +182,10 @@ public sealed class RoslynQueryPackage : AsyncPackage
         }
 
         Clipboard.SetText(path);
+
+        if (!string.Equals(path, BridgeCli.StableExe, StringComparison.OrdinalIgnoreCase))
+            VsShellUtilities.ShowMessageBox(this, "The stable copy could not be updated (a file is in use?), so the path inside the extension folder was copied. It changes with every update; try again after closing agents that run roslynquery.", "Roslyn Query",
+                Microsoft.VisualStudio.Shell.Interop.OLEMSGICON.OLEMSGICON_WARNING, Microsoft.VisualStudio.Shell.Interop.OLEMSGBUTTON.OLEMSGBUTTON_OK, Microsoft.VisualStudio.Shell.Interop.OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
     }).FileAndForget("vs/roslynquery/copyclipath");
 
     protected override void Dispose(bool disposing)

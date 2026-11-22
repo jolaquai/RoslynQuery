@@ -156,8 +156,8 @@ internal static class BridgeSelection
         var trimmedInner = inner.TrimEnd('\\', '/');
         if (string.Equals(trimmedOuter, trimmedInner, StringComparison.OrdinalIgnoreCase)) return true;
 
-        // A drive root contains everything on the drive, which says nothing about which solution is meant.
-        if (trimmedOuter.Length <= 2) return false;
+        // A drive or share root contains everything on it, which says nothing about which solution is meant.
+        if (trimmedOuter.Length <= 2 || string.Equals(trimmedOuter, Path.GetPathRoot(outer)?.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase)) return false;
 
         return (trimmedInner + Path.DirectorySeparatorChar).StartsWith(trimmedOuter + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     }

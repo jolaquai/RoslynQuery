@@ -102,6 +102,46 @@ public class RequestEngineTests
     }
 
     [Fact]
+    public async Task Apply_HandsTheReviewedPlanToTheHost_AndTheOldTextIsWhatWasPlannedFrom()
+    {
+        var open = OpenWith("class C { int x; }");
+        var dry = await RunAsync(Replace(), open, []);
+        var applied = new List<ApplyContext>();
+
+        await RunAsync(Replace(apply: true, expect: dry.PlanId), open, applied);
+
+        Assert.NotNull(applied[0].Plan);
+        Assert.Equal("class C { int x; }", applied[0].Files[Path].Old.ToString());
+        Assert.Equal(applied[0].Plan.BaseTexts.Values.Single().ToString(), applied[0].Files[Path].Old.ToString());
+    }
+
+    [Fact]
+    public async Task ACancelledRequest_NeverPlansOrApplies()
+    {
+        var applied = new List<ApplyContext>();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<System.OperationCanceledException>(() =>
+            RequestEngine.RunAsync(Replace(apply: true, expect: "x"), ct => OpenWith("class C { int x; }")(ct), context => { applied.Add(context); return Task.CompletedTask; }, cts.Token));
+
+        Assert.Empty(applied);
+    }
+
+    [Fact]
+    public async Task Apply_WhoseHostFailsPartWay_ReportsFailureNotARefusal()
+    {
+        var open = OpenWith("class C { int x; }");
+        var dry = await RunAsync(Replace(), open, []);
+
+        var response = await RequestEngine.RunAsync(Replace(apply: true, expect: dry.PlanId), ct => open(ct), _ => throw new ApplyFailedException("half written"), CancellationToken.None);
+
+        Assert.False(response.Ok);
+        Assert.Equal(1, response.ExitCode);
+        Assert.Contains("half written", response.Error);
+    }
+
+    [Fact]
     public async Task ProjectScope_MatchesAMultiTargetedProjectByItsFileName()
     {
         var request = new RunRequest { Query = "t.Text == \"x\"", Target = TargetKind.SyntaxToken, Scope = ScopeKind.Project, Project = "P" };

@@ -56,13 +56,25 @@ internal static class Runner
         return new Session { Workspace = workspace, Solution = solution, Root = Path.GetDirectoryName(path), Source = "headless", Warnings = warnings };
     }
 
+    private static bool SameAsReviewed(string path, SourceText reviewed)
+    {
+        using var stream = File.OpenRead(path);
+        return SourceText.From(stream, reviewed.Encoding).ToString() == reviewed.ToString();
+    }
+
     private static Task ApplyAsync(ApplyContext context)
     {
         // Re-read right before writing: the solution may have been open for a while.
         foreach (var pair in context.Files)
         {
-            using var stream = File.OpenRead(pair.Key);
-            if (SourceText.From(stream, pair.Value.Old.Encoding).ToString() != pair.Value.Old.ToString())
+            bool same;
+            try { same = SameAsReviewed(pair.Key, pair.Value.Old); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                throw new ApplyRefusedException($"'{RequestEngine.Rel(context.Session.Root, pair.Key)}' cannot be read ({ex.Message}). Nothing was written.");
+            }
+
+            if (!same)
                 throw new ApplyRefusedException($"'{RequestEngine.Rel(context.Session.Root, pair.Key)}' changed on disk since the solution was loaded. Nothing was written.");
         }
 
@@ -70,6 +82,7 @@ internal static class Runner
         var stamp = Guid.NewGuid().ToString("N").Substring(0, 8);
         var staged = new List<(string Target, string Temp)>();
         var swapped = new List<(string Target, string Backup)>();
+        var kept = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
             foreach (var pair in context.Files)
@@ -85,21 +98,35 @@ internal static class Runner
                 var backup = target + ".rq-" + stamp + ".bak";
                 File.Replace(temp, target, backup);
                 swapped.Add((target, backup));
+
+                // What the swap displaced must be what was reviewed; a save that landed since the check above is not ours to overwrite.
+                if (!SameAsReviewed(backup, context.Files[target].Old))
+                    throw new IOException($"'{RequestEngine.Rel(context.Session.Root, target)}' was changed by someone else while writing");
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            var notRestored = new List<string>();
             foreach (var (target, backup) in swapped)
             {
-                try { File.Copy(backup, target, overwrite: true); } catch (Exception restore) when (restore is IOException or UnauthorizedAccessException) { }
+                try { File.Copy(backup, target, overwrite: true); }
+                catch (Exception restore) when (restore is IOException or UnauthorizedAccessException)
+                {
+                    kept.Add(backup);
+                    notRestored.Add($"'{target}' (its original is kept at '{backup}')");
+                }
             }
+
+            if (notRestored.Count > 0)
+                throw new ApplyFailedException("Could not write every file (" + ex.Message + ") and could not restore: " + string.Join(", ", notRestored) + ". Those files are in an unknown state.");
 
             throw new ApplyRefusedException("Could not write every file (" + ex.Message + "); " + (swapped.Count > 0 ? swapped.Count + " already written file(s) were restored." : "nothing was written."));
         }
         finally
         {
             foreach (var (_, temp) in staged) TryDelete(temp);
-            foreach (var (_, backup) in swapped) TryDelete(backup);
+            foreach (var (_, backup) in swapped)
+                if (!kept.Contains(backup)) TryDelete(backup);
         }
 
         return Task.CompletedTask;

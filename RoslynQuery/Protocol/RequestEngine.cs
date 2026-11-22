@@ -33,6 +33,11 @@ internal sealed class ApplyContext
     public Session Session { get; set; }
     public IReadOnlyList<ReplacementItem> Items { get; set; }
 
+    /// <summary>The plan whose diffs were reviewed; a live host commits exactly this one.</summary>
+    public ChangeApplier.ApplyPlan Plan { get; set; }
+
+    public CancellationToken CancellationToken { get; set; }
+
     /// <summary>Changed files by full path, ordinal-sorted. Linked documents are one entry.</summary>
     public SortedDictionary<string, (SourceText Old, SourceText New)> Files { get; set; }
 }
@@ -86,6 +91,9 @@ internal static class RequestEngine
         var outcome = await QueryEngine.RunAsync(
             units, request.Target, request.Query, predicate, request.Max,
             batch => { lock (found) found.AddRange(batch); }, cancellationToken).ConfigureAwait(false);
+
+        // QueryEngine treats a cancel as "stop here, keep what was found"; a cancelled request must not go on to plan or write.
+        cancellationToken.ThrowIfCancellationRequested();
 
         found.Sort((x, y) =>
         {
@@ -155,7 +163,8 @@ internal static class RequestEngine
         {
             var before = solution.GetDocument(id);
             var after = plan.Solution.GetDocument(id);
-            files[before.FilePath] = (await before.GetTextAsync(cancellationToken).ConfigureAwait(false), await after.GetTextAsync(cancellationToken).ConfigureAwait(false));
+            var old = plan.BaseTexts.TryGetValue(id, out var planned) ? planned : await before.GetTextAsync(cancellationToken).ConfigureAwait(false);
+            files[before.FilePath] = (old, await after.GetTextAsync(cancellationToken).ConfigureAwait(false));
         }
 
         var digest = new StringBuilder();
@@ -182,13 +191,17 @@ internal static class RequestEngine
 
         try
         {
-            await apply(new ApplyContext { Session = session, Items = items, Files = files }).ConfigureAwait(false);
+            await apply(new ApplyContext { Session = session, Items = items, Plan = plan, Files = files, CancellationToken = cancellationToken }).ConfigureAwait(false);
             response.Applied = true;
         }
         catch (ApplyRefusedException ex)
         {
             Fail(response, ex.Message);
             response.ExitCode = 3;
+        }
+        catch (ApplyFailedException ex)
+        {
+            Fail(response, ex.Message);
         }
     }
 

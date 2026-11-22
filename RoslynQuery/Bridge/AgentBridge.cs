@@ -38,6 +38,7 @@ internal sealed class AgentBridge : IDisposable
     private const int MaxTokenChars = 128;
     private const int MaxRequestChars = 1 << 20;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan BusyWait = TimeSpan.FromSeconds(30);
     private static readonly int Pid = System.Diagnostics.Process.GetCurrentProcess().Id;
 
     private static readonly JsonSerializerSettings Json = new JsonSerializerSettings
@@ -58,6 +59,7 @@ internal sealed class AgentBridge : IDisposable
     private SemaphoreSlim _one = new SemaphoreSlim(1, 1);
 
     private CancellationTokenSource _cts;
+    private bool _directoryRestricted;
     private string _pipe;
     private string _token;
     private string _hostFile;
@@ -92,6 +94,7 @@ internal sealed class AgentBridge : IDisposable
             _startedUtc = DateTime.UtcNow.ToString("o");
             _cts = new CancellationTokenSource();
             _one = new SemaphoreSlim(1, 1);
+            _directoryRestricted = false;
             _hostFile = Path.Combine(BridgePaths.Directory, Pid + ".json");
 
             _workspace.WorkspaceChanged += OnWorkspaceChanged;
@@ -158,9 +161,23 @@ internal sealed class AgentBridge : IDisposable
 
     private void WriteHostFile()
     {
+        // Under the gate and only while running: a workspace event racing Stop must not bring the file back.
+        lock (_gate)
+        {
+            if (_cts is null) return;
+            WriteHostFileLocked();
+        }
+    }
+
+    private void WriteHostFileLocked()
+    {
         try
         {
-            RestrictDirectory(Directory.CreateDirectory(BridgePaths.Directory));
+            if (!_directoryRestricted)
+            {
+                _directoryRestricted = RestrictDirectory(Directory.CreateDirectory(BridgePaths.Directory));
+                if (!_directoryRestricted) return;
+            }
 
             var info = new BridgeHostInfo
             {
@@ -184,7 +201,7 @@ internal sealed class AgentBridge : IDisposable
     }
 
     // The token lives here: only this user and the system may read it.
-    private void RestrictDirectory(DirectoryInfo directory)
+    private bool RestrictDirectory(DirectoryInfo directory)
     {
         try
         {
@@ -193,10 +210,12 @@ internal sealed class AgentBridge : IDisposable
             security.AddAccessRule(new FileSystemAccessRule(WindowsIdentity.GetCurrent().User, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
             security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
             directory.SetAccessControl(security);
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            Log("Could not restrict " + directory.FullName + ": " + ex.Message);
+            Log("Could not restrict " + directory.FullName + " to this user, so no host file (and no token) was written: " + ex.Message);
+            return false;
         }
     }
 
@@ -257,6 +276,7 @@ internal sealed class AgentBridge : IDisposable
             catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or InvalidDataException)
             {
                 Log("Rejected a request: " + ex.Message);
+                if (ex is InvalidDataException or JsonException) await TryReplyAsync(writer, new RunResponse { Ok = false, Error = "Rejected: " + ex.Message, ExitCode = 1, Source = "vs" }).ConfigureAwait(false);
                 return;
             }
 
@@ -280,13 +300,20 @@ internal sealed class AgentBridge : IDisposable
             var acquired = false;
             try
             {
-                await gate.WaitAsync(run.Token).ConfigureAwait(false);
-                acquired = true;
-
-                var started = DateTime.UtcNow;
-                response = await RequestEngine.RunAsync(request, OpenAsync, ApplyAsync, run.Token).ConfigureAwait(false);
-                response.Source ??= "vs";
-                Log(Describe(request, response, DateTime.UtcNow - started));
+                // A query that never returns holds the gate; others get an answer instead of waiting out its time limit.
+                acquired = await gate.WaitAsync(BusyWait, run.Token).ConfigureAwait(false);
+                if (!acquired)
+                {
+                    Log("Refused a request: another one has been running for more than " + (int)BusyWait.TotalSeconds + " s.");
+                    response = new RunResponse { Ok = false, Error = "The bridge is busy with another request (a long or stuck query). Try again, or restart the bridge (Extensions > Roslyn Query > Restart Agent Bridge). Nothing was run.", ExitCode = 1, Source = "vs" };
+                }
+                else
+                {
+                    var started = DateTime.UtcNow;
+                    response = await RequestEngine.RunAsync(request, ct => OpenAsync(request, ct), ApplyAsync, run.Token).ConfigureAwait(false);
+                    response.Source ??= "vs";
+                    Log(Describe(request, response, DateTime.UtcNow - started));
+                }
             }
             catch (OperationCanceledException)
             {
@@ -314,6 +341,12 @@ internal sealed class AgentBridge : IDisposable
                 // The client went away; nothing to tell it.
             }
         }
+    }
+
+    private static async Task TryReplyAsync(StreamWriter writer, RunResponse response)
+    {
+        try { await writer.WriteLineAsync(JsonConvert.SerializeObject(response, Json)).ConfigureAwait(false); }
+        catch (IOException) { }
     }
 
     private static async Task<string> ReadLineAsync(StreamReader reader, int maxChars)
@@ -347,10 +380,15 @@ internal sealed class AgentBridge : IDisposable
         return diff == 0;
     }
 
-    private Task<Session> OpenAsync(CancellationToken cancellationToken)
+    private Task<Session> OpenAsync(RunRequest request, CancellationToken cancellationToken)
     {
         var solution = _workspace.CurrentSolution;
         if (string.IsNullOrEmpty(solution.FilePath)) throw new InvalidOperationException("No solution is open in Visual Studio.");
+
+        // The client picked this instance by its solution; it may have switched since, or another request may have queued behind a switch.
+        if (!string.IsNullOrEmpty(request.Solution) && IsSolutionFile(request.Solution)
+            && !string.Equals(Path.GetFullPath(request.Solution), Path.GetFullPath(solution.FilePath), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("This Visual Studio has '" + solution.FilePath + "' open now, not '" + request.Solution + "'. Nothing was run.");
 
         return Task.FromResult(new Session
         {
@@ -361,37 +399,27 @@ internal sealed class AgentBridge : IDisposable
         });
     }
 
-    /// <summary>One undoable edit through the live workspace, exactly like Replace in the tool window.</summary>
+    private static bool IsSolutionFile(string path)
+    {
+        var extension = Path.GetExtension(path);
+        return extension.Equals(".sln", StringComparison.OrdinalIgnoreCase) || extension.Equals(".slnx", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>One undoable edit through the live workspace, exactly like Replace in the tool window. Commits the reviewed plan itself; a document edited since it was planned makes it refuse.</summary>
     private async Task ApplyAsync(ApplyContext context)
     {
-        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+        context.CancellationToken.ThrowIfCancellationRequested();
+        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(context.CancellationToken);
 
         var undo = GlobalUndoScope.Open(_services, _componentModel, "Roslyn Query: agent replace");
         var committed = false;
         try
         {
             Action<DocumentId> enroll = undo is null ? null : id => undo.AddDocument(_workspace, id);
-            // The reviewed plan is what gets written: replan against the live workspace and refuse if it no longer matches.
-            var plan = await ChangeApplier.PlanAsync(_workspace, context.Session.Solution, context.Items, CancellationToken.None).ConfigureAwait(true);
-            var replanned = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var id in plan.ChangedDocuments)
-            {
-                var document = plan.Solution.GetDocument(id);
-                replanned[document.FilePath] = (await document.GetTextAsync(CancellationToken.None).ConfigureAwait(true)).ToString();
-            }
-
-            var verified = true;
-            if (replanned.Count != context.Files.Count || plan.Outcome.Skipped > 0) verified = false;
-            else foreach (var pair in context.Files)
-                if (!replanned.TryGetValue(pair.Key, out var text) || text != pair.Value.New.ToString()) { verified = false; break; }
-
-            if (!verified)
-                throw new ApplyRefusedException("The open documents changed since the plan was reviewed, so it would no longer produce the same edits. Nothing was written; run a dry run again.");
-
-            var outcome = await ChangeApplier.CommitAsync(_workspace, plan, enroll, CancellationToken.None).ConfigureAwait(true);
+            var outcome = await ChangeApplier.CommitAsync(_workspace, context.Plan, enroll, CancellationToken.None).ConfigureAwait(true);
 
             if (outcome.Applied == 0)
-                throw new ApplyRefusedException("Nothing was applied: " + (outcome.Warnings.Count > 0 ? outcome.Warnings[0] : "the workspace rejected the change set."));
+                throw new ApplyRefusedException("Nothing was applied: " + (outcome.Warnings.Count > 0 ? outcome.Warnings[0] : "the workspace rejected the change set.") + " Nothing was written.");
 
             undo?.Commit();
             committed = true;

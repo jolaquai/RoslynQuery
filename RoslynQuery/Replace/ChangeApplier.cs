@@ -53,12 +53,6 @@ internal static class ChangeApplier
         var changedDocuments = plan.ChangedDocuments;
         var warnings = (List<string>)outcome.Warnings;
 
-        if (enrollDocument != null)
-        {
-            foreach (var id in changedDocuments)
-                enrollDocument(id);
-        }
-
         var finalTexts = new List<(DocumentId Id, SourceText Text)>(changedDocuments.Count);
         foreach (var id in changedDocuments)
             finalTexts.Add((id, await solution.GetDocument(id).GetTextAsync(cancellationToken).ConfigureAwait(true)));
@@ -85,6 +79,12 @@ internal static class ChangeApplier
             outcome.Applied = 0;
             warnings.Add("A file was edited while the replacement was being applied. Nothing was written; run it again.");
             return outcome;
+        }
+
+        if (enrollDocument != null)
+        {
+            foreach (var id in changedDocuments)
+                enrollDocument(id);
         }
 
         foreach (var (id, text) in finalTexts)
