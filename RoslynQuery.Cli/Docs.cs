@@ -48,7 +48,8 @@ internal static class Docs
             documents without semantic support.
 
             Return `true`/`false`, `null` (no match), or a node/token/operation from the same tree to report *that*
-            as the hit instead (for example a method's identifier token rather than the whole method).
+            as the hit instead (for example a method's identifier token rather than the whole method). Replace only
+            rewrites hits of the searched kind (a node for a node search, a token for a token search) and skips the rest with a warning.
 
             Already imported:
 
@@ -66,7 +67,9 @@ internal static class Docs
             and an `--apply` becomes one undoable edit in the editor. The response says `"source":"vs"`; without a
             bridge it is `"headless"` (solution loaded from disk, ~seconds). `--no-attach` / `--attach` force either.
             Pass the solution Visual Studio has open as `solution` (`-s`): without it, a process not started from
-            inside Visual Studio only attaches when the working directory is in the solution or one instance is open.
+            inside Visual Studio only attaches when the working directory is in the solution or one instance is open
+            (and the working directory has no solution of its own). A `.sln`/`.slnx` only attaches to the instance that
+            has exactly that file open; a project file as `solution` runs against that project only.
             `bridgePid` names the instance that answered and `bridgeMatch` why (`solution`, `ancestor`,
             `workingDirectory`, `onlyInstance`); `warnings` say when the run was headless although a bridge
             was open, or when several instances matched equally well. `bridges` lists the open instances.
@@ -80,7 +83,7 @@ internal static class Docs
 
             ## Output
 
-            `hits[]`: `file` (relative to the solution), `line`/`column`/`endLine`/`endColumn` (1-based), `kind`, `preview`.
+            `hits[]`: `file` (relative to the solution, absolute when outside its folder), `line`/`column`/`endLine`/`endColumn` (1-based), `kind`, `preview`.
             `stats.errors` counts candidates the predicate threw on (`stats.firstError` shows why); a wide
             `model.GetSymbolInfo(...)` over code that does not bind is the usual cause.
             `workspaceWarnings` non-empty means the solution did not load cleanly (missing SDK, restore not run);

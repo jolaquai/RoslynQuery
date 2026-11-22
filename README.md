@@ -85,10 +85,11 @@ from the end (`chars[^1]`) is fine, as is slicing a `string` or an `ImmutableArr
 
 Despite the `object` return, a predicate is still ordinarily written as a plain `bool`
 expression/body - `true` means match, `false` and `null` both mean no match. The one other thing
-you can return is the parameter's own type (`SyntaxNode` for a SyntaxNode search, `SyntaxToken` for
-a SyntaxToken search, `IOperation` for an IOperation search): that lets a single query pick a
-*different* location to report as the hit - a Where+Select in one, e.g. matching an `if` statement
-but reporting its containing method:
+you can return is a node or token from the tree being searched (an `IOperation` for an IOperation
+search): that lets a single query pick a *different* location to report as the hit - a Where+Select
+in one, e.g. matching an `if` statement but reporting its containing method. Replace rewrites such a
+hit only when it is of the searched kind (a node for a SyntaxNode search, a token for a SyntaxToken
+search); the others are skipped with a warning:
 
 ```csharp
 if (n.IsKind(SyntaxKind.IfStatement)) return n.FirstAncestorOrSelf<MethodDeclarationSyntax>();
@@ -623,20 +624,22 @@ editing file by file. The extension ships a command line tool and an MCP server 
 2. Register it as a stdio server, with the project folder as the working directory:
 
    ```json
-   { "mcpServers": { "roslynquery": { "command": "C:\\...\\Cli\\win-x64\\roslynquery.exe", "args": ["mcp"] } } }
+   { "mcpServers": { "roslynquery": { "command": "C:\\Users\\<you>\\AppData\\Local\\Programs\\RoslynQuery\\mcp\\roslynquery.exe", "args": ["mcp"] } } }
    ```
 
    Claude Code: `claude mcp add roslynquery -- "<path>" mcp`.
-3. Optional, for the live workspace: `Extensions > Roslyn Query > Enable Agent Bridge` (see [Agent bridge](#agent-bridge)).
+3. For the live workspace the bridge must be running: it starts with Visual Studio unless Visual Studio runs as administrator, where `Extensions > Roslyn Query > Enable Agent Bridge` asks first (see [Agent bridge](#agent-bridge)).
 
 Without the bridge the tools load the solution from disk, which takes seconds and ignores unsaved editor changes. With
 it they run in the Visual Studio that has the solution open: unsaved edits are visible, there is no load time, and an
 applied replace is one undoable edit in the editor.
 
-Which Visual Studio answers, in order: the one matching an explicit `solution` best (exact file, same folder, or a folder
-containing the other, nearer first); without `solution`, the one that started the agent's process (its terminal, or an
+Which Visual Studio answers, in order: the one matching an explicit `solution` best (a `.sln`/`.slnx` only matches
+itself; a project file or folder also matches the same folder or one containing the other, nearer first; a project
+file means that project's scope); without `solution`, the one that started the agent's process (its terminal, or an
 MCP server it launched, as Copilot does), then the one whose solution contains the working directory, then the only
-open instance. Ties go to the newest. Agents hosted elsewhere (Claude Desktop) usually have an unrelated working
+open instance (not when the working directory has a solution of its own, which is loaded from disk instead). Ties go to the
+instance the process was started from, then the newest. Agents hosted elsewhere (Claude Desktop) usually have an unrelated working
 directory, so they should pass `solution`; the `bridges` tool lists what is open.
 
 A response that left the live workspace carries a warning, so an agent can tell: a headless run while a bridge was
@@ -646,11 +649,17 @@ carries `bridgePid` and `bridgeMatch` (why it was chosen: `solution`, `ancestor`
 **Safety model**
 
 - Replace never writes on its own. It returns diffs; a write needs `apply` plus the `planId` of the dry run the
-  reviewer saw, and is refused (exit code 3) if the sources or the query changed since.
-- The bridge starts with Visual Studio by default, listens on a named pipe only the current Windows user can open, and requires a
-  per-session token. A predicate is C# that runs in your Visual Studio, so disable it if you do not trust every process
-  running as your Windows user.
-- Search is read-only; the MCP tool annotations mark `search`, `docs` and `bridges` read-only and `replace` destructive.
+  reviewer saw (the CLI and MCP both refuse `apply` without it), and is refused (exit code 3) if the sources or the
+  query changed since. Through the bridge the plan is rebuilt right before the write and refused if a touched document
+  was edited since the dry run. A connection lost after the request was sent is reported as an unknown outcome and never
+  retried.
+- The bridge starts with Visual Studio by default (never automatically in an administrator Visual Studio), listens on a
+  named pipe only the current Windows user can open, refuses network clients, and requires a per-session token. A
+  predicate is C# that runs in your Visual Studio, so disable it if you do not trust every process running as your
+  Windows user.
+- A predicate is arbitrary C# with your permissions, not a sandboxed query: `search` can do anything the process can.
+  The MCP annotations therefore mark `search` and `replace` as destructive and only `docs` and `bridges` as read-only.
+- Requests are size and time limited, and a client that goes away cancels its run.
 
 **For agents reading this:** run `roslynquery docs` first. It lists the predicate parameters per target, the imports in
 scope, the response fields and examples. A compile error in the predicate returns within about a second, before any
@@ -680,7 +689,7 @@ release workflow's `Publish CLI` step (or `scripts/publish-cli.ps1`) produces th
 stdio, so MCP clients need nothing but the path (`Extensions > Roslyn Query > Copy roslynquery CLI Path`):
 
 ```json
-{ "mcpServers": { "roslynquery": { "command": "C:\\...\\Cli\\win-x64\\roslynquery.exe", "args": ["mcp"] } } }
+{ "mcpServers": { "roslynquery": { "command": "C:\\Users\\<you>\\AppData\\Local\\Programs\\RoslynQuery\\mcp\\roslynquery.exe", "args": ["mcp"] } } }
 ```
 
 Start it with the project as the working directory and it uses the Visual Studio that has that solution open
@@ -697,7 +706,7 @@ as its own process and devenv never loads from it; `release.yml` checks exactly 
 
 ### Agent bridge
 
-The agent bridge (on by default, `Extensions > Roslyn Query > Disable Agent Bridge` turns it off) makes this Visual Studio answer the CLI's requests over a named pipe that
+The agent bridge (on by default except in an administrator Visual Studio, where enabling it asks for confirmation; `Extensions > Roslyn Query > Disable Agent Bridge` turns it off) makes this Visual Studio answer the CLI's requests over a named pipe that
 only the current Windows user can open (plus a per-session token kept in `%LOCALAPPDATA%\RoslynQuery\bridge`). `run`
 then uses the live workspace instead of loading from disk, so unsaved edits are seen, there is no solution load, and
 `--apply` is a single undoable edit. The response says `"source":"vs"` or `"headless"`; `--attach` / `--no-attach`

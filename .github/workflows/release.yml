@@ -77,6 +77,11 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "CLI publish failed for $rid" }
           }
 
+      # The shipped x64 build has to start, serve docs and keep stdout clean for MCP clients (arm64 cannot run here).
+      - name: Smoke test CLI
+        shell: pwsh
+        run: ./scripts/smoke-cli.ps1 -Exe RoslynQuery.Cli/publish/win-x64/roslynquery.exe
+
       - name: Build
         run: msbuild RoslynQuery/RoslynQuery.csproj -t:Rebuild -p:Configuration=Release -p:DeployExtension=false
 
@@ -186,6 +191,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           name: ${{ steps.ver.outputs.tag }}
           generate_release_notes: true
           files: artifacts/*.vsix

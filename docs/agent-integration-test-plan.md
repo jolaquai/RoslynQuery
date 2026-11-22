@@ -48,7 +48,7 @@ Always use `--no-attach` here. Output is one JSON line on stdout; diagnostics go
 | R.3 | Re-run R.2 immediately | no matches -> nothing to apply, no corruption. |
 | R.4 | `--apply --expect 0000000000000000` | refused, error mentions plan mismatch, **exit 3**, nothing written. |
 | R.5 | Dry run, edit one affected file by hand, then `--apply --expect <planId>` | refused (staleness or mismatch), exit 3, nothing written. |
-| R.6 | `--apply` without `-r` | `ok:false` ("Apply needs a Replace"). `-t operation -r ...` -> not supported error. |
+| R.6 | `--apply` without `-r` | `ok:false` ("Apply needs a Replace"). `-t operation -r ...` -> not supported error. `--apply` without `--expect` -> `ok:false` ("Apply needs ExpectPlan"), nothing written. |
 | R.7 | Replace returning `null` for some hits; overlapping matches | skipped hits listed with a warning; no overlapping edit written. |
 | R.8 | Files with UTF-8 BOM, UTF-8 no BOM, CRLF, LF | after apply, BOM/encoding and line endings preserved (check bytes: `Format-Hex`). Formatting of changed regions follows `.editorconfig`. |
 | R.9 | Multi-targeted project (same file in two Roslyn projects) | file reported/changed once. |
@@ -77,6 +77,10 @@ Always use `--no-attach` here. Output is one JSON line on stdout; diagnostics go
     instance A (check `source` pid via `roslynquery mcp`'s `bridges` tool, or host-file pid vs `$PID` ancestry). From a normal
     terminal: best solution match, then newest. Repeat from B's terminal. Different solutions: exact solution match wins over
     same folder over cwd-under-solution.
+12. [Admin] Start Visual Studio as administrator with the bridge option on. Expected: the bridge does NOT start (no host file). `Extensions > Roslyn Query > Enable Agent Bridge` shows a warning with Yes/No; No leaves it off, Yes starts it for this session only (the next elevated start is off again). `Show Bridge Log` never starts the bridge.
+13. Edit during apply: dry run through the bridge, then type into one of the affected files and `--apply --expect <planId>`. Expected: refused (exit 3, "changed since the plan was reviewed" or "edited while ..."), your typing intact.
+14. Lost reply: `--apply` through the bridge while closing VS or killing the CLI's pipe. Expected: error says the outcome is unknown and was not retried; files on disk are not rewritten headless.
+15. Exact solution: with `A.slnx` open, `run -s B.slnx` (same folder) must not attach to it (headless or "no bridge" with `--attach`); `run -s <project>.csproj` attaches and searches that project only; a response about a non-identical solution carries the "is not itself open" warning.
 
 ## 3. MCP server (`roslynquery mcp`, stdio)
 
@@ -85,7 +89,7 @@ Use any MCP client (e.g. `npx @modelcontextprotocol/inspector <cli> mcp`) or an 
 
 | # | Check | Expected |
 |---|-------|----------|
-| 3.1 | initialize + tools/list | exactly `search` (read-only), `replace` (destructive), `docs` (read-only), `bridges` (read-only), each with description and JSON input schema. |
+| 3.1 | initialize + tools/list | exactly `search` (destructive: it runs arbitrary C#), `replace` (destructive), `docs` (read-only), `bridges` (read-only), each with description and JSON input schema. |
 | 3.2 | stdout cleanliness | only protocol frames on stdout; all logging on stderr (a stray line on stdout breaks clients: check with a raw `<cli> mcp` and a pasted `initialize` request). |
 | 3.3 | `docs` | same content as `roslynquery docs`. |
 | 3.4 | `bridges` | lists running VS bridges (pid, solution, whether it is this process's ancestor); empty list when none. |
