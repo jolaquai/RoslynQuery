@@ -79,7 +79,7 @@ internal static class RequestEngine
         var solution = session.Solution;
         var root = session.Root;
 
-        var units = await ResolveScopeAsync(solution, request, cancellationToken).ConfigureAwait(false);
+        var units = await ResolveScopeAsync(solution, root, request, cancellationToken).ConfigureAwait(false);
         if (units is null) return Fail(response, ScopeError(request));
 
         var found = new List<QueryHit>();
@@ -169,14 +169,16 @@ internal static class RequestEngine
 
         response.PlanId = Hex(Sha256(digest.ToString()), 8);
 
-        if (!request.Apply || files.Count == 0) return;
+        if (!request.Apply) return;
 
-        if (request.ExpectPlan != null && !string.Equals(request.ExpectPlan, response.PlanId, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(request.ExpectPlan, response.PlanId, StringComparison.OrdinalIgnoreCase))
         {
             Fail(response, $"Plan mismatch: expected {request.ExpectPlan}, this run plans {response.PlanId}. The sources or the query changed since the dry run; review the diff and pass the new planId. Nothing was written.");
             response.ExitCode = 3;
             return;
         }
+
+        if (files.Count == 0) return;
 
         try
         {
@@ -210,6 +212,7 @@ internal static class RequestEngine
         if (string.IsNullOrWhiteSpace(r.Query)) return "No query given.";
         if (r.Max < 1) return "Max must be at least 1.";
         if (r.Apply && r.Replace is null) return "Apply needs a Replace.";
+        if (r.Apply && string.IsNullOrWhiteSpace(r.ExpectPlan)) return "Apply needs ExpectPlan: run the replace without apply, review the diff, and pass its planId (--expect <planId>). Nothing was written.";
         if (r.Replace != null && r.Target == TargetKind.Operation) return "Replace does not support Target=Operation; use SyntaxNode or SyntaxToken.";
         if ((r.Scope is ScopeKind.Document or ScopeKind.ContainingType or ScopeKind.ContainingMember) && string.IsNullOrEmpty(r.File)) return $"Scope {r.Scope} needs a File.";
         if (r.Scope == ScopeKind.Project && string.IsNullOrEmpty(r.File) && string.IsNullOrEmpty(r.Project)) return "Scope Project needs a Project or a File inside it.";
@@ -221,14 +224,15 @@ internal static class RequestEngine
             ? $"No C# project named or located at '{r.Project}' in the solution."
             : $"'{r.File}' is not a C# document of the loaded solution, or no declaration encloses {r.Line},{r.Column}.";
 
-    private static async Task<IReadOnlyList<ScopeUnit>> ResolveScopeAsync(Solution solution, RunRequest r, CancellationToken cancellationToken)
+    private static async Task<IReadOnlyList<ScopeUnit>> ResolveScopeAsync(Solution solution, string root, RunRequest r, CancellationToken cancellationToken)
     {
         if (r.Scope == ScopeKind.Project && string.IsNullOrEmpty(r.File))
         {
             var full = Path.GetFullPath(r.Project);
             var project = solution.Projects.FirstOrDefault(p =>
                 string.Equals(p.Name, r.Project, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(p.FilePath, full, StringComparison.OrdinalIgnoreCase));
+                string.Equals(p.FilePath, full, StringComparison.OrdinalIgnoreCase) ||
+                p.FilePath != null && string.Equals(Path.GetFileNameWithoutExtension(p.FilePath), r.Project, StringComparison.OrdinalIgnoreCase));
             if (project is null) return null;
 
             // A multi-targeted project is one Roslyn project per framework, all sharing the path.
@@ -238,13 +242,23 @@ internal static class RequestEngine
 
         var active = r.File is null ? null : new ActiveContext
         {
-            FilePath = Path.GetFullPath(r.File),
+            FilePath = ResolveFile(root, r.File),
             Line = Math.Max(0, r.Line - 1),
             Column = Math.Max(0, r.Column - 1)
         };
 
         var units = await ScopeResolver.ResolveAsync(solution, r.Scope, active, r.IncludeGenerated, cancellationToken).ConfigureAwait(false);
         return units.Count == 0 && r.Scope != ScopeKind.Solution ? null : units;
+    }
+
+    /// <summary>A relative path is taken against the working directory, else against the solution folder (hit paths are relative to it).</summary>
+    private static string ResolveFile(string root, string file)
+    {
+        var full = Path.GetFullPath(file);
+        if (Path.IsPathRooted(file) || File.Exists(full) || string.IsNullOrEmpty(root)) return full;
+
+        var underRoot = Path.GetFullPath(Path.Combine(root, file));
+        return File.Exists(underRoot) ? underRoot : full;
     }
 
     /// <summary>Path relative to <paramref name="root"/> with forward slashes; the absolute path when it is outside of it.</summary>

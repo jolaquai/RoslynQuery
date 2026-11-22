@@ -35,6 +35,16 @@ internal static class ChangeApplier
         System.Action<DocumentId> enrollDocument, CancellationToken cancellationToken)
     {
         var plan = await PlanAsync(workspace, ranAgainst, items, cancellationToken).ConfigureAwait(true);
+        return await CommitAsync(workspace, plan, enrollDocument, cancellationToken).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Writes a plan to the workspace. Refuses (Applied 0, a warning) when any planned document was edited since the plan
+    /// read its text, so nothing typed meanwhile is overwritten.
+    /// </summary>
+    public static async Task<ApplyOutcome> CommitAsync(
+        Workspace workspace, ApplyPlan plan, System.Action<DocumentId> enrollDocument, CancellationToken cancellationToken)
+    {
         var outcome = plan.Outcome;
         if (outcome.Applied == 0)
             return outcome;
@@ -49,14 +59,36 @@ internal static class ChangeApplier
                 enrollDocument(id);
         }
 
+        var finalTexts = new List<(DocumentId Id, SourceText Text)>(changedDocuments.Count);
+        foreach (var id in changedDocuments)
+            finalTexts.Add((id, await solution.GetDocument(id).GetTextAsync(cancellationToken).ConfigureAwait(true)));
+
         // Rebased onto the freshest CurrentSolution: background work can advance it during the awaits
         // above, and TryApplyChanges silently rejects a solution diffed against a stale baseline.
-        var latest = workspace.CurrentSolution;
-        foreach (var id in changedDocuments)
+        Solution latest;
+        var stale = false;
+        for (var attempt = 0; ; attempt++)
         {
-            var finalText = await solution.GetDocument(id).GetTextAsync(cancellationToken).ConfigureAwait(true);
-            latest = latest.WithDocumentText(id, finalText);
+            latest = workspace.CurrentSolution;
+            foreach (var (id, _) in finalTexts)
+            {
+                var text = await latest.GetDocument(id).GetTextAsync(cancellationToken).ConfigureAwait(true);
+                if (plan.BaseTexts.TryGetValue(id, out var planned) && !text.ContentEquals(planned)) stale = true;
+            }
+
+            if (stale || ReferenceEquals(latest, workspace.CurrentSolution) || attempt >= 3) break;
         }
+
+        if (stale)
+        {
+            outcome.Skipped += outcome.Applied;
+            outcome.Applied = 0;
+            warnings.Add("A file was edited while the replacement was being applied. Nothing was written; run it again.");
+            return outcome;
+        }
+
+        foreach (var (id, text) in finalTexts)
+            latest = latest.WithDocumentText(id, text);
 
         var diagnostics = new List<string>();
         bool applied;
@@ -82,6 +114,9 @@ internal static class ChangeApplier
         public Solution Solution { get; set; }
         public IReadOnlyList<DocumentId> ChangedDocuments { get; set; }
 
+        /// <summary>The text each changed document had when it was planned.</summary>
+        public IReadOnlyDictionary<DocumentId, SourceText> BaseTexts { get; set; } = new Dictionary<DocumentId, SourceText>();
+
         /// <summary>Applied counts what the plan would write; Warnings is always a <see cref="List{T}"/>.</summary>
         public ApplyOutcome Outcome { get; set; }
     }
@@ -106,12 +141,14 @@ internal static class ChangeApplier
         var current = workspace.CurrentSolution;
         var solution = current;
         var changedDocuments = new List<DocumentId>();
+        var baseTexts = new Dictionary<DocumentId, SourceText>();
 
-        foreach (var group in included.GroupBy(i => i.Hit.DocumentId))
+        // Per physical file: linked copies of one file (one per target framework) share a single text, so their edits must merge.
+        foreach (var group in included.GroupBy(i => i.Hit.FilePath ?? i.Hit.DocumentId.ToString()))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var currentDoc = current.GetDocument(group.Key);
+            var currentDoc = group.Select(i => current.GetDocument(i.Hit.DocumentId)).FirstOrDefault(d => d != null);
             if (currentDoc is null)
             {
                 outcome.Skipped += group.Count();
@@ -122,7 +159,6 @@ internal static class ChangeApplier
             // ConfigureAwait(true) throughout: enrolment and TryApplyChanges below touch live text
             // buffers and the shell's undo stack, both of which are main-thread only.
             var currentText = await currentDoc.GetTextAsync(cancellationToken).ConfigureAwait(true);
-            var originalDoc = ranAgainst?.GetDocument(group.Key);
 
             // Remap each hit's span from the search snapshot to the live document. When nothing has
             // edited that document since Search ran, original and current are the same Document
@@ -130,9 +166,18 @@ internal static class ChangeApplier
             var remapped = new List<(ReplacementItem Item, TextSpan Span)>(group.Count());
             foreach (var item in group)
             {
+                var itemDoc = current.GetDocument(item.Hit.DocumentId);
+                if (itemDoc is null)
+                {
+                    outcome.Skipped++;
+                    warnings.Add("A matched document is no longer part of the solution; re-run Search.");
+                    continue;
+                }
+
                 var span = item.Hit.Span;
-                if (originalDoc != null && originalDoc != currentDoc)
-                    span = await SpanMapper.MapForwardAsync(originalDoc, currentDoc, span, cancellationToken).ConfigureAwait(true);
+                var originalDoc = ranAgainst?.GetDocument(item.Hit.DocumentId);
+                if (originalDoc != null && originalDoc != itemDoc)
+                    span = await SpanMapper.MapForwardAsync(originalDoc, itemDoc, span, cancellationToken).ConfigureAwait(true);
 
                 if (span.Start < 0 || span.End > currentText.Length)
                 {
@@ -184,14 +229,14 @@ internal static class ChangeApplier
                 continue;
 
             var newText = currentText.WithChanges(changes);
-            var newSolution = solution.WithDocumentText(group.Key, newText);
+            var newSolution = solution.WithDocumentText(currentDoc.Id, newText);
 
             // A formatting failure must never turn an otherwise-correct apply into a failed one.
             try
             {
-                var formatted = await Formatter.FormatAsync(newSolution.GetDocument(group.Key), newSpans, cancellationToken: cancellationToken)
+                var formatted = await Formatter.FormatAsync(newSolution.GetDocument(currentDoc.Id), newSpans, cancellationToken: cancellationToken)
                     .ConfigureAwait(true);
-                newSolution = newSolution.WithDocumentText(group.Key, await formatted.GetTextAsync(cancellationToken).ConfigureAwait(true));
+                newSolution = newSolution.WithDocumentText(currentDoc.Id, await formatted.GetTextAsync(cancellationToken).ConfigureAwait(true));
             }
             catch
             {
@@ -199,10 +244,11 @@ internal static class ChangeApplier
             }
 
             solution = newSolution;
-            changedDocuments.Add(group.Key);
+            changedDocuments.Add(currentDoc.Id);
+            baseTexts[currentDoc.Id] = currentText;
         }
 
         outcome.Warnings = warnings;
-        return new ApplyPlan { Solution = solution, ChangedDocuments = changedDocuments, Outcome = outcome };
+        return new ApplyPlan { Solution = solution, ChangedDocuments = changedDocuments, BaseTexts = baseTexts, Outcome = outcome };
     }
 }

@@ -89,7 +89,7 @@ internal static class ReplaceEngine
             if (target == TargetKind.SyntaxNode)
             {
                 if (!nodeIndex.TryGetValue((hit.Span, hit.Kind), out var node))
-                    return Skip(hit, "This match no longer exists at its recorded location.");
+                    return Skip(hit, "This match is not a node at its recorded location (a token reported by a node search cannot be replaced), or it no longer exists.");
 
                 result = await ((NodeReplace)replace)(node, model, document).ConfigureAwait(false);
             }
@@ -97,7 +97,7 @@ internal static class ReplaceEngine
             {
                 var token = root.FindToken(hit.Span.Start);
                 if (token.Span != hit.Span || token.Kind().ToString() != hit.Kind)
-                    return Skip(hit, "This match no longer exists at its recorded location.");
+                    return Skip(hit, "This match is not a token at its recorded location (a node reported by a token search cannot be replaced), or it no longer exists.");
 
                 result = await ((TokenReplace)replace)(token, model, document).ConfigureAwait(false);
             }

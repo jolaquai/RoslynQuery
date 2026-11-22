@@ -66,13 +66,49 @@ internal static class Runner
                 throw new ApplyRefusedException($"'{RequestEngine.Rel(context.Session.Root, pair.Key)}' changed on disk since the solution was loaded. Nothing was written.");
         }
 
-        foreach (var pair in context.Files)
+        // Every file is written to a temp file first, then swapped in; a failure part way puts the already swapped ones back.
+        var stamp = Guid.NewGuid().ToString("N").Substring(0, 8);
+        var staged = new List<(string Target, string Temp)>();
+        var swapped = new List<(string Target, string Backup)>();
+        try
         {
-            using var writer = new StreamWriter(pair.Key, append: false, pair.Value.New.Encoding ?? new UTF8Encoding(false));
-            pair.Value.New.Write(writer);
+            foreach (var pair in context.Files)
+            {
+                var temp = pair.Key + ".rq-" + stamp + ".tmp";
+                staged.Add((pair.Key, temp));
+                using var writer = new StreamWriter(temp, append: false, pair.Value.New.Encoding ?? new UTF8Encoding(false));
+                pair.Value.New.Write(writer);
+            }
+
+            foreach (var (target, temp) in staged)
+            {
+                var backup = target + ".rq-" + stamp + ".bak";
+                File.Replace(temp, target, backup);
+                swapped.Add((target, backup));
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            foreach (var (target, backup) in swapped)
+            {
+                try { File.Copy(backup, target, overwrite: true); } catch (Exception restore) when (restore is IOException or UnauthorizedAccessException) { }
+            }
+
+            throw new ApplyRefusedException("Could not write every file (" + ex.Message + "); " + (swapped.Count > 0 ? swapped.Count + " already written file(s) were restored." : "nothing was written."));
+        }
+        finally
+        {
+            foreach (var (_, temp) in staged) TryDelete(temp);
+            foreach (var (_, backup) in swapped) TryDelete(backup);
         }
 
         return Task.CompletedTask;
+    }
+
+    private static void TryDelete(string path)
+    {
+        try { File.Delete(path); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
     private static string ResolveSolutionPath(string given)

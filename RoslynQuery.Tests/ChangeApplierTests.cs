@@ -300,3 +300,141 @@ public class ChangeApplierTests
         Assert.Empty(enrolled);
     }
 }
+
+public class ChangeApplierLinkedTests
+{
+    private const string Source = "class C\r\n{\r\n#if B\r\n    void M1() { }\r\n#endif\r\n    void M2() { }\r\n}";
+
+    private static (AdhocWorkspace Workspace, DocumentId Plain, DocumentId WithB) Linked()
+    {
+        var workspace = new AdhocWorkspace();
+        var ids = new List<DocumentId>();
+        foreach (var symbols in new[] { new string[0], new[] { "B" } })
+        {
+            var project = workspace.AddProject(ProjectInfo.Create(
+                ProjectId.CreateNewId(), VersionStamp.Create(), "Linked", "Linked", LanguageNames.CSharp,
+                compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
+                parseOptions: CSharpParseOptions.Default.WithPreprocessorSymbols(symbols),
+                metadataReferences: [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]));
+
+            ids.Add(workspace.AddDocument(DocumentInfo.Create(
+                DocumentId.CreateNewId(project.Id), "Linked.cs",
+                loader: TextLoader.From(TextAndVersion.Create(SourceText.From(Source), VersionStamp.Create())),
+                filePath: @"C:\src\Linked.cs")).Id);
+        }
+
+        return (workspace, ids[0], ids[1]);
+    }
+
+    private static async Task<ReplacementItem> RenameAsync(Solution solution, DocumentId id, string name, string to)
+    {
+        var document = solution.GetDocument(id);
+        var root = await document.GetSyntaxRootAsync(TestContext.Current.CancellationToken);
+        var token = root.DescendantTokens().First(t => t.IsKind(SyntaxKind.IdentifierToken) && t.Text == name);
+        var text = await document.GetTextAsync(TestContext.Current.CancellationToken);
+        return new ReplacementItem { Hit = QueryHit.Create(document, text, token.Span, "IdentifierToken", TargetKind.SyntaxToken), Before = name, After = to };
+    }
+
+    [Fact]
+    public async Task ApplyAsync_HitsInTwoLinkedCopiesOfOneFile_KeepsBothEdits()
+    {
+        var (workspace, plain, withB) = Linked();
+        var solution = workspace.CurrentSolution;
+        var items = new[] { await RenameAsync(solution, withB, "M1", "One"), await RenameAsync(solution, plain, "M2", "Two") };
+
+        var outcome = await ChangeApplier.ApplyAsync(workspace, solution, items, TestContext.Current.CancellationToken);
+
+        var text = (await workspace.CurrentSolution.GetDocument(plain).GetTextAsync(TestContext.Current.CancellationToken)).ToString();
+        Assert.Equal(2, outcome.Applied);
+        Assert.Contains("One()", text);
+        Assert.Contains("Two()", text);
+    }
+}
+
+public class ChangeApplierLinkedPlanTests
+{
+    [Fact]
+    public async Task PlanAsync_HitsInTwoLinkedCopies_EveryChangedDocumentCarriesBothEdits()
+    {
+        var workspace = new AdhocWorkspace();
+        const string source = "class C\r\n{\r\n#if B\r\n    void M1() { }\r\n#endif\r\n    void M2() { }\r\n}";
+        var ids = new List<DocumentId>();
+        foreach (var symbols in new[] { new string[0], new[] { "B" } })
+        {
+            var project = workspace.AddProject(ProjectInfo.Create(
+                ProjectId.CreateNewId(), VersionStamp.Create(), "Linked", "Linked", LanguageNames.CSharp,
+                compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
+                parseOptions: CSharpParseOptions.Default.WithPreprocessorSymbols(symbols),
+                metadataReferences: [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]));
+            ids.Add(workspace.AddDocument(DocumentInfo.Create(
+                DocumentId.CreateNewId(project.Id), "Linked.cs",
+                loader: TextLoader.From(TextAndVersion.Create(SourceText.From(source), VersionStamp.Create())),
+                filePath: @"C:\src\Linked.cs")).Id);
+        }
+
+        var solution = workspace.CurrentSolution;
+        var items = new List<ReplacementItem>();
+        foreach (var (id, name, to) in new[] { (ids[1], "M1", "One"), (ids[0], "M2", "Two") })
+        {
+            var document = solution.GetDocument(id);
+            var root = await document.GetSyntaxRootAsync(TestContext.Current.CancellationToken);
+            var token = root.DescendantTokens().First(t => t.IsKind(SyntaxKind.IdentifierToken) && t.Text == name);
+            var text = await document.GetTextAsync(TestContext.Current.CancellationToken);
+            items.Add(new ReplacementItem { Hit = QueryHit.Create(document, text, token.Span, "IdentifierToken", TargetKind.SyntaxToken), Before = name, After = to });
+        }
+
+        var plan = await ChangeApplier.PlanAsync(workspace, solution, items, TestContext.Current.CancellationToken);
+
+        foreach (var id in plan.ChangedDocuments)
+        {
+            var text = (await plan.Solution.GetDocument(id).GetTextAsync(TestContext.Current.CancellationToken)).ToString();
+            Assert.Contains("One()", text);
+            Assert.Contains("Two()", text);
+        }
+    }
+}
+
+public class ChangeApplierCommitTests
+{
+    private static async Task<(AdhocWorkspace Workspace, DocumentId Id, ChangeApplier.ApplyPlan Plan)> PlannedAsync()
+    {
+        var workspace = new AdhocWorkspace();
+        var project = workspace.AddProject(ProjectInfo.Create(
+            ProjectId.CreateNewId(), VersionStamp.Create(), "P", "P", LanguageNames.CSharp,
+            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
+            metadataReferences: [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]));
+        var document = workspace.AddDocument(project.Id, "A.cs", SourceText.From("class C { int x; }"));
+
+        var root = await document.GetSyntaxRootAsync(TestContext.Current.CancellationToken);
+        var token = root.DescendantTokens().First(t => t.IsKind(SyntaxKind.IdentifierToken) && t.Text == "x");
+        var text = await document.GetTextAsync(TestContext.Current.CancellationToken);
+        var item = new ReplacementItem { Hit = QueryHit.Create(document, text, token.Span, "IdentifierToken", TargetKind.SyntaxToken), Before = "x", After = "renamed" };
+
+        var plan = await ChangeApplier.PlanAsync(workspace, workspace.CurrentSolution, [item], TestContext.Current.CancellationToken);
+        return (workspace, document.Id, plan);
+    }
+
+    [Fact]
+    public async Task CommitAsync_UntouchedDocument_Writes()
+    {
+        var (workspace, id, plan) = await PlannedAsync();
+
+        var outcome = await ChangeApplier.CommitAsync(workspace, plan, null, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, outcome.Applied);
+        Assert.Contains("renamed", (await workspace.CurrentSolution.GetDocument(id).GetTextAsync(TestContext.Current.CancellationToken)).ToString());
+    }
+
+    [Fact]
+    public async Task CommitAsync_DocumentEditedAfterThePlanWasMade_RefusesAndKeepsTheEdit()
+    {
+        var (workspace, id, plan) = await PlannedAsync();
+        Assert.True(workspace.TryApplyChanges(workspace.CurrentSolution.WithDocumentText(id, SourceText.From("class C { int x; /* typed meanwhile */ }"))));
+
+        var outcome = await ChangeApplier.CommitAsync(workspace, plan, null, TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, outcome.Applied);
+        Assert.Contains(outcome.Warnings, w => w.Contains("edited while"));
+        Assert.Contains("typed meanwhile", (await workspace.CurrentSolution.GetDocument(id).GetTextAsync(TestContext.Current.CancellationToken)).ToString());
+    }
+}
