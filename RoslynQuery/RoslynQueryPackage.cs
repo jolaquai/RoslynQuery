@@ -102,20 +102,38 @@ public sealed class RoslynQueryPackage : AsyncPackage
 
         var options = (RoslynQueryOptions)GetDialogPage(typeof(RoslynQueryOptions));
         options.SyncBridgeDisabledFlag();
-        if (options.AutoStartAgentBridge)
-            await EnsureBridgeAsync().ConfigureAwait(true);
+        // An elevated Visual Studio never opens the bridge on its own: any process of the same user could then run code in it.
+        if (options.AutoStartAgentBridge && !Elevation.IsElevated())
+            await EnsureBridgeAsync(start: true).ConfigureAwait(true);
     }
 
-    private async Task<AgentBridge> EnsureBridgeAsync()
+    private async Task<AgentBridge> EnsureBridgeAsync(bool start)
     {
         await JoinableTaskFactory.SwitchToMainThreadAsync(DisposalToken);
-        if (_bridge != null) return _bridge;
 
-        if (await GetServiceAsync(typeof(SComponentModel)) is not IComponentModel componentModel) return null;
+        if (_bridge is null)
+        {
+            if (await GetServiceAsync(typeof(SComponentModel)) is not IComponentModel componentModel) return null;
+            _bridge = new AgentBridge(this, componentModel, typeof(RoslynQueryPackage).Assembly.GetName().Version.ToString());
+        }
 
-        _bridge = new AgentBridge(this, componentModel, typeof(RoslynQueryPackage).Assembly.GetName().Version.ToString());
-        _bridge.Start();
+        if (start && !_bridge.IsRunning) _bridge.Start();
         return _bridge;
+    }
+
+    /// <summary>True when the user agrees, or Visual Studio is not elevated.</summary>
+    private bool ConfirmStartWhenElevated()
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        if (!Elevation.IsElevated()) return true;
+
+        const int yes = 6;
+        return VsShellUtilities.ShowMessageBox(this,
+            "This Visual Studio runs as administrator. With the agent bridge on, any program running as your Windows user can have this elevated Visual Studio execute C# code on its behalf (through the bridge's token file), which lifts it to administrator rights.\r\n\r\nStart the agent bridge anyway?",
+            "Roslyn Query: elevated Visual Studio",
+            Microsoft.VisualStudio.Shell.Interop.OLEMSGICON.OLEMSGICON_WARNING,
+            Microsoft.VisualStudio.Shell.Interop.OLEMSGBUTTON.OLEMSGBUTTON_YESNO,
+            Microsoft.VisualStudio.Shell.Interop.OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_SECOND) == yes;
     }
 
     private void ToggleBridge(object sender, EventArgs e) => JoinableTaskFactory.RunAsync(async () =>
@@ -129,9 +147,11 @@ public sealed class RoslynQueryPackage : AsyncPackage
         }
         else
         {
-            var bridge = await EnsureBridgeAsync();
+            await JoinableTaskFactory.SwitchToMainThreadAsync();
+            if (!ConfirmStartWhenElevated()) return;
+
+            var bridge = await EnsureBridgeAsync(start: true);
             if (bridge is null) return;
-            if (!bridge.IsRunning) bridge.Start();
             options.AutoStartAgentBridge = true;
         }
 
@@ -140,15 +160,16 @@ public sealed class RoslynQueryPackage : AsyncPackage
 
     private void ShowBridgeLog(object sender, EventArgs e) => JoinableTaskFactory.RunAsync(async () =>
     {
-        var bridge = await EnsureBridgeAsync();
+        var bridge = await EnsureBridgeAsync(start: false);
         bridge?.ShowLog();
     }).FileAndForget("vs/roslynquery/bridgelog");
 
-    private void CopyCliPath(object sender, EventArgs e)
+    private void CopyCliPath(object sender, EventArgs e) => JoinableTaskFactory.RunAsync(async () =>
     {
-        ThreadHelper.ThrowIfNotOnUIThread();
-
+        await TaskScheduler.Default;
         var path = BridgeCli.Install();
+        await JoinableTaskFactory.SwitchToMainThreadAsync(DisposalToken);
+
         if (path is null)
         {
             VsShellUtilities.ShowMessageBox(this, "This build of the extension does not bundle the roslynquery CLI (it is added by the release build).", "Roslyn Query",
@@ -157,7 +178,7 @@ public sealed class RoslynQueryPackage : AsyncPackage
         }
 
         Clipboard.SetText(path);
-    }
+    }).FileAndForget("vs/roslynquery/copyclipath");
 
     protected override void Dispose(bool disposing)
     {

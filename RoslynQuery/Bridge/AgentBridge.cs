@@ -35,6 +35,9 @@ internal sealed class AgentBridge : IDisposable
 {
     private static readonly Guid PaneGuid = new Guid("5c1f3a0e-6a52-4d19-9f5d-2b7a9e44c0d1");
     private const int MaxLogLines = 500;
+    private const int MaxTokenChars = 128;
+    private const int MaxRequestChars = 1 << 20;
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(15);
     private static readonly int Pid = System.Diagnostics.Process.GetCurrentProcess().Id;
 
     private static readonly JsonSerializerSettings Json = new JsonSerializerSettings
@@ -52,7 +55,7 @@ internal sealed class AgentBridge : IDisposable
 
     private readonly object _gate = new object();
     private readonly LinkedList<string> _log = new LinkedList<string>();
-    private readonly SemaphoreSlim _one = new SemaphoreSlim(1, 1);
+    private SemaphoreSlim _one = new SemaphoreSlim(1, 1);
 
     private CancellationTokenSource _cts;
     private string _pipe;
@@ -88,6 +91,7 @@ internal sealed class AgentBridge : IDisposable
             _token = NewToken();
             _startedUtc = DateTime.UtcNow.ToString("o");
             _cts = new CancellationTokenSource();
+            _one = new SemaphoreSlim(1, 1);
             _hostFile = Path.Combine(BridgePaths.Directory, Pid + ".json");
 
             _workspace.WorkspaceChanged += OnWorkspaceChanged;
@@ -97,7 +101,8 @@ internal sealed class AgentBridge : IDisposable
         Log("Bridge started on " + _pipe);
 
         var token = _cts.Token;
-        _ = Task.Run(() => AcceptLoopAsync(_pipe, token));
+        var gate = _one;
+        _ = Task.Run(() => AcceptLoopAsync(_pipe, gate, token));
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -155,7 +160,7 @@ internal sealed class AgentBridge : IDisposable
     {
         try
         {
-            Directory.CreateDirectory(BridgePaths.Directory);
+            RestrictDirectory(Directory.CreateDirectory(BridgePaths.Directory));
 
             var info = new BridgeHostInfo
             {
@@ -169,8 +174,8 @@ internal sealed class AgentBridge : IDisposable
 
             var temp = _hostFile + ".tmp";
             File.WriteAllText(temp, JsonConvert.SerializeObject(info, Json), new UTF8Encoding(false));
-            if (File.Exists(_hostFile)) File.Delete(_hostFile);
-            File.Move(temp, _hostFile);
+            if (File.Exists(_hostFile)) File.Replace(temp, _hostFile, null);
+            else File.Move(temp, _hostFile);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -178,9 +183,27 @@ internal sealed class AgentBridge : IDisposable
         }
     }
 
-    private async Task AcceptLoopAsync(string pipe, CancellationToken cancellationToken)
+    // The token lives here: only this user and the system may read it.
+    private void RestrictDirectory(DirectoryInfo directory)
+    {
+        try
+        {
+            var security = new DirectorySecurity();
+            security.SetAccessRuleProtection(true, false);
+            security.AddAccessRule(new FileSystemAccessRule(WindowsIdentity.GetCurrent().User, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+            security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+            directory.SetAccessControl(security);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            Log("Could not restrict " + directory.FullName + ": " + ex.Message);
+        }
+    }
+
+    private async Task AcceptLoopAsync(string pipe, SemaphoreSlim gate, CancellationToken cancellationToken)
     {
         var security = new PipeSecurity();
+        security.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.NetworkSid, null), PipeAccessRights.FullControl, AccessControlType.Deny));
         security.AddAccessRule(new PipeAccessRule(WindowsIdentity.GetCurrent().User, PipeAccessRights.ReadWrite | PipeAccessRights.CreateNewInstance, AccessControlType.Allow));
 
         while (!cancellationToken.IsCancellationRequested)
@@ -193,7 +216,7 @@ internal sealed class AgentBridge : IDisposable
 
                 var connection = server;
                 server = null;
-                _ = Task.Run(() => HandleAsync(connection, cancellationToken));
+                _ = Task.Run(() => HandleAsync(connection, gate, cancellationToken));
             }
             catch (OperationCanceledException)
             {
@@ -209,7 +232,7 @@ internal sealed class AgentBridge : IDisposable
         }
     }
 
-    private async Task HandleAsync(NamedPipeServerStream pipe, CancellationToken cancellationToken)
+    private async Task HandleAsync(NamedPipeServerStream pipe, SemaphoreSlim gate, CancellationToken cancellationToken)
     {
         using (pipe)
         {
@@ -222,6 +245,7 @@ internal sealed class AgentBridge : IDisposable
             {
                 // A client that connects and goes quiet must not pin a connection forever.
                 var read = ReadRequestAsync(reader);
+                _ = read.ContinueWith(task => task.Exception, TaskContinuationOptions.OnlyOnFaulted);
                 if (await Task.WhenAny(read, Task.Delay(TimeSpan.FromSeconds(10), cancellationToken)).ConfigureAwait(false) != read)
                 {
                     Log("Dropped a connection that sent nothing.");
@@ -230,24 +254,46 @@ internal sealed class AgentBridge : IDisposable
 
                 request = await read.ConfigureAwait(false);
             }
-            catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or InvalidDataException)
             {
                 Log("Rejected a request: " + ex.Message);
                 return;
             }
 
+            // Ends the run when the bridge stops, the time limit passes, or the client hangs up (its pipe end closes).
+            using var run = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            run.CancelAfter(RequestTimeout);
+            _ = reader.ReadAsync(new char[1], 0, 1).ContinueWith(task =>
+            {
+                if (task.IsFaulted)
+                {
+                    _ = task.Exception;
+                    try { run.Cancel(); } catch (ObjectDisposedException) { }
+                }
+                else if (task.Status == TaskStatus.RanToCompletion && task.Result == 0)
+                {
+                    try { run.Cancel(); } catch (ObjectDisposedException) { }
+                }
+            }, TaskContinuationOptions.ExecuteSynchronously);
+
             RunResponse response;
-            await _one.WaitAsync(cancellationToken).ConfigureAwait(false);
+            var acquired = false;
             try
             {
+                await gate.WaitAsync(run.Token).ConfigureAwait(false);
+                acquired = true;
+
                 var started = DateTime.UtcNow;
-                response = await RequestEngine.RunAsync(request, OpenAsync, ApplyAsync, cancellationToken).ConfigureAwait(false);
+                response = await RequestEngine.RunAsync(request, OpenAsync, ApplyAsync, run.Token).ConfigureAwait(false);
                 response.Source ??= "vs";
                 Log(Describe(request, response, DateTime.UtcNow - started));
             }
             catch (OperationCanceledException)
             {
-                return;
+                if (cancellationToken.IsCancellationRequested) return;
+
+                Log("Cancelled: the time limit passed or the client went away.");
+                response = new RunResponse { Ok = false, Error = "Cancelled: the request exceeded the time limit (" + (int)RequestTimeout.TotalMinutes + " minutes) or the client disconnected. Nothing was written.", ExitCode = 1, Source = "vs" };
             }
             catch (Exception ex)
             {
@@ -256,7 +302,7 @@ internal sealed class AgentBridge : IDisposable
             }
             finally
             {
-                _one.Release();
+                if (acquired) gate.Release();
             }
 
             try
@@ -270,12 +316,25 @@ internal sealed class AgentBridge : IDisposable
         }
     }
 
+    private static async Task<string> ReadLineAsync(StreamReader reader, int maxChars)
+    {
+        var line = new StringBuilder();
+        var one = new char[1];
+        while (true)
+        {
+            if (await reader.ReadAsync(one, 0, 1).ConfigureAwait(false) == 0) return line.Length == 0 ? null : line.ToString();
+            if (one[0] == '\n') return line.ToString().TrimEnd('\r');
+            if (line.Length >= maxChars) throw new InvalidDataException("A request line is longer than " + maxChars + " characters.");
+            line.Append(one[0]);
+        }
+    }
+
     private async Task<RunRequest> ReadRequestAsync(StreamReader reader)
     {
-        var token = await reader.ReadLineAsync().ConfigureAwait(false);
+        var token = await ReadLineAsync(reader, MaxTokenChars).ConfigureAwait(false);
         if (!ConstantTimeEquals(token, _token)) throw new UnauthorizedAccessException("Wrong token.");
 
-        var body = await reader.ReadLineAsync().ConfigureAwait(false);
+        var body = await ReadLineAsync(reader, MaxRequestChars).ConfigureAwait(false);
         return JsonConvert.DeserializeObject<RunRequest>(body ?? string.Empty, Json) ?? throw new JsonException("Empty request.");
     }
 
@@ -312,7 +371,24 @@ internal sealed class AgentBridge : IDisposable
         try
         {
             Action<DocumentId> enroll = undo is null ? null : id => undo.AddDocument(_workspace, id);
-            var outcome = await ChangeApplier.ApplyAsync(_workspace, context.Session.Solution, context.Items, enroll, CancellationToken.None).ConfigureAwait(true);
+            // The reviewed plan is what gets written: replan against the live workspace and refuse if it no longer matches.
+            var plan = await ChangeApplier.PlanAsync(_workspace, context.Session.Solution, context.Items, CancellationToken.None).ConfigureAwait(true);
+            var replanned = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var id in plan.ChangedDocuments)
+            {
+                var document = plan.Solution.GetDocument(id);
+                replanned[document.FilePath] = (await document.GetTextAsync(CancellationToken.None).ConfigureAwait(true)).ToString();
+            }
+
+            var verified = true;
+            if (replanned.Count != context.Files.Count || plan.Outcome.Skipped > 0) verified = false;
+            else foreach (var pair in context.Files)
+                if (!replanned.TryGetValue(pair.Key, out var text) || text != pair.Value.New.ToString()) { verified = false; break; }
+
+            if (!verified)
+                throw new ApplyRefusedException("The open documents changed since the plan was reviewed, so it would no longer produce the same edits. Nothing was written; run a dry run again.");
+
+            var outcome = await ChangeApplier.CommitAsync(_workspace, plan, enroll, CancellationToken.None).ConfigureAwait(true);
 
             if (outcome.Applied == 0)
                 throw new ApplyRefusedException("Nothing was applied: " + (outcome.Warnings.Count > 0 ? outcome.Warnings[0] : "the workspace rejected the change set."));
