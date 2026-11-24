@@ -89,7 +89,7 @@ jobs:
             Write-Host "CI version: $ci"
             $msb += "-p:Version=$ci"
           }
-          msbuild @args
+          msbuild @msb
           if ($LASTEXITCODE -ne 0) { throw "msbuild failed." }
 
       - name: Stage VSIX
