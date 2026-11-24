@@ -389,7 +389,7 @@
                         <TextBlock x:Name="ErrorText" Grid.Row="2" Margin="0,4,0,0" TextWrapping="Wrap"
                                    Visibility="Collapsed" Foreground="#FFE0655F" />
 
-                        <ListBox x:Name="Results" Grid.Row="3" Margin="0,8,0,0"
+                        <ListBox x:Name="Results" SelectionMode="Extended" Grid.Row="3" Margin="0,8,0,0"
                                  BorderThickness="0" Background="Transparent"
                                  HorizontalContentAlignment="Stretch"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -475,7 +475,7 @@
                             <TextBlock x:Name="ReplaceErrorText" Grid.Row="3" Margin="0,4,0,0" TextWrapping="Wrap"
                                        Visibility="Collapsed" Foreground="#FFE0655F" />
 
-                            <ListBox x:Name="ReplaceResults" Grid.Row="4" Margin="0,8,0,0"
+                            <ListBox x:Name="ReplaceResults" SelectionMode="Extended" Grid.Row="4" Margin="0,8,0,0"
                                      BorderThickness="0" Background="Transparent"
                                      HorizontalContentAlignment="Stretch"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"

@@ -207,28 +207,38 @@ public partial class QueryToolWindowControl : UserControl
         NavigateTo(hit.DocumentId, hit.Span);
     }
 
-    /// <summary>A right click should act on the row under the cursor, which a ListBox does not select by itself.</summary>
+    /// <summary>A right click acts on the row under the cursor, unless it is already part of the selection (keeps a multi-selection intact).</summary>
     private void OnResultsPreviewRightClick(object sender, MouseButtonEventArgs e)
     {
-        var item = ItemsControl.ContainerFromElement((ItemsControl)sender, (DependencyObject)e.OriginalSource) as ListBoxItem;
-        if (item != null) item.IsSelected = true;
-        else ((ListBox)sender).SelectedItem = null;
+        var list = (ListBox)sender;
+        if (ItemsControl.ContainerFromElement(list, (DependencyObject)e.OriginalSource) is ListBoxItem item)
+        {
+            if (!item.IsSelected) list.SelectedItem = item.DataContext;
+        }
+        else list.UnselectAll();
     }
 
     private void OnResultsContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
-        if (((ListBox)sender).SelectedItem == null) e.Handled = true;
+        if (((ListBox)sender).SelectedItems.Count == 0) e.Handled = true;
     }
 
-    private static QueryHit HitOf(object menuItemSender)
+    /// <summary>Selected hits in list order (SelectedItems is in click order).</summary>
+    private static List<QueryHit> HitsOf(object menuItemSender)
     {
-        var menu = (menuItemSender as MenuItem)?.Parent as ContextMenu;
-        return (menu?.PlacementTarget as ListBox)?.SelectedItem switch
+        var result = new List<QueryHit>();
+        if (((menuItemSender as MenuItem)?.Parent as ContextMenu)?.PlacementTarget is not ListBox list) return result;
+
+        var items = list.SelectedItems;
+        var indexed = new List<KeyValuePair<int, QueryHit>>(items.Count);
+        foreach (var o in items)
         {
-            QueryHit hit => hit,
-            ReplacementItem item => item.Hit,
-            _ => null
-        };
+            var hit = o switch { QueryHit h => h, ReplacementItem r => r.Hit, _ => null };
+            if (hit != null) indexed.Add(new KeyValuePair<int, QueryHit>(list.Items.IndexOf(o), hit));
+        }
+        indexed.Sort((x, y) => x.Key.CompareTo(y.Key));
+        foreach (var kv in indexed) result.Add(kv.Value);
+        return result;
     }
 
     private static void CopyToClipboard(string text)
@@ -245,30 +255,31 @@ public partial class QueryToolWindowControl : UserControl
 
     private static string PathOf(QueryHit hit) => string.IsNullOrEmpty(hit.FilePath) ? hit.FileName : hit.FilePath;
 
-    private void OnCopyLocationClick(object sender, RoutedEventArgs e)
+    private static void CopyLines(object sender, Func<QueryHit, string> format)
     {
-        if (HitOf(sender) is { } hit) CopyToClipboard(HitLocation.CodeSearch(PathOf(hit), hit.Line + 1));
+        var hits = HitsOf(sender);
+        if (hits.Count == 0) return;
+        CopyToClipboard(string.Join(Environment.NewLine, hits.Select(format)));
     }
+
+    private void OnCopyLocationClick(object sender, RoutedEventArgs e)
+        => CopyLines(sender, hit => HitLocation.CodeSearch(PathOf(hit), hit.Line + 1));
 
     private void OnCopyMsBuildLocationClick(object sender, RoutedEventArgs e)
-    {
-        if (HitOf(sender) is { } hit)
-            CopyToClipboard(HitLocation.MSBuild(PathOf(hit), hit.Line + 1, hit.Column + 1, hit.EndLine + 1, hit.EndColumn + 1));
-    }
+        => CopyLines(sender, hit => HitLocation.MSBuild(PathOf(hit), hit.Line + 1, hit.Column + 1, hit.EndLine + 1, hit.EndColumn + 1));
 
-    /// <summary>The matched source exactly as written, not the whitespace-collapsed, truncated preview the row shows.</summary>
+    /// <summary>The matched source exactly as written, not the whitespace-collapsed, truncated preview the row shows. Multiple matches are newline-separated.</summary>
     private void OnCopyMatchClick(object sender, RoutedEventArgs e)
     {
-        if (HitOf(sender) is not { } hit) return;
-
-        string text = null;
         Solution solution = null;
         _ranAgainst?.TryGetTarget(out solution);
 
-        if (solution?.GetDocument(hit.DocumentId) is { } document && document.TryGetText(out var source) && hit.Span.End <= source.Length)
-            text = source.ToString(hit.Span);
-
-        CopyToClipboard(text ?? hit.Preview);
+        CopyLines(sender, hit =>
+        {
+            if (solution?.GetDocument(hit.DocumentId) is { } document && document.TryGetText(out var source) && hit.Span.End <= source.Length)
+                return source.ToString(hit.Span);
+            return hit.Preview;
+        });
     }
 
     private void OnReplaceResultDoubleClick(object sender, MouseButtonEventArgs e)
