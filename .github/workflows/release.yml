@@ -73,8 +73,24 @@ jobs:
         shell: pwsh
         run: ./scripts/smoke-cli.ps1 -Exe RoslynQuery.Cli/publish/win-x64/roslynquery.exe
 
+      # VS refuses to install a VSIX over an installed one of the same version, so every non-main build gets the
+      # csproj <Version> plus the run number as 4th part (0.5.0 -> 0.5.0.88): always an upgrade over the last build and
+      # over the release it is based on, and still below the next release bump. Main builds ship the plain <Version>.
+      # VSIX versions must be numeric System.Version strings, so a semver "-ci.N" suffix is not an option.
       - name: Build
-        run: msbuild RoslynQuery/RoslynQuery.csproj -t:Rebuild -p:Configuration=Release -p:DeployExtension=false
+        shell: pwsh
+        run: |
+          $msb = @('RoslynQuery/RoslynQuery.csproj', '-t:Rebuild', '-p:Configuration=Release', '-p:DeployExtension=false')
+          if ('${{ github.ref }}' -ne 'refs/heads/main') {
+            [xml]$p = Get-Content RoslynQuery/RoslynQuery.csproj
+            $v = (($p.Project.PropertyGroup.Version | Where-Object { $_ }) | Select-Object -First 1).Trim()
+            $base = ($v -split '\.')[0..2] -join '.'
+            $ci = "$base.${{ github.run_number }}"
+            Write-Host "CI version: $ci"
+            $msb += "-p:Version=$ci"
+          }
+          msbuild @args
+          if ($LASTEXITCODE -ne 0) { throw "msbuild failed." }
 
       - name: Stage VSIX
         id: vsix
